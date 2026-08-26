@@ -2,10 +2,11 @@ create extension if not exists "pgcrypto";
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  email text,
+  username text not null unique,
   display_name text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint profiles_username_format check (char_length(username) between 2 and 40 and username ~ '^[[:alnum:]가-힣._-]+$' and username = lower(trim(username)))
 );
 
 create table if not exists public.workspaces (
@@ -24,17 +25,17 @@ create table if not exists public.workspace_members (
   primary key (workspace_id, user_id)
 );
 
-create table if not exists public.workspace_invitations (
+create table if not exists public.pending_accounts (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
-  email text not null,
+  username text not null,
   created_by uuid not null references auth.users(id) on delete cascade,
   accepted_by uuid references auth.users(id) on delete set null,
   accepted_at timestamptz,
   expires_at timestamptz not null default (now() + interval '7 days'),
   created_at timestamptz not null default now(),
-  constraint workspace_invitations_email_normalized check (email = lower(trim(email))),
-  constraint workspace_invitations_workspace_email_key unique(workspace_id, email)
+  constraint pending_accounts_username_normalized check (username = lower(trim(username))),
+  constraint pending_accounts_workspace_username_key unique(workspace_id, username)
 );
 
 create table if not exists public.pages (
@@ -210,23 +211,26 @@ set search_path = public
 as $$
 declare new_workspace_id uuid;
 declare invitation_count integer;
+declare resolved_username text;
 begin
-  insert into public.profiles(id, email, display_name)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data ->> 'display_name', split_part(coalesce(new.email, '사용자'), '@', 1)));
+  resolved_username := lower(trim(coalesce(new.raw_user_meta_data ->> 'username', '')));
+  if resolved_username = '' then raise exception 'username is required'; end if;
+  insert into public.profiles(id, username, display_name)
+  values (new.id, resolved_username, coalesce(nullif(new.raw_user_meta_data ->> 'display_name', ''), resolved_username));
 
   insert into public.workspace_members(workspace_id, user_id, role)
   select invitation.workspace_id, new.id, 'editor'
-  from public.workspace_invitations invitation
-  where invitation.email = lower(new.email)
+  from public.pending_accounts invitation
+  where invitation.username = resolved_username
     and invitation.accepted_at is null
     and invitation.expires_at > now()
   on conflict (workspace_id, user_id) do nothing;
   get diagnostics invitation_count = row_count;
 
   if invitation_count > 0 then
-    update public.workspace_invitations
+    update public.pending_accounts
     set accepted_by = new.id, accepted_at = now()
-    where email = lower(new.email) and accepted_at is null and expires_at > now();
+    where username = resolved_username and accepted_at is null and expires_at > now();
   else
     insert into public.workspaces(name, owner_id)
     values ('나의 TRPG 로그', new.id)
@@ -395,7 +399,7 @@ for each row execute function public.handle_new_user();
 alter table public.profiles enable row level security;
 alter table public.workspaces enable row level security;
 alter table public.workspace_members enable row level security;
-alter table public.workspace_invitations enable row level security;
+alter table public.pending_accounts enable row level security;
 alter table public.pages enable row level security;
 alter table public.logs enable row level security;
 alter table public.log_entries enable row level security;
@@ -425,13 +429,13 @@ for insert to authenticated with check (public.is_workspace_owner(workspace_id))
 create policy "owners can remove memberships" on public.workspace_members
 for delete to authenticated using (public.is_workspace_owner(workspace_id) and role <> 'owner');
 
-create policy "owners can view invitations" on public.workspace_invitations
+create policy "owners can view pending accounts" on public.pending_accounts
 for select to authenticated using (public.is_workspace_owner(workspace_id));
-create policy "owners can create invitations" on public.workspace_invitations
+create policy "owners can create pending accounts" on public.pending_accounts
 for insert to authenticated with check (public.is_workspace_owner(workspace_id) and created_by = auth.uid());
-create policy "owners can update invitations" on public.workspace_invitations
+create policy "owners can update pending accounts" on public.pending_accounts
 for update to authenticated using (public.is_workspace_owner(workspace_id)) with check (public.is_workspace_owner(workspace_id));
-create policy "owners can remove invitations" on public.workspace_invitations
+create policy "owners can remove pending accounts" on public.pending_accounts
 for delete to authenticated using (public.is_workspace_owner(workspace_id));
 
 create policy "members can read pages" on public.pages

@@ -8,7 +8,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, WorkspacePage } from "@/lib/types";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
-type WorkspaceMember = { user_id: string; role: "owner" | "editor"; profile: { email: string | null; display_name: string | null } | null };
+type WorkspaceMember = { user_id: string; role: "owner" | "editor"; profile: { username: string; display_name: string | null } | null };
 
 export function WorkspaceSidebar({ workspaceId, workspaceName, pages, canInvite }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; canInvite: boolean }) {
   const router = useRouter();
@@ -46,11 +46,11 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, canInvite 
     const response = await fetch("/api/members", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId, email: data.get("email") })
+      body: JSON.stringify({ workspaceId, username: data.get("username"), password: data.get("password") })
     });
     const result = await response.json();
     setInvitePending(false);
-    setInviteMessage(response.ok ? "초대를 보냈습니다." : result.error ?? "초대하지 못했습니다.");
+    setInviteMessage(response.ok ? "편집자 계정을 추가했습니다." : result.error ?? "계정을 추가하지 못했습니다.");
     if (response.ok) { event.currentTarget.reset(); await loadMembers(); }
   }
 
@@ -89,7 +89,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, canInvite 
         {canInvite && <button className="sidebar-action" onClick={openInvite}><UserPlus size={15} />멤버 관리</button>}
         <button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button>
       </div>
-      {showInvite && <div className="modal-backdrop" onMouseDown={() => setShowInvite(false)}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowInvite(false)} aria-label="닫기"><X size={17} /></button><h2>멤버 관리</h2><p>편집자는 이 워크스페이스의 모든 로그를 보고 수정할 수 있습니다.</p><form onSubmit={invite}><label className="field">초대할 이메일<input name="email" type="email" required /></label><button className="button button-primary" disabled={invitePending}>{invitePending ? "초대 중…" : "초대 보내기"}</button></form>{inviteMessage && <p>{inviteMessage}</p>}<div className="member-list">{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.profile?.display_name || member.profile?.email || "사용자"}</strong><small>{member.role}</small></div>{member.role === "editor" && <button className="button button-danger" onClick={() => removeMember(member.user_id)}>내보내기</button>}</div>)}</div></section></div>}
+      {showInvite && <div className="modal-backdrop" onMouseDown={() => setShowInvite(false)}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowInvite(false)} aria-label="닫기"><X size={17} /></button><h2>멤버 관리</h2><p>편집자는 이 워크스페이스의 모든 로그를 보고 수정할 수 있습니다. 새 아이디와 전달할 임시 비밀번호를 정해주세요.</p><form onSubmit={invite}><label className="field">편집자 아이디<input name="username" minLength={2} maxLength={40} required /></label><label className="field">임시 비밀번호<input name="password" type="password" minLength={4} required /></label><button className="button button-primary" disabled={invitePending}>{invitePending ? "추가 중…" : "편집자 추가"}</button></form>{inviteMessage && <p>{inviteMessage}</p>}<div className="member-list">{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.profile?.display_name || member.profile?.username || "사용자"}</strong><small>@{member.profile?.username} · {member.role}</small></div>{member.role === "editor" && <button className="button button-danger" onClick={() => removeMember(member.user_id)}>내보내기</button>}</div>)}</div></section></div>}
     </aside>
   );
 }

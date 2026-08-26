@@ -5,18 +5,19 @@ import test from "node:test";
 const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 const memberRoute = readFileSync(new URL("../app/api/members/route.ts", import.meta.url), "utf8");
 
-test("new users can only join workspaces through server-created pending invitations", () => {
-  assert.match(schema, /from public\.workspace_invitations invitation/);
-  assert.match(schema, /invitation\.email = lower\(new\.email\)/);
+test("new users can only join workspaces through server-created pending accounts", () => {
+  assert.match(schema, /from public\.pending_accounts invitation/);
+  assert.match(schema, /invitation\.username = resolved_username/);
   assert.doesNotMatch(schema, /raw_user_meta_data\s*->>\s*'invited_workspace_id'/);
-  assert.doesNotMatch(memberRoute, /invited_workspace_id/);
+  assert.doesNotMatch(schema, /profiles[\s\S]*?email text/);
 });
 
-test("the invite API records a pending invitation before sending the auth invite", () => {
-  const pendingIndex = memberRoute.indexOf('.from("workspace_invitations").upsert');
-  const authInviteIndex = memberRoute.indexOf("inviteUserByEmail");
+test("the member API records a pending account before creating the auth user", () => {
+  const pendingIndex = memberRoute.indexOf('.from("pending_accounts").upsert');
+  const createUserIndex = memberRoute.indexOf("admin.auth.admin.createUser");
   assert.ok(pendingIndex >= 0);
-  assert.ok(authInviteIndex > pendingIndex);
+  assert.ok(createUserIndex > pendingIndex);
+  assert.doesNotMatch(memberRoute, /inviteUserByEmail/);
 });
 
 test("log entry writes are limited to audited security-definer functions", () => {

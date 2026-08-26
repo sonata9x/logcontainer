@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from "./supabase/server";
 import type { Workspace, WorkspaceRole } from "./types";
 
 export type WorkspaceSession = {
-  user: { id: string; email?: string };
+  user: { id: string };
   workspace: Workspace;
   role: WorkspaceRole;
 };
@@ -29,7 +29,7 @@ export async function requireWorkspaceSession(): Promise<WorkspaceSession> {
   }
 
   return {
-    user: { id: user.id, email: user.email },
+    user: { id: user.id },
     workspace: membership.workspace as unknown as Workspace,
     role: membership.role as WorkspaceRole
   };
