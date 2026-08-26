@@ -1,0 +1,15 @@
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "TRPG Workspace",
+  description: "TRPG 로그 백업, 공동 편집, 단일 페이지 게시"
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="ko">
+      <body>{children}</body>
+    </html>
+  );
+}
