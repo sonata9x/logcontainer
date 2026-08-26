@@ -141,10 +141,11 @@ on public.log_entry_revisions(entry_id, created_at desc);
 create table if not exists public.publications (
   id uuid primary key default gen_random_uuid(),
   page_id uuid not null unique references public.pages(id) on delete cascade,
-  token uuid not null unique default gen_random_uuid(),
+  token text not null unique default translate(rtrim(encode(gen_random_bytes(9), 'base64'), '='), '+/', '-_'),
   is_active boolean not null default true,
   published_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint publications_token_format check (token ~ '^[A-Za-z0-9_-]{12}$')
 );
 
 create or replace function public.set_updated_at()

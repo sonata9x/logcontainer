@@ -1,12 +1,12 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
+import { createPublicationToken } from "@/lib/publication-token";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const context = await getApiPageContext(id);
   if (!context || context.page.page_type !== "log") return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
-  const token = randomUUID();
+  const token = createPublicationToken();
   const { data: existing } = await context.supabase.from("publications").select("id").eq("page_id", id).maybeSingle();
   const query = existing
     ? context.supabase.from("publications").update({ token, is_active: true, published_at: new Date().toISOString() }).eq("id", existing.id)
