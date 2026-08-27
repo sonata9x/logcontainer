@@ -84,6 +84,7 @@ export function LogEditor({ page, logId, entries, publication, importReport }: {
 
   async function archivePage() {
     const owner = Boolean(page.is_original_owner);
+    if (!owner && !page.can_self_remove) return;
     if (!window.confirm(owner ? "이 로그를 30일 휴지통으로 이동할까요? 공유자와 게시 링크에서도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 공유 권한을 종료할까요?")) return;
     const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) });
     if (!response.ok) return window.alert("페이지를 보관하지 못했습니다.");
@@ -102,7 +103,7 @@ export function LogEditor({ page, logId, entries, publication, importReport }: {
 
   return (
     <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />로그 · {liveConnected ? "공동 편집 연결됨" : "연결 중"}</span><div className="toolbar-actions"><button className="button" onClick={archivePage} title={page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}><Archive size={14} /></button>{page.is_original_owner && <button className="button" onClick={togglePublish} disabled={pending}>{publication?.is_active ? "게시 중단" : "게시하기"}</button>}</div></div>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />로그 · {liveConnected ? "공동 편집 연결됨" : "연결 중"}</span><div className="toolbar-actions">{(page.is_original_owner || page.can_self_remove) && <button className="button" onClick={archivePage} title={page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}><Archive size={14} /></button>}{page.is_original_owner && <button className="button" onClick={togglePublish} disabled={pending}>{publication?.is_active ? "게시 중단" : "게시하기"}</button>}</div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" />
         <div className="page-meta">{entries.length.toLocaleString()}개 메시지 블록{summary?.provider === "roll20" && <> · 원본 {summary.sourceMessageCount ?? 0}개 · 논리 메시지 {summary.logicalMessageCount ?? summary.importedMessageCount ?? 0}개 · 구조 반복 {summary.structuralDuplicateCount ?? 0}개 정규화 · hidden {summary.hiddenRemovedCount ?? summary.hiddenMessageCount ?? 0}개 제거 · 오류 중복 {summary.errorDuplicateCount ?? summary.duplicateMessageCount ?? 0}개 제거{Boolean(summary.warningCount) && <> · 경고 {summary.warningCount}개</>}</>}</div>

@@ -9,8 +9,8 @@
 ## 로컬 실행
 
 1. `.env.example`을 `.env.local`로 복사하고 Supabase 값을 입력합니다.
-2. Supabase SQL Editor에서 `supabase/schema.sql`을 실행합니다.
-3. `/setup`에서 최초 소유자 계정을 만듭니다. 사용자가 한 명이라도 생기면 이 화면은 자동으로 닫힙니다.
+2. 새 Supabase 프로젝트는 SQL Editor에서 `supabase/schema.sql`을 실행합니다. 기존 프로젝트는 `supabase/migrations`의 미적용 migration을 순서대로 적용합니다.
+3. `/setup`에서 최초 사이트 관리자 계정을 만듭니다. 첫 계정은 자동 승인되고 개인 Workspace가 생성되며, 사용자가 한 명이라도 생기면 이 화면은 자동으로 닫힙니다.
 4. `npm install`, `npm run dev`를 실행합니다.
 
 ## URL 구조
@@ -34,7 +34,9 @@
 - 동시 수정 충돌 방지와 공동 편집 실시간 갱신
 - 중첩 폴더와 로그 페이지 트리
 - 이메일 없는 아이디 로그인과 4자 이상 비밀번호
-- 소유자가 아이디·임시 비밀번호로 만드는 편집자 계정과 내보내기
+- 자유 가입 신청, 사이트 관리자 승인/거절, 승인 계정별 개인 Workspace
+- Page/Folder 단위 공유, 공유 Folder 권한 상속, 사용자별 Workspace 배치
+- 초대 권한 위임 제한, 공유 self-remove/revoke/reshare, original owner의 30일 휴지통
 - 12자 난수 링크를 사용하는 단일 로그 게시·게시 중단·링크 재발급
 
 사용자는 실제 이메일을 입력하거나 인증하지 않습니다. Supabase Auth 호환을 위한 임의 내부 주소와 파생 비밀번호는 서버에서만 처리하며 화면과 프로필에는 노출하지 않습니다.

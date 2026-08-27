@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
+import { isValidUsername, normalizeUsername } from "@/lib/auth-identity";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,7 +16,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const context = await getApiPageContext(id);
   if (!context?.canInvite) return NextResponse.json({ error: "공유 권한이 없습니다." }, { status: 403 });
   const body = await request.json().catch(() => ({}));
-  const username = typeof body.username === "string" ? body.username : "";
+  const username = normalizeUsername(body.username);
+  if (!isValidUsername(username)) return NextResponse.json({ error: "올바른 사용자 아이디를 입력해주세요." }, { status: 400 });
   const canInvite = context.canManage && body.canInvite === true;
   const { data, error } = await context.supabase.rpc("share_resource", { target_resource_id: id, target_username: username, grant_can_invite: canInvite });
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data, { status: 201 });

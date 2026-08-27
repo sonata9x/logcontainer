@@ -8,7 +8,7 @@ export type WorkspaceSession = {
   profile: Profile;
 };
 
-export async function requireWorkspaceSession(): Promise<WorkspaceSession> {
+export async function requireApprovedSession() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -18,15 +18,20 @@ export async function requireWorkspaceSession(): Promise<WorkspaceSession> {
 
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   if (!profile || profile.account_status !== "approved") redirect("/login?account=unavailable");
-  const { data: workspace, error } = await supabase.from("workspaces").select("*").eq("owner_id", user.id).single();
+  return { supabase, user: { id: user.id }, profile: profile as Profile };
+}
+
+export async function requireWorkspaceSession(): Promise<WorkspaceSession> {
+  const session = await requireApprovedSession();
+  const { data: workspace, error } = await session.supabase.from("workspaces").select("*").eq("owner_id", session.user.id).single();
 
   if (error || !workspace) {
     throw new Error("개인 워크스페이스를 찾을 수 없습니다.");
   }
 
   return {
-    user: { id: user.id },
+    user: session.user,
     workspace: workspace as Workspace,
-    profile: profile as Profile
+    profile: session.profile
   };
 }

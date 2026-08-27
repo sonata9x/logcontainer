@@ -40,8 +40,10 @@ export type WorkspacePage = {
   deleted_by?: string | null;
   tree_parent_id?: string | null;
   tree_depth?: number;
+  tree_relation?: "workspace" | "folder";
   is_original_owner?: boolean;
   can_invite?: boolean;
+  can_self_remove?: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -40,6 +40,9 @@ begin
   end if;
 end $$;
 
+create unique index if not exists profiles_one_site_admin_idx
+on public.profiles((is_site_admin)) where is_site_admin;
+
 -- Every approved account receives one private workspace. Existing shared workspaces stay
 -- owned by their original owner; collaborators receive a new personal workspace below.
 insert into public.workspaces(name, owner_id)
@@ -47,6 +50,13 @@ select coalesce(nullif(p.display_name, ''), p.username) || '의 워크스페이�
 from public.profiles p
 where p.account_status = 'approved'
   and not exists (select 1 from public.workspaces w where w.owner_id = p.id);
+
+do $$
+begin
+  if exists (select 1 from public.workspaces group by owner_id having count(*) > 1) then
+    raise exception 'Cannot enforce one personal workspace per account: duplicate workspace owners require manual resolution.';
+  end if;
+end $$;
 
 create unique index if not exists workspaces_one_per_owner_idx on public.workspaces(owner_id);
 
@@ -65,7 +75,21 @@ set original_owner_id = w.owner_id
 from public.workspaces w
 where p.workspace_id = w.id and p.original_owner_id is null;
 
+-- Legacy "archived" pages were the old deletion state. Keep them recoverable under the
+-- new 30-day owner trash model instead of silently dropping them from both trees.
+update public.pages
+set deleted_at = coalesce(deleted_at, updated_at, now()),
+    purge_after = coalesce(purge_after, coalesce(deleted_at, updated_at, now()) + interval '30 days'),
+    deleted_by = coalesce(deleted_by, original_owner_id)
+where is_archived and deleted_at is null;
+
 alter table public.pages alter column original_owner_id set not null;
+
+-- parent_id is legacy placement data only after this migration. Deleting a folder must
+-- not cascade-delete independently owned resources through that stale hierarchy.
+alter table public.pages drop constraint if exists pages_parent_id_fkey;
+alter table public.pages add constraint pages_parent_id_fkey
+  foreign key (parent_id) references public.pages(id) on delete set null;
 
 create table if not exists public.workspace_items (
   id uuid primary key default gen_random_uuid(),
@@ -104,6 +128,7 @@ create table if not exists public.resource_shares (
   can_invite boolean not null default false,
   granted_by uuid not null references auth.users(id) on delete restrict,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   revoked_at timestamptz,
   revoked_by uuid references auth.users(id) on delete set null,
   revocation_reason text
@@ -140,6 +165,17 @@ create table if not exists public.account_approval_events (
   created_at timestamptz not null default now()
 );
 
+-- Legacy workspace invitations become pending shares for each legacy root resource;
+-- they never grant membership in the owner's workspace.
+insert into public.pending_resource_shares(resource_id, username, can_invite, granted_by, expires_at)
+select p.id, pa.username, false, w.owner_id, pa.expires_at
+from public.pending_accounts pa
+join public.workspaces w on w.id = pa.workspace_id
+join public.pages p on p.workspace_id = pa.workspace_id and p.parent_id is null
+where pa.accepted_at is null and pa.expires_at > now()
+on conflict (resource_id, username) where accepted_at is null and revoked_at is null
+do update set expires_at = greatest(pending_resource_shares.expires_at, excluded.expires_at);
+
 -- Preserve the legacy folder topology as shared-folder topology.
 insert into public.folder_items(folder_id, child_resource_id, order_index, created_by)
 select p.parent_id, p.id, p.order_index, p.original_owner_id
@@ -147,11 +183,13 @@ from public.pages p
 where p.parent_id is not null
 on conflict (child_resource_id) do nothing;
 
--- Only legacy roots are mounted; descendants are reached through folder_items.
+-- Every resource keeps a placement in its original owner's private workspace. While a
+-- folder edge is active get_workspace_tree prefers the shared hierarchy; if the edge is
+-- removed (or an ancestor is trashed), the owner still has a reachable resource.
 insert into public.workspace_items(workspace_id, resource_id, order_index)
-select p.workspace_id, p.id, p.order_index
+select owner_workspace.id, p.id, p.order_index
 from public.pages p
-where p.parent_id is null
+join public.workspaces owner_workspace on owner_workspace.owner_id = p.original_owner_id
 on conflict (workspace_id, resource_id) do nothing;
 
 -- Convert legacy editors into resource-level shares on each legacy root.
@@ -164,6 +202,32 @@ where p.parent_id is null and wm.user_id <> p.original_owner_id
   and not exists (
     select 1 from public.resource_shares rs
     where rs.resource_id = p.id and rs.user_id = wm.user_id and rs.revoked_at is null
+  );
+
+-- Existing approved accounts may already match a legacy/pending username. Activate
+-- those resource invitations during migration instead of waiting for another approval.
+insert into public.resource_shares(resource_id, user_id, can_invite, granted_by)
+select prs.resource_id, recipient.id, prs.can_invite, prs.granted_by
+from public.pending_resource_shares prs
+join public.profiles recipient on recipient.username = prs.username
+  and recipient.account_status = 'approved'
+join public.pages p on p.id = prs.resource_id and p.deleted_at is null
+where prs.accepted_at is null and prs.revoked_at is null and prs.expires_at > now()
+  and p.original_owner_id <> recipient.id
+on conflict (resource_id, user_id) where revoked_at is null do nothing;
+
+update public.pending_resource_shares
+set accepted_by = recipient.id, accepted_at = now()
+from public.profiles recipient
+where pending_resource_shares.username = recipient.username
+  and recipient.account_status = 'approved'
+  and pending_resource_shares.accepted_at is null
+  and pending_resource_shares.revoked_at is null
+  and pending_resource_shares.expires_at > now()
+  and exists (
+    select 1 from public.resource_shares rs
+    where rs.resource_id = pending_resource_shares.resource_id
+      and rs.user_id = recipient.id and rs.revoked_at is null
   );
 
 insert into public.workspace_items(workspace_id, resource_id, order_index)
@@ -209,10 +273,14 @@ create or replace function public.has_inherited_resource_access(target_resource_
 returns boolean language sql stable security definer set search_path = public as $$
   with recursive ancestors(resource_id, path) as (
     select fi.folder_id, array[target_resource_id, fi.folder_id]
-    from public.folder_items fi where fi.child_resource_id = target_resource_id
+    from public.folder_items fi
+    join public.pages parent on parent.id = fi.folder_id and parent.deleted_at is null
+    where fi.child_resource_id = target_resource_id
     union all
     select fi.folder_id, a.path || fi.folder_id
-    from ancestors a join public.folder_items fi on fi.child_resource_id = a.resource_id
+    from ancestors a
+    join public.folder_items fi on fi.child_resource_id = a.resource_id
+    join public.pages parent on parent.id = fi.folder_id and parent.deleted_at is null
     where not fi.folder_id = any(a.path)
   )
   select public.is_account_approved(target_user_id) and exists (
@@ -248,7 +316,9 @@ returns boolean language sql stable security definer set search_path = public as
     select target_resource_id, array[target_resource_id]
     union all
     select fi.folder_id, s.path || fi.folder_id
-    from scope s join public.folder_items fi on fi.child_resource_id = s.resource_id
+    from scope s
+    join public.folder_items fi on fi.child_resource_id = s.resource_id
+    join public.pages parent on parent.id = fi.folder_id and parent.deleted_at is null
     where not fi.folder_id = any(s.path)
   )
   select public.is_account_approved(target_user_id) and exists (
@@ -279,6 +349,32 @@ returns uuid language sql stable security definer set search_path = public as $$
   select id from public.workspaces where owner_id = target_user_id limit 1;
 $$;
 
+create or replace function public.touch_resource_audience(target_resource_id uuid)
+returns void language plpgsql volatile security definer set search_path = public as $$
+begin
+  with recursive scope(resource_id, path) as (
+    select target_resource_id, array[target_resource_id]
+    union all
+    select fi.folder_id, scope.path || fi.folder_id
+    from scope join public.folder_items fi on fi.child_resource_id = scope.resource_id
+    where not fi.folder_id = any(scope.path)
+  )
+  update public.resource_shares
+  set updated_at = now()
+  where revoked_at is null and resource_id in (select resource_id from scope);
+  with recursive scope(resource_id, path) as (
+    select target_resource_id, array[target_resource_id]
+    union all
+    select fi.folder_id, scope.path || fi.folder_id
+    from scope join public.folder_items fi on fi.child_resource_id = scope.resource_id
+    where not fi.folder_id = any(scope.path)
+  )
+  update public.pages
+  set updated_at = now()
+  where deleted_at is null and id in (select resource_id from scope);
+end;
+$$;
+
 create or replace function public.get_resource_permissions(target_resource_id uuid)
 returns jsonb language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
@@ -286,7 +382,8 @@ returns jsonb language sql stable security definer set search_path = public as $
     'canEdit', public.can_edit_resource(target_resource_id, auth.uid()),
     'canInvite', public.can_invite_resource(target_resource_id, auth.uid()),
     'canManage', public.can_manage_resource_shares(target_resource_id, auth.uid()),
-    'isOriginalOwner', public.is_original_resource_owner(target_resource_id, auth.uid())
+    'isOriginalOwner', public.is_original_resource_owner(target_resource_id, auth.uid()),
+    'canSelfRemove', public.has_direct_resource_share(target_resource_id, auth.uid())
   );
 $$;
 
@@ -312,19 +409,34 @@ returns table(
   id uuid, workspace_id uuid, legacy_parent_id uuid, page_type text, title text, icon text,
   order_index integer, is_archived boolean, original_owner_id uuid, deleted_at timestamptz,
   created_at timestamptz, updated_at timestamptz, tree_parent_id uuid, tree_depth integer,
-  is_original_owner boolean, can_invite boolean
+  tree_relation text, is_original_owner boolean, can_invite boolean, can_self_remove boolean
 ) language sql stable security definer set search_path = public as $$
   with recursive tree as (
-    select wi.resource_id, wi.parent_local_resource_id as tree_parent_id,
-      wi.order_index as tree_order, 0 as depth, array[wi.resource_id] as path
+    select wi.resource_id,
+      case
+        when wi.parent_local_resource_id is null then null
+        when exists (
+          select 1 from public.pages local_parent
+          where local_parent.id = wi.parent_local_resource_id
+            and local_parent.page_type = 'folder' and local_parent.deleted_at is null
+            and public.can_view_resource(local_parent.id, auth.uid())
+        ) then wi.parent_local_resource_id
+        else null
+      end as tree_parent_id,
+      wi.order_index as tree_order, 0 as depth, array[wi.resource_id] as path,
+      'workspace'::text as relation
     from public.workspace_items wi
     join public.workspaces w on w.id = wi.workspace_id
+    join public.pages mounted on mounted.id = wi.resource_id and mounted.deleted_at is null
     where wi.workspace_id = target_workspace_id and w.owner_id = auth.uid()
     union all
     select fi.child_resource_id, fi.folder_id, fi.order_index, tree.depth + 1,
-      tree.path || fi.child_resource_id
+      tree.path || fi.child_resource_id, 'folder'::text
     from tree
+    join public.pages current_folder on current_folder.id = tree.resource_id
+      and current_folder.page_type = 'folder' and current_folder.deleted_at is null
     join public.folder_items fi on fi.folder_id = tree.resource_id
+    join public.pages child on child.id = fi.child_resource_id and child.deleted_at is null
     where not fi.child_resource_id = any(tree.path)
   ), preferred as (
     select distinct on (tree.resource_id) tree.*
@@ -333,8 +445,9 @@ returns table(
   )
   select p.id, p.workspace_id, p.parent_id, p.page_type, p.title, p.icon,
     preferred.tree_order, p.is_archived, p.original_owner_id, p.deleted_at,
-    p.created_at, p.updated_at, preferred.tree_parent_id, preferred.depth,
-    p.original_owner_id = auth.uid(), public.can_invite_resource(p.id, auth.uid())
+    p.created_at, p.updated_at, preferred.tree_parent_id, preferred.depth, preferred.relation,
+    p.original_owner_id = auth.uid(), public.can_invite_resource(p.id, auth.uid()),
+    public.has_direct_resource_share(p.id, auth.uid())
   from preferred join public.pages p on p.id = preferred.resource_id
   where public.is_account_approved(auth.uid()) and p.deleted_at is null
     and not p.is_archived and public.can_view_resource(p.id, auth.uid())
@@ -369,15 +482,16 @@ begin
   ) returning * into created_resource;
   if resource_type = 'log' then insert into public.logs(page_id) values (created_resource.id); end if;
 
-  if target_folder_id is null then
-    select coalesce(max(order_index) + 1, 0) into next_order
-    from public.workspace_items where workspace_id = actor_workspace_id and parent_local_resource_id is null;
-    insert into public.workspace_items(workspace_id, resource_id, order_index)
-    values (actor_workspace_id, created_resource.id, next_order);
-  else
+  select coalesce(max(order_index) + 1, 0) into next_order
+  from public.workspace_items where workspace_id = actor_workspace_id and parent_local_resource_id is null;
+  insert into public.workspace_items(workspace_id, resource_id, order_index)
+  values (actor_workspace_id, created_resource.id, next_order);
+
+  if target_folder_id is not null then
     select coalesce(max(order_index) + 1, 0) into next_order from public.folder_items where folder_id = target_folder_id;
     insert into public.folder_items(folder_id, child_resource_id, order_index, created_by)
     values (target_folder_id, created_resource.id, next_order, actor_id);
+    perform public.touch_resource_audience(target_folder_id);
   end if;
   return created_resource;
 end;
@@ -403,11 +517,29 @@ declare moved_item public.workspace_items;
 begin
   if not public.can_view_resource(target_resource_id, auth.uid()) then raise exception 'permission denied'; end if;
   actor_workspace_id := public.personal_workspace_id(auth.uid());
+  if actor_workspace_id is null then raise exception 'personal workspace not found'; end if;
   if target_parent_local_resource_id is not null then
     if target_parent_local_resource_id = target_resource_id
       or not public.can_view_resource(target_parent_local_resource_id, auth.uid())
       or not exists (select 1 from public.pages where id = target_parent_local_resource_id and page_type = 'folder' and deleted_at is null)
     then raise exception 'invalid local parent'; end if;
+    if exists (
+      with recursive edges(parent_id, child_id) as (
+        select fi.folder_id, fi.child_resource_id from public.folder_items fi
+        union
+        select wi.parent_local_resource_id, wi.resource_id
+        from public.workspace_items wi
+        where wi.workspace_id = actor_workspace_id and wi.parent_local_resource_id is not null
+      ), descendants(resource_id, path) as (
+        select e.child_id, array[target_resource_id, e.child_id]
+        from edges e where e.parent_id = target_resource_id
+        union all
+        select e.child_id, d.path || e.child_id
+        from descendants d join edges e on e.parent_id = d.resource_id
+        where not e.child_id = any(d.path)
+      )
+      select 1 from descendants where resource_id = target_parent_local_resource_id
+    ) then raise exception 'workspace placement cycle'; end if;
   end if;
   insert into public.workspace_items(workspace_id, resource_id, parent_local_resource_id, order_index)
   values (actor_workspace_id, target_resource_id, target_parent_local_resource_id, greatest(target_order, 0))
@@ -423,7 +555,7 @@ $$;
 create or replace function public.insert_folder_item(target_folder_id uuid, target_child_resource_id uuid, target_order integer default 0)
 returns public.folder_items language plpgsql security definer set search_path = public as $$
 declare created_item public.folder_items;
-declare audience_user_id uuid;
+declare existing_folder_id uuid;
 begin
   if not public.can_edit_resource(target_folder_id, auth.uid())
     or not public.can_view_resource(target_child_resource_id, auth.uid())
@@ -432,34 +564,83 @@ begin
   then raise exception 'folder not found'; end if;
   perform public.assert_no_folder_cycle(target_folder_id, target_child_resource_id);
 
-  -- Moving an existing resource into a collaborative folder exposes it to the folder audience.
-  -- The actor must be allowed to re-share that child whenever anyone else can see the folder.
-  select candidate.user_id into audience_user_id
-  from (
-    select original_owner_id as user_id from public.pages where id = target_folder_id
-    union
-    select user_id from public.resource_shares where resource_id = target_folder_id and revoked_at is null
-  ) candidate
-  where candidate.user_id <> auth.uid()
-  limit 1;
-  if audience_user_id is not null and not public.can_invite_resource(target_child_resource_id, auth.uid())
-  then raise exception 'reshare permission required'; end if;
+  select folder_id into existing_folder_id
+  from public.folder_items where child_resource_id = target_child_resource_id;
+
+  -- A first insertion into the shared hierarchy is a re-share, even when the target
+  -- folder currently has no collaborators. Personal-only organization must use
+  -- workspace_items, otherwise a collaborator could launder invite permission by
+  -- inserting a foreign page into a private folder and sharing that folder later.
+  if not public.can_invite_resource(target_child_resource_id, auth.uid()) then
+    if existing_folder_id is null then raise exception 'reshare permission required'; end if;
+
+    -- Editors may still reorder/move a child inside the same shared tree when that move
+    -- introduces no new viewer. Moving it into an unrelated tree requires invite rights.
+    if not exists (
+      with recursive source_scope(resource_id, path) as (
+        select existing_folder_id, array[existing_folder_id]
+        union all
+        select fi.folder_id, s.path || fi.folder_id
+        from source_scope s
+        join public.folder_items fi on fi.child_resource_id = s.resource_id
+        join public.pages parent on parent.id = fi.folder_id and parent.deleted_at is null
+        where not fi.folder_id = any(s.path)
+      ), target_scope(resource_id, path) as (
+        select target_folder_id, array[target_folder_id]
+        union all
+        select fi.folder_id, s.path || fi.folder_id
+        from target_scope s
+        join public.folder_items fi on fi.child_resource_id = s.resource_id
+        join public.pages parent on parent.id = fi.folder_id and parent.deleted_at is null
+        where not fi.folder_id = any(s.path)
+      )
+      select 1 from source_scope source
+      join target_scope target on target.resource_id = source.resource_id
+    ) or exists (
+      select 1 from public.profiles audience
+      where audience.account_status = 'approved'
+        and public.can_view_resource(target_folder_id, audience.id)
+        and not public.can_view_resource(target_child_resource_id, audience.id)
+    ) then raise exception 'reshare permission required'; end if;
+  end if;
 
   insert into public.folder_items(folder_id, child_resource_id, order_index, created_by)
   values (target_folder_id, target_child_resource_id, greatest(target_order, 0), auth.uid())
   on conflict (child_resource_id) do update
     set folder_id = excluded.folder_id, order_index = excluded.order_index, updated_at = now()
   returning * into created_item;
+  if existing_folder_id is not null and existing_folder_id <> target_folder_id then
+    perform public.touch_resource_audience(existing_folder_id);
+  end if;
+  perform public.touch_resource_audience(target_folder_id);
   return created_item;
 end;
 $$;
 
 create or replace function public.remove_folder_item(target_folder_id uuid, target_child_resource_id uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
+declare removed boolean;
+declare owner_workspace_id uuid;
+declare next_order integer;
 begin
   if not public.can_edit_resource(target_folder_id, auth.uid()) then raise exception 'permission denied'; end if;
   delete from public.folder_items where folder_id = target_folder_id and child_resource_id = target_child_resource_id;
-  return found;
+  removed := found;
+  if removed then
+    perform public.touch_resource_audience(target_folder_id);
+    select w.id into owner_workspace_id
+    from public.pages p join public.workspaces w on w.owner_id = p.original_owner_id
+    where p.id = target_child_resource_id;
+    if owner_workspace_id is not null then
+      select coalesce(max(order_index) + 1, 0) into next_order
+      from public.workspace_items
+      where workspace_id = owner_workspace_id and parent_local_resource_id is null;
+      insert into public.workspace_items(workspace_id, resource_id, order_index)
+      values (owner_workspace_id, target_child_resource_id, next_order)
+      on conflict (workspace_id, resource_id) do nothing;
+    end if;
+  end if;
+  return removed;
 end;
 $$;
 
@@ -473,12 +654,28 @@ begin
   if not public.can_invite_resource(target_resource_id, auth.uid()) then raise exception 'permission denied'; end if;
   if grant_can_invite and not public.is_original_resource_owner(target_resource_id, auth.uid())
   then raise exception 'only the original owner can delegate invite permission'; end if;
-  if normalized_username = '' then raise exception 'username is required'; end if;
+  if char_length(normalized_username) not between 2 and 40
+    or normalized_username !~ '^[[:alnum:]가-힣._-]+$'
+  then raise exception 'invalid username'; end if;
   select * into recipient from public.profiles where username = normalized_username;
   if recipient.id = auth.uid() then raise exception 'cannot share with yourself'; end if;
 
   if recipient.id is not null and recipient.account_status = 'approved' then
     if public.is_original_resource_owner(target_resource_id, recipient.id) then raise exception 'user is the original owner'; end if;
+    select id into created_share_id from public.resource_shares
+    where resource_id = target_resource_id and user_id = recipient.id and revoked_at is null;
+    if created_share_id is not null then
+      if grant_can_invite then
+        update public.resource_shares set can_invite = true where id = created_share_id;
+      end if;
+      recipient_workspace_id := public.personal_workspace_id(recipient.id);
+      insert into public.workspace_items(workspace_id, resource_id, order_index)
+      select recipient_workspace_id, target_resource_id, coalesce(max(order_index) + 1, 0)
+      from public.workspace_items where workspace_id = recipient_workspace_id
+      on conflict (workspace_id, resource_id) do nothing;
+      return jsonb_build_object('state', 'active', 'shareId', created_share_id,
+        'username', normalized_username, 'alreadyShared', true);
+    end if;
     insert into public.resource_shares(resource_id, user_id, can_invite, granted_by)
     values (target_resource_id, recipient.id, grant_can_invite, auth.uid())
     returning id into created_share_id;
@@ -565,7 +762,9 @@ declare actor_id uuid := auth.uid();
 begin
   if not public.is_account_approved(actor_id) or public.is_original_resource_owner(target_resource_id, actor_id)
   then raise exception 'resource owner cannot self-remove'; end if;
-  if not public.can_view_resource(target_resource_id, actor_id) then raise exception 'permission denied'; end if;
+  if not public.has_direct_resource_share(target_resource_id, actor_id) then
+    raise exception 'direct share not found';
+  end if;
   update public.resource_shares set revoked_at = now(), revoked_by = actor_id, revocation_reason = 'self_remove'
   where resource_id = target_resource_id and user_id = actor_id and revoked_at is null;
   delete from public.workspace_items
@@ -584,6 +783,7 @@ begin
   where id = target_resource_id and deleted_at is null returning * into trashed;
   if trashed.id is null then raise exception 'resource not found'; end if;
   update public.publications set is_active = false where page_id = target_resource_id;
+  perform public.touch_resource_audience(target_resource_id);
   return trashed;
 end;
 $$;
@@ -597,6 +797,7 @@ begin
   ) then raise exception 'permission denied'; end if;
   update public.pages set deleted_at = null, purge_after = null, deleted_by = null, is_archived = false
   where id = target_resource_id returning * into restored;
+  perform public.touch_resource_audience(target_resource_id);
   return restored;
 end;
 $$;
@@ -700,7 +901,13 @@ begin
     );
   update public.pending_resource_shares
   set accepted_by = target_user_id, accepted_at = now()
-  where username = target_profile.username and accepted_at is null and revoked_at is null and expires_at > now();
+  where username = target_profile.username and accepted_at is null and revoked_at is null and expires_at > now()
+    and exists (
+      select 1 from public.resource_shares rs
+      join public.pages p on p.id = rs.resource_id and p.deleted_at is null
+      where rs.resource_id = pending_resource_shares.resource_id
+        and rs.user_id = target_user_id and rs.revoked_at is null
+    );
   insert into public.workspace_items(workspace_id, resource_id, order_index)
   select target_workspace_id, rs.resource_id,
     row_number() over(order by rs.created_at)::integer - 1
@@ -997,10 +1204,10 @@ for update to authenticated using (exists (
 create policy "owners read resource publications" on public.publications
 for select to authenticated using (public.can_view_resource(page_id, auth.uid()));
 create policy "owners create resource publications" on public.publications
-for insert to authenticated with check (public.is_original_resource_owner(page_id, auth.uid()));
+for insert to authenticated with check (public.can_manage_resource_shares(page_id, auth.uid()));
 create policy "owners update resource publications" on public.publications
-for update to authenticated using (public.is_original_resource_owner(page_id, auth.uid()))
-with check (public.is_original_resource_owner(page_id, auth.uid()));
+for update to authenticated using (public.can_manage_resource_shares(page_id, auth.uid()))
+with check (public.can_manage_resource_shares(page_id, auth.uid()));
 
 create policy "owners manage private placement" on public.workspace_items
 for select to authenticated using (
@@ -1050,9 +1257,14 @@ for each row execute function public.set_updated_at();
 drop trigger if exists folder_items_set_updated_at on public.folder_items;
 create trigger folder_items_set_updated_at before update on public.folder_items
 for each row execute function public.set_updated_at();
+drop trigger if exists resource_shares_set_updated_at on public.resource_shares;
+create trigger resource_shares_set_updated_at before update on public.resource_shares
+for each row execute function public.set_updated_at();
 
 revoke execute on function public.is_account_approved(uuid) from public, anon;
 revoke execute on function public.is_site_admin(uuid) from public, anon;
+revoke execute on function public.is_workspace_member(uuid) from public, anon, authenticated;
+revoke execute on function public.is_workspace_owner(uuid) from public, anon, authenticated;
 revoke execute on function public.is_original_resource_owner(uuid, uuid) from public, anon;
 revoke execute on function public.has_direct_resource_share(uuid, uuid) from public, anon;
 revoke execute on function public.has_inherited_resource_access(uuid, uuid) from public, anon;
@@ -1062,6 +1274,7 @@ revoke execute on function public.can_invite_resource(uuid, uuid) from public, a
 revoke execute on function public.can_manage_resource_shares(uuid, uuid) from public, anon;
 revoke execute on function public.can_delete_resource(uuid, uuid) from public, anon;
 revoke execute on function public.personal_workspace_id(uuid) from public, anon;
+revoke execute on function public.touch_resource_audience(uuid) from public, anon, authenticated;
 revoke execute on function public.get_resource_permissions(uuid) from public, anon;
 revoke execute on function public.assert_no_folder_cycle(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public.handle_new_user() from public, anon, authenticated;
@@ -1085,15 +1298,18 @@ revoke execute on function public.purge_expired_resources() from public, anon, a
 
 grant execute on function public.is_account_approved(uuid) to authenticated;
 grant execute on function public.is_site_admin(uuid) to authenticated;
-revoke execute on function public.is_original_resource_owner(uuid, uuid) from authenticated;
-revoke execute on function public.has_direct_resource_share(uuid, uuid) from authenticated;
-revoke execute on function public.has_inherited_resource_access(uuid, uuid) from authenticated;
-revoke execute on function public.can_view_resource(uuid, uuid) from authenticated;
-revoke execute on function public.can_edit_resource(uuid, uuid) from authenticated;
-revoke execute on function public.can_invite_resource(uuid, uuid) from authenticated;
-revoke execute on function public.can_manage_resource_shares(uuid, uuid) from authenticated;
-revoke execute on function public.can_delete_resource(uuid, uuid) from authenticated;
-revoke execute on function public.personal_workspace_id(uuid) from authenticated;
+-- These helpers are referenced directly by RLS policies, so authenticated must be able
+-- to execute them. They expose boolean/UUID permission facts only; all data reads remain
+-- governed by RLS and all mutations remain in the checked RPCs below.
+grant execute on function public.is_original_resource_owner(uuid, uuid) to authenticated;
+grant execute on function public.has_direct_resource_share(uuid, uuid) to authenticated;
+grant execute on function public.has_inherited_resource_access(uuid, uuid) to authenticated;
+grant execute on function public.can_view_resource(uuid, uuid) to authenticated;
+grant execute on function public.can_edit_resource(uuid, uuid) to authenticated;
+grant execute on function public.can_invite_resource(uuid, uuid) to authenticated;
+grant execute on function public.can_manage_resource_shares(uuid, uuid) to authenticated;
+grant execute on function public.can_delete_resource(uuid, uuid) to authenticated;
+grant execute on function public.personal_workspace_id(uuid) to authenticated;
 grant execute on function public.get_resource_permissions(uuid) to authenticated;
 grant execute on function public.moderate_account(uuid, text) to authenticated;
 grant execute on function public.get_workspace_tree(uuid) to authenticated;

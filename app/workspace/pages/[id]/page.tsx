@@ -12,6 +12,8 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
   const supabase = await createSupabaseServerClient();
   const { data: page } = await supabase.from("pages").select("*").eq("id", id).eq("page_type", "log").is("deleted_at", null).maybeSingle();
   if (!page) notFound();
+  const { data: permissionData } = await supabase.rpc("get_resource_permissions", { target_resource_id: id });
+  const permissions = permissionData as { isOriginalOwner?: boolean; canSelfRemove?: boolean } | null;
   const { data: log } = await supabase.from("logs").select("id, import_report").eq("page_id", id).single();
   const [{ data: entries }, { data: publication }] = await Promise.all([
     supabase.from("log_entries").select("*").eq("log_id", log!.id).eq("is_deleted", false).order("order_index"),
@@ -26,6 +28,10 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
     }
     return { ...entry, raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null };
   });
-  const resourcePage = { ...page, is_original_owner: page.original_owner_id === session.user.id } as WorkspacePage;
+  const resourcePage = {
+    ...page,
+    is_original_owner: Boolean(permissions?.isOriginalOwner ?? page.original_owner_id === session.user.id),
+    can_self_remove: Boolean(permissions?.canSelfRemove)
+  } as WorkspacePage;
   return <LogEditor page={resourcePage} logId={log!.id} entries={safeEntries} publication={(publication as Publication | null) ?? null} importReport={(log?.import_report as ImportSummary | null) ?? null} />;
 }
