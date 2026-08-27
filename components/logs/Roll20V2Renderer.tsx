@@ -102,11 +102,11 @@ export function Roll20V2Renderer({ document }: { document: LogEntryDocument }) {
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
       {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" />}</div>}
       <div className="r20-message__body">
+        {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
         <div className="r20-message__content-flow">
           {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? undefined }}>{document.speaker!.name}:</strong>}
           {document.blocks.map((block) => <BlockView key={block.id} block={block} />)}
         </div>
-        {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
       </div>
     </article>
   );

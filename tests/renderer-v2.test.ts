@@ -35,6 +35,13 @@ test("renderer keeps continuation headers hidden and presents CoC labels without
   assert.doesNotMatch(html, />failure</);
 });
 
+test("explicit Roll20 timestamps render above the speaker and content flow", () => {
+  const result = importRoll20HtmlV2(topologyFixture);
+  const document = result.documents.find((item) => item.timestamp.raw)!;
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document }));
+  assert.ok(html.indexOf("r20-message__timestamp") < html.indexOf("r20-message__content-flow"));
+});
+
 test("Roll20 theme keeps messages frameless, descriptions centered, and dialogue avatar gutters fixed", () => {
   assert.match(themeCss, /\.log-entry-v2 \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff;/);
   assert.doesNotMatch(themeCss, /\.entry-wrap:nth-child\(even\) \.r20-message/);
