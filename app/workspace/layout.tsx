@@ -14,7 +14,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
 
   return (
     <div className="workspace-shell">
-      <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
+      <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} nickname={session.profile.display_name ?? session.profile.username} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
       <main className="workspace-main">{children}</main>
     </div>
   );

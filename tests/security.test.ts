@@ -5,14 +5,17 @@ import test from "node:test";
 const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/202608270002_personal_resources.sql", import.meta.url), "utf8");
 const hardeningMigration = readFileSync(new URL("../supabase/migrations/202608270003_personal_resources_hardening.sql", import.meta.url), "utf8");
+const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280003_workspace_settings.sql", import.meta.url), "utf8");
 const loginRoute = readFileSync(new URL("../app/api/login/route.ts", import.meta.url), "utf8");
 const signupRoute = readFileSync(new URL("../app/api/signup/route.ts", import.meta.url), "utf8");
 const adminHelper = readFileSync(new URL("../lib/admin-auth.ts", import.meta.url), "utf8");
 const memberRoute = readFileSync(new URL("../app/api/members/route.ts", import.meta.url), "utf8");
 const passwordRoute = readFileSync(new URL("../app/api/account/password/route.ts", import.meta.url), "utf8");
+const settingsRoute = readFileSync(new URL("../app/api/account/settings/route.ts", import.meta.url), "utf8");
 const childrenRoute = readFileSync(new URL("../app/api/resources/[id]/children/route.ts", import.meta.url), "utf8");
 const publicationRoute = readFileSync(new URL("../app/api/pages/[id]/publication/route.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const serverAuth = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
 const setPasswordPage = readFileSync(new URL("../app/set-password/page.tsx", import.meta.url), "utf8");
 
@@ -102,6 +105,20 @@ test("collaborator removal revokes share while owner deletion uses 30-day trash"
 test("legacy workspace member creation API is retired", () => {
   assert.match(memberRoute, /워크스페이스 멤버 기능은 종료되었습니다/);
   assert.doesNotMatch(memberRoute, /workspace_members.*insert|pending_accounts.*upsert/);
+});
+
+test("personal settings update only the approved account and its one owned workspace", () => {
+  assert.match(settingsMigration, /create or replace function public\.update_personal_settings/);
+  assert.match(settingsMigration, /is_account_approved\(actor_id\)/);
+  assert.match(settingsMigration, /where owner_id = actor_id[\s\S]*for update/);
+  assert.match(settingsMigration, /where id = actor_id/);
+  assert.match(settingsMigration, /display_name = normalized_nickname/);
+  assert.match(settingsRoute, /getAuthenticatedApiContext/);
+  assert.match(settingsRoute, /update_personal_settings/);
+  assert.doesNotMatch(sidebar, /onContextMenu/);
+  assert.match(sidebar, /aria-haspopup="menu"/);
+  assert.match(sidebar, />닉네임<input/);
+  assert.doesNotMatch(globalCss, /\.tree-more \{ visibility: hidden/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {

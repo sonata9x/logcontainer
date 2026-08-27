@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
+import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -11,10 +11,15 @@ type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void
 type ShareRow = { share_id: string; user_id: string | null; username: string; display_name: string | null; can_invite: boolean; state: "active" | "pending" };
 const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new Map());
 
-export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
+export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; nickname: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [currentWorkspaceName, setCurrentWorkspaceName] = useState(workspaceName);
+  const [currentNickname, setCurrentNickname] = useState(nickname);
   const [livePages, setLivePages] = useState(pages);
+  useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
+  useEffect(() => setCurrentNickname(nickname), [nickname]);
   useEffect(() => setLivePages(pages), [pages]);
   const reloadTree = useCallback(async () => {
     try {
@@ -61,14 +66,38 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmi
   async function logout() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login"); }
 
   return <aside className="workspace-sidebar">
-    <div className="workspace-title">{workspaceName}</div>
+    <div className="workspace-title">{currentWorkspaceName}</div>
     <div className="sidebar-create-actions">
       <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
     <PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider>
-    <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} />{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
+    <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
+    {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); setSettingsOpen(false); }} />}
   </aside>;
+}
+
+function WorkspaceSettingsDialog({ workspaceName, nickname, onClose, onSaved }: { workspaceName: string; nickname: string; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string }) => void }) {
+  const [nextWorkspaceName, setNextWorkspaceName] = useState(workspaceName);
+  const [nextNickname, setNextNickname] = useState(nickname);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/account/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceName: nextWorkspaceName, nickname: nextNickname }) });
+      const result = await response.json();
+      if (!response.ok) return setError(result.error ?? "설정을 저장하지 못했습니다.");
+      onSaved({ workspaceName: result.workspaceName, nickname: result.nickname });
+    } catch {
+      setError("설정을 저장하지 못했습니다.");
+    } finally {
+      setPending(false);
+    }
+  }
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기"><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스와 계정에 표시할 이름을 변경합니다.</p><form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending}>{pending ? "저장 중…" : "저장"}</button></div></form></section></div>;
 }
 
 function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {
@@ -88,11 +117,11 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); await reloadTree(); }
   async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); await reloadTree(); if (pathname === href) router.push("/workspace"); }
   async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
-  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""}`} style={{ paddingLeft }} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }}>
+  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""}`} style={{ paddingLeft }}>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
-    <button className="tree-more" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }} aria-label="메뉴"><MoreHorizontal size={14} /></button>
+    <button className="tree-more" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }} aria-label={`${page.title} 메뉴`} aria-haspopup="menu" title="메뉴"><MoreHorizontal size={14} /></button>
   </div>;
   return <div className={page.page_type === "folder" ? "tree-folder" : "tree-page"}>{row}{expanded && children.map((child) => <PageNode key={child.id} page={child} pages={pages} depth={depth + 1} createPage={createPage} reloadTree={reloadTree} />)}{menu && <ResourceMenu x={menu.x} y={menu.y} page={page} onClose={() => setMenu(null)} onRename={rename} onShare={() => { setMenu(null); setSharing(true); }} onMove={() => { setMenu(null); setMoving(true); }} onRemove={page.is_original_owner || page.can_self_remove ? remove : undefined} onRemoveFromFolder={page.tree_relation === "folder" ? removeFromFolder : undefined} />}{sharing && <ShareDialog page={page} onClose={() => setSharing(false)} />}{moving && <MoveDialog page={page} pages={pages} reloadTree={reloadTree} onClose={() => setMoving(false)} />}</div>;
 }
