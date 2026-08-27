@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { appendBlock, cloneLogDocument, duplicateBlock, editorTextToStyle, moveBlock, removeBlock, replaceBlock } from "../lib/logs/model/editor";
 import { projectDocumentText } from "../lib/logs/model/projection";
+import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets } from "../lib/logs/model/user-edit";
+import { sanitizeRichStyle } from "../lib/logs/rich/style";
 import { validateLogEntryDocument } from "../lib/logs/model/validate";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 
 const fixture = readFileSync(new URL("./fixtures/roll20/real-msgdata-anonymized.html", import.meta.url), "utf8");
+const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topology-v2.html", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
+const inlineEditorSource = readFileSync(new URL("../components/logs/InlineContentEditor.tsx", import.meta.url), "utf8");
+const contextMenuSource = readFileSync(new URL("../components/logs/EntryContextMenu.tsx", import.meta.url), "utf8");
 const updateRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 
 test("text-only v2 editing changes the document and projected content without mutating the original", () => {
@@ -46,10 +51,47 @@ test("Rich CSS editor output uses the common document sanitizer on save", () => 
   assert.deepEqual(validatedRich.nodes[0].style, [{ property: "color", value: "#fff" }, { property: "background-color", value: "#c2200e" }]);
 });
 
-test("v2 entries use document PATCH and snapshot revision restore instead of readonly content editing", () => {
-  assert.doesNotMatch(editorSource, /구조화된 v2 로그|v2-readonly-note|document_version === 2\) return/);
-  assert.match(editorSource, /document: revision\.previous_snapshot/);
-  assert.match(editorSource, /<V2LogEntryEditor/);
-  assert.match(updateRoute, /validateLogEntryDocument\(body\.document\)/);
+test("inline content edits preserve Rich CSS and all message metadata", () => {
+  const original = importRoll20HtmlV2(topologyFixture).documents.find((document) => document.source.messageId === "rich-flow-1")!;
+  const segment = editableTextSegments(original)[0];
+  const styles = styledContentTargets(original);
+  const edited = applyEditableTextChanges(original, [{ id: segment.id, text: "바뀐 표시 텍스트" }]);
+  assert.equal(editableTextSegments(edited)[0].text, "바뀐 표시 텍스트");
+  assert.deepEqual(styledContentTargets(edited).map(({ id, style }) => ({ id, style })), styles.map(({ id, style }) => ({ id, style })));
+  assert.deepEqual(edited.speaker, original.speaker);
+  assert.deepEqual(edited.timestamp, original.timestamp);
+  assert.deepEqual(edited.presentation, original.presentation);
+});
+
+test("Content CSS accepts Roll20-style strings and changes only an existing styled target", () => {
+  const original = importRoll20HtmlV2(topologyFixture).documents.find((document) => document.source.messageId === "rich-flow-1")!;
+  const targets = styledContentTargets(original);
+  assert.deepEqual(targets.map((target) => target.label), ["KPC", "주예담", "PC", "진희령"]);
+  const target = targets[0];
+  assert.ok(target);
+  const sanitized = sanitizeRichStyle("font-size: 12pt; position: absolute; width: 100%; top: 6px; left: 0px; display: block; text-decoration: none; color: #c2200e; background-image: linear-gradient(135deg, #C2200E, #1F1E20);");
+  assert.equal(sanitized.droppedCount, 0);
+  const edited = applyRichStyleChanges(original, [{ id: target.id, style: sanitized.style }]);
+  assert.deepEqual(styledContentTargets(edited).find((item) => item.id === target.id)?.style, sanitized.style);
+  assert.deepEqual(edited.speaker, original.speaker);
+  assert.deepEqual(edited.blocks.map((block) => block.type), original.blocks.map((block) => block.type));
+});
+
+test("v2 user UI exposes only inline text editing and context-menu actions", () => {
+  assert.match(editorSource, /<InlineContentEditor/);
+  assert.match(editorSource, /<EntryContextMenu/);
+  assert.doesNotMatch(editorSource, /V2LogEntryEditor|v2-add-block|블록 추가|화자 색|아바타 URL|결과 상태/);
+  assert.match(inlineEditorSource, /r20-editable-text/);
+  assert.match(contextMenuSource, /CSS 수정/);
+  assert.match(contextMenuSource, /수정 이력/);
+  assert.match(contextMenuSource, /원본 상태로 복원/);
+  assert.match(contextMenuSource, /삭제/);
+  assert.match(updateRoute, /contentEdits/);
+  assert.match(updateRoute, /styleEdits/);
+  assert.match(updateRoute, /styledContentTargets\(original\.document\)/);
+  assert.match(updateRoute, /restoreOriginal/);
+  assert.match(updateRoute, /entry\.original_document/);
+  assert.match(updateRoute, /revisionAction = "restore"/);
+  assert.match(updateRoute, /revisionId/);
   assert.match(updateRoute, /update_log_entry_document_v2/);
 });

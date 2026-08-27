@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
 import { projectDocumentText } from "@/lib/logs/model/projection";
+import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets, type EditableTextChange } from "@/lib/logs/model/user-edit";
+import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
@@ -11,19 +13,66 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const body = await request.json().catch(() => ({}));
   const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
   if (!log) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
-  const { data: entry } = await context.supabase.from("log_entries").select("id, raw_html, document_version, document").eq("id", entryId).eq("log_id", log.id).maybeSingle();
+  const { data: entry } = await context.supabase.from("log_entries").select("id, raw_html, document_version, document, original_document").eq("id", entryId).eq("log_id", log.id).maybeSingle();
   if (!entry) return NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
 
   if (entry.document_version === 2) {
-    const validated = validateLogEntryDocument(body.document);
+    const current = validateLogEntryDocument(entry.document);
+    if (!current.ok) return NextResponse.json({ error: "현재 문서 구조가 올바르지 않습니다." }, { status: 400 });
+    let nextDocument = current.document;
+    let revisionAction: "edit" | "restore" | "revert" = "edit";
+    const styleWarnings: string[] = [];
+
+    if (Array.isArray(body.contentEdits)) {
+      const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));
+      const changes: EditableTextChange[] = [];
+      for (const value of body.contentEdits) {
+        if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.text !== "string" || !allowed.has(value.id)) {
+          return NextResponse.json({ error: "수정할 수 없는 내용 영역입니다." }, { status: 400 });
+        }
+        if (value.text.length > 200_000) return NextResponse.json({ error: "메시지 내용이 너무 깁니다." }, { status: 400 });
+        changes.push({ id: value.id, text: value.text });
+      }
+      nextDocument = applyEditableTextChanges(current.document, changes);
+    } else if (Array.isArray(body.styleEdits)) {
+      const original = validateLogEntryDocument(entry.original_document);
+      if (!original.ok || original.document.source.platform !== "roll20") return NextResponse.json({ error: "Roll20 원본 CSS snapshot이 없습니다." }, { status: 400 });
+      const allowed = new Set(styledContentTargets(original.document).map((target) => target.id));
+      const changes = [];
+      for (const value of body.styleEdits) {
+        if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.css !== "string" || !allowed.has(value.id)) {
+          return NextResponse.json({ error: "Roll20 원본 Content CSS만 수정할 수 있습니다." }, { status: 400 });
+        }
+        if (value.css.length > 20_000) return NextResponse.json({ error: "CSS가 너무 깁니다." }, { status: 400 });
+        const sanitized = sanitizeRichStyle(value.css);
+        styleWarnings.push(...sanitized.warnings);
+        changes.push({ id: value.id, style: sanitized.style });
+      }
+      nextDocument = applyRichStyleChanges(current.document, changes);
+    } else if (body.restoreOriginal === true) {
+      const original = validateLogEntryDocument(entry.original_document);
+      if (!original.ok || original.document.source.platform !== "roll20") return NextResponse.json({ error: "복원할 import 원본 document가 없습니다." }, { status: 400 });
+      nextDocument = original.document;
+      revisionAction = "restore";
+    } else if (typeof body.revisionId === "string") {
+      const { data: revision } = await context.supabase.from("log_entry_revisions").select("previous_snapshot").eq("id", body.revisionId).eq("entry_id", entryId).maybeSingle();
+      const previous = validateLogEntryDocument(revision?.previous_snapshot);
+      if (!previous.ok) return NextResponse.json({ error: "복원할 revision snapshot이 없습니다." }, { status: 400 });
+      nextDocument = previous.document;
+      revisionAction = "revert";
+    } else {
+      return NextResponse.json({ error: "지원하지 않는 v2 편집 방식입니다." }, { status: 400 });
+    }
+
+    const validated = validateLogEntryDocument(nextDocument);
     if (!validated.ok) return NextResponse.json({ error: validated.error ?? "문서 구조가 올바르지 않습니다." }, { status: 400 });
     const content = projectDocumentText(validated.document);
     const { data, error } = await context.supabase.rpc("update_log_entry_document_v2", {
       target_page_id: id, target_entry_id: entryId, next_document: validated.document, next_content: content,
-      revision_action: body.revisionAction === "revert" ? "revert" : "edit",
+      revision_action: revisionAction,
       expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
     });
-    return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json(data);
+    return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: data, styleWarnings });
   }
   if (typeof body.content !== "string") return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });
 

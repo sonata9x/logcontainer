@@ -1,14 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Archive, Download, History, Plus, RotateCcw, Settings2, Trash2, X } from "lucide-react";
+import { Archive, Download, History, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { LogEntry, LogEntryRevision, Publication, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CorrectionSettings } from "@/lib/logs/corrections";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
-import { V2LogEntryEditor } from "@/components/logs/V2LogEntryEditor";
-import { cloneLogDocument } from "@/lib/logs/model/editor";
+import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
+import { EntryContextMenu } from "@/components/logs/EntryContextMenu";
+import { cloneLogDocument, styleToEditorText } from "@/lib/logs/model/editor";
+import { contentStyleMap, editableTextSegments, styledContentTargets } from "@/lib/logs/model/user-edit";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export type ImportSummary = {
@@ -157,8 +159,10 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(entry.document ? cloneLogDocument(entry.document) : null);
-  const [adding, setAdding] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCss, setShowCss] = useState(false);
+  const [cssDrafts, setCssDrafts] = useState<Array<{ id: string; label: string; css: string }>>([]);
   const [revisions, setRevisions] = useState<LogEntryRevision[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [editingVersion, setEditingVersion] = useState(entry.updated_at);
@@ -178,8 +182,14 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
   }
 
   async function save() {
+    let body: Record<string, unknown>;
+    if (entry.document_version === 2 && document && entry.document) {
+      const before = new Map(editableTextSegments(entry.document).map((segment) => [segment.id, segment.text]));
+      const contentEdits = editableTextSegments(document).filter((segment) => before.get(segment.id) !== segment.text);
+      if (!contentEdits.length) { setEditing(false); return; }
+      body = { contentEdits, expectedUpdatedAt: editingVersion };
+    } else body = { content, expectedUpdatedAt: editingVersion };
     setSaving(true);
-    const body = entry.document_version === 2 ? { document, expectedUpdatedAt: editingVersion } : { content, expectedUpdatedAt: editingVersion };
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     setSaving(false);
     if (!response.ok) { const result = await response.json(); return window.alert(result.error ?? "블록을 저장하지 못했습니다."); }
@@ -201,9 +211,7 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
   }
 
   async function loadHistory() {
-    const next = !showHistory;
-    setShowHistory(next);
-    if (!next) return;
+    setShowHistory(true);
     setLoadingHistory(true);
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`);
     const result = await response.json();
@@ -213,9 +221,8 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
   }
 
   async function revert(revision: LogEntryRevision) {
-    const body = entry.document_version === 2
-      ? { document: revision.previous_snapshot, revisionAction: "revert", expectedUpdatedAt: entry.updated_at }
-      : { content: revision.previous_content, revisionAction: "revert", expectedUpdatedAt: entry.updated_at };
+    if (!window.confirm("이 수정 이전 상태로 복원할까요? 현재 상태도 새 revision으로 기록됩니다.")) return;
+    const body = entry.document_version === 2 ? { revisionId: revision.id, expectedUpdatedAt: entry.updated_at } : { content: revision.previous_content, revisionAction: "revert", expectedUpdatedAt: entry.updated_at };
     if (entry.document_version === 2 && !revision.previous_snapshot) return window.alert("복원할 문서 snapshot이 없습니다.");
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!response.ok) return window.alert("이 버전으로 복원하지 못했습니다.");
@@ -225,20 +232,47 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
     router.refresh();
   }
 
-  async function add(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const response = await fetch(`/api/pages/${pageId}/entries`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ afterEntryId: entry.id, entryType: data.get("entryType"), speakerName: data.get("speakerName"), content: data.get("content") }) });
+  function openCssEditor() {
+    if (entry.original_document?.source.platform !== "roll20" || !entry.document) return;
+    const currentStyles = contentStyleMap(entry.document);
+    setCssDrafts(styledContentTargets(entry.original_document).map((target) => ({ id: target.id, label: target.label, css: styleToEditorText(currentStyles.get(target.id) ?? target.style) })));
+    setShowCss(true);
+  }
+
+  async function saveCss() {
+    setSaving(true);
+    const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ styleEdits: cssDrafts.map(({ id, css }) => ({ id, css })), expectedUpdatedAt: entry.updated_at }) });
     const result = await response.json();
-    if (!response.ok) return window.alert(result.error ?? "블록을 추가하지 못했습니다.");
-    setAdding(false);
+    setSaving(false);
+    if (!response.ok) return window.alert(result.error ?? "CSS를 저장하지 못했습니다.");
+    setShowCss(false);
+    if (result.styleWarnings?.length) window.alert("허용되지 않거나 잘못된 CSS 선언은 제외하고 저장했습니다.");
     router.refresh();
   }
 
-  if (editing && entry.document_version === 2 && document) return <V2LogEntryEditor document={document} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />;
+  async function restoreOriginal() {
+    if (!window.confirm("이 메시지를 최초 Roll20 import 상태로 복원할까요? 현재 상태도 수정 이력에 남습니다.")) return;
+    setSaving(true);
+    const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ restoreOriginal: true, expectedUpdatedAt: entry.updated_at }) });
+    const result = await response.json();
+    setSaving(false);
+    if (!response.ok) return window.alert(result.error ?? "원본 상태로 복원하지 못했습니다.");
+    router.refresh();
+  }
+
+  if (editing && entry.document_version === 2 && document) return <InlineContentEditor document={document} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />;
   if (editing) return <article className="log-entry"><label className="field">{entry.speaker_name ?? "내용"}<textarea value={content} onChange={(event) => setContent(event.target.value)} autoFocus /></label><button className="button button-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button> <button className="button" onClick={cancelEditing} disabled={saving}>취소</button></article>;
 
-  return <div className="entry-wrap"><article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={startEditing} title="더블클릭하여 수정">{entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}<div className="entry-controls"><button onClick={() => setAdding((value) => !value)} title="아래에 새 메시지 추가"><Plus size={14} /></button><button onClick={loadHistory} title="수정 이력"><History size={14} /></button><button onClick={remove} title="휴지통으로 이동"><Trash2 size={14} /></button></div></article>{adding && <form className="inline-add-form" onSubmit={add}><div className="inline-add-row"><select name="entryType"><option value="dialogue">대화</option><option value="system">지문</option></select><input name="speakerName" placeholder="화자명(선택)" /><input name="content" placeholder="새 메시지 내용" required /><button className="button button-primary">새 메시지 추가</button></div></form>}{showHistory && <div className="history-panel"><strong>수정 이력</strong>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{revision.action !== "delete" && revision.action !== "restore" && (entry.document_version !== 2 || Boolean(revision.previous_snapshot)) && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 버전으로 복원</button>}</div>) : <p>아직 수정 이력이 없습니다.</p>}</div>}</div>;
+  const hasRoll20Original = entry.original_document?.source.platform === "roll20";
+  const canEditCss = Boolean(entry.document && hasRoll20Original && entry.original_document && styledContentTargets(entry.original_document).length);
+  return <div className="entry-wrap">
+    <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={startEditing} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }} title="더블클릭: 내용 수정 · 우클릭: 부가 기능">
+      {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
+    </article>
+    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {showCss && <div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>Roll20 원본 Content CSS만 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div>}
+    {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || Boolean(revision.previous_snapshot)) && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div>}
+  </div>;
 }
 
 function TrashPanel({ pageId }: { pageId: string }) {

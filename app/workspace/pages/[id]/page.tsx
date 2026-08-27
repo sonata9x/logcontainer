@@ -21,7 +21,8 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
   const safeEntries = ((entries ?? []) as LogEntry[]).map((entry) => {
     if (entry.document_version === 2 && entry.document) {
       const validated = validateLogEntryDocument(entry.document);
-      if (validated.ok) return { ...entry, document: validated.document, raw_html: null };
+      const original = validateLogEntryDocument(entry.original_document);
+      if (validated.ok) return { ...entry, document: validated.document, original_document: original.ok ? original.document : null, raw_html: null };
     }
     return { ...entry, raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null };
   });
