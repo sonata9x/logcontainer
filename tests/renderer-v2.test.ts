@@ -7,13 +7,35 @@ import { Roll20V2Renderer } from "../components/logs/Roll20V2Renderer";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 
 const fixture = readFileSync(new URL("./fixtures/roll20/rendered-v2-cases.html", import.meta.url), "utf8");
+const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topology-v2.html", import.meta.url), "utf8");
 
 test("v2 renderer emits only service-owned Roll20 classes and structured content", () => {
   const result = importRoll20HtmlV2(fixture, { removeDuplicateMessages: true });
   const html = result.documents.map((document) => renderToStaticMarkup(createElement(Roll20V2Renderer, { document }))).join("");
   assert.match(html, /class="r20-message/);
   assert.match(html, /class="r20-inline-roll/);
-  assert.match(html, /class="log-rich-context r20-rich-context"/);
+  assert.match(html, /class="log-rich-context r20-rich-context /);
   assert.doesNotMatch(html, /class="message|class="by|inlinerollresult|sheet-rolltemplate/);
   assert.doesNotMatch(html, /<script|javascript:|position:fixed|position:sticky/i);
+});
+
+test("renderer keeps continuation headers hidden and presents CoC labels without internal identifiers", () => {
+  const result = importRoll20HtmlV2(topologyFixture);
+  const html = result.documents.map((document) => renderToStaticMarkup(createElement(Roll20V2Renderer, { document }))).join("");
+  assert.equal((html.match(/>GM:<\/strong>/g) ?? []).length, 3);
+  assert.match(html, /관찰력/);
+  assert.match(html, /기준치/);
+  assert.match(html, /65 \/ 32 \/ 13/);
+  assert.match(html, /판정결과/);
+  assert.match(html, />실패</);
+  assert.doesNotMatch(html, />coc-1</);
+  assert.doesNotMatch(html, />failure</);
+});
+
+test("image alt remains alternative text and is not rendered as a caption", () => {
+  const result = importRoll20HtmlV2(topologyFixture);
+  const document = result.documents.find((item) => item.source.messageId === "alt-image-1")!;
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document }));
+  assert.match(html, /alt="인트로"/);
+  assert.doesNotMatch(html, /<figcaption>인트로<\/figcaption>/);
 });

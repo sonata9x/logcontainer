@@ -8,6 +8,7 @@ export function createManualLogEntryDocument(kind: LogEntryDocument["kind"], spe
     source: { platform: "manual", messageId: null, sourceKey: null, sourceOrder: null },
     speaker: speakerName ? { name: speakerName.replace(/[:：]\s*$/, ""), color: null, avatarUrl: null } : null,
     timestamp: { raw: null, iso: null },
+    presentation: { speakerExplicit: Boolean(speakerName), avatarExplicit: false, timestampExplicit: false, continuation: false },
     blocks: [{ id: `text_${randomUUID()}`, type: "text", text }],
     warnings: []
   };

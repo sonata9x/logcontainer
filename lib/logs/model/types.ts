@@ -45,6 +45,7 @@ export type ImageBlock = {
   src: string;
   href: string | null;
   alt: string | null;
+  caption?: string | null;
   display?: ImageDisplay;
 };
 
@@ -97,6 +98,7 @@ export type RollTemplateBlock = {
   title: string | null;
   fields: RollTemplateField[];
   resultLevel: "critical" | "extreme" | "hard" | "success" | "failure" | "fumble" | null;
+  resultLabel?: string | null;
   fallbackText: string;
 };
 
@@ -119,6 +121,13 @@ export type LogEntryDocument = {
   timestamp: {
     raw: string | null;
     iso: string | null;
+  };
+  presentation?: {
+    speakerExplicit: boolean;
+    avatarExplicit: boolean;
+    timestampExplicit: boolean;
+    continuation: boolean;
+    selfMessage?: boolean;
   };
   blocks: LogBlock[];
   warnings: ParserWarning[];

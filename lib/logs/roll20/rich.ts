@@ -45,7 +45,7 @@ export function parseRichHtml(html: string, seed: string): RichParseResult {
     if (/(?:^|\s)inlinerollresult(?:\s|$)/.test(classValue)) {
       const value = wrapped.text().trim();
       const index = Number(wrapped.attr("data-roll-index") ?? 0);
-      return [{ id: stableRoll20Id("richroll", seed, path, value), type: "inline-roll", roll: inlineRollFromSource(undefined, index, `${seed}:${path}`, classValue, value) }];
+      return [{ id: stableRoll20Id("richroll", seed, path, value), type: "inline-roll", roll: inlineRollFromSource(undefined, index, `${seed}:${path}`, classValue, value, wrapped.attr("title")) }];
     }
     if (isRoll20GeneratedSubtree(classValue)) {
       return element.children.flatMap((child, index) => parseNode(child, `${path}.${index}`));

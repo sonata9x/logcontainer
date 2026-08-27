@@ -1,6 +1,10 @@
 /* eslint-disable @next/next/no-img-element -- imported Roll20 URLs are arbitrary HTTPS resources and cannot use a fixed Next image allowlist */
 import React, { type CSSProperties, type ReactNode } from "react";
-import type { InlineRollBlock, LogBlock, LogEntryDocument, RichNode, RichStyle } from "@/lib/logs/model/types";
+import type { InlineRollBlock, LogBlock, LogEntryDocument, RichNode, RichStyle, RollTemplateBlock, RollTemplateField } from "@/lib/logs/model/types";
+
+function localizedResultLabel(level: RollTemplateBlock["resultLevel"]) {
+  return level ? ({ critical: "대성공", extreme: "극단적 성공", hard: "어려운 성공", success: "성공", failure: "실패", fumble: "대실패" } as const)[level] : null;
+}
 
 function reactProperty(property: string) {
   return property.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
@@ -35,35 +39,72 @@ function RichNodeView({ node }: { node: RichNode }): ReactNode {
   return <Tag {...props}>{children}</Tag>;
 }
 
+function richNeedsBlockFlow(nodes: RichNode[]): boolean {
+  return nodes.some((node) => node.type === "element" && (["div", "p", "blockquote", "pre"].includes(node.tag) || richNeedsBlockFlow(node.children)));
+}
+
+function RichBlockView({ block }: { block: Extract<LogBlock, { type: "rich" }> }) {
+  const blockFlow = richNeedsBlockFlow(block.nodes);
+  const Tag = blockFlow ? "div" : "span";
+  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} />)}</Tag>;
+}
+
+function fieldValue(field: RollTemplateField) {
+  return field.content.length ? field.content.map((part) => part.type === "text" ? <span key={part.id}>{part.text}</span> : <Roll20InlineRoll key={part.id} roll={part} />) : field.value;
+}
+
+function templateRows(block: RollTemplateBlock) {
+  if (block.system !== "coc7") return block.fields.map((field) => ({ key: field.id, label: field.label, value: fieldValue(field), result: field.key === "result" }));
+  const semantic = Object.fromEntries(block.fields.map((field) => [field.key, field]));
+  const consumed = new Set(["target", "hard", "extreme", "rolled", "result"]);
+  const rows: Array<{ key: string; label: string; value: ReactNode; result?: boolean }> = [];
+  if (semantic.target || semantic.hard || semantic.extreme) rows.push({ key: "thresholds", label: "기준치", value: [semantic.target?.value, semantic.hard?.value, semantic.extreme?.value].filter(Boolean).join(" / ") });
+  if (semantic.rolled) rows.push({ key: "rolled", label: "굴림", value: fieldValue(semantic.rolled) });
+  const resultLabel = block.resultLabel || semantic.result?.value || localizedResultLabel(block.resultLevel);
+  if (resultLabel) rows.push({ key: "result", label: "판정결과", value: resultLabel, result: true });
+  for (const field of block.fields) if (!consumed.has(field.key)) rows.push({ key: field.id, label: field.label, value: fieldValue(field) });
+  return rows;
+}
+
 function BlockView({ block }: { block: LogBlock }) {
   if (block.type === "text") return <span className="r20-text">{block.text}</span>;
   if (block.type === "inline-roll") return <Roll20InlineRoll roll={block} />;
   if (block.type === "image") {
     const style: CSSProperties = { width: block.display?.width ?? undefined, height: block.display?.height ?? undefined, minWidth: block.display?.minWidth ?? undefined, maxWidth: block.display?.maxWidth ?? undefined };
     const image = <img className="r20-image" src={block.src} alt={block.alt ?? ""} style={style} loading="lazy" />;
-    return <figure className={`r20-image-block r20-image-block--${block.display?.align ?? "left"}`}>{block.href ? <a href={block.href} target="_blank" rel="noopener noreferrer">{image}</a> : image}{block.alt && <figcaption>{block.alt}</figcaption>}</figure>;
+    return <figure className={`r20-image-block r20-image-block--${block.display?.align ?? "left"}`}>{block.href ? <a href={block.href} target="_blank" rel="noopener noreferrer">{image}</a> : image}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
   }
-  if (block.type === "rich") return <div className="log-rich-context r20-rich-context">{block.nodes.map((node) => <RichNodeView key={node.id} node={node} />)}</div>;
+  if (block.type === "rich") return <RichBlockView block={block} />;
+  const rows = templateRows(block);
+  const resultLabel = block.resultLabel || localizedResultLabel(block.resultLevel);
   return (
     <section className={`r20-template r20-template--${block.resultLevel ?? "normal"}`}>
-      {block.template && <div className="r20-template__kind">{block.template}</div>}
       {block.title && <h3 className="r20-template__title">{block.title}</h3>}
-      <table className="r20-template__table"><tbody>{block.fields.map((field) => <tr className="r20-template__field" key={field.id}><th>{field.label}</th><td>{field.content.length ? field.content.map((part) => part.type === "text" ? <span key={part.id}>{part.text}</span> : <Roll20InlineRoll key={part.id} roll={part} />) : field.value}</td></tr>)}</tbody></table>
-      {block.resultLevel && <div className="r20-template__result">{block.resultLevel}</div>}
+      <table className="r20-template__table"><tbody>{rows.map((row) => <tr className={`r20-template__field${row.result ? " r20-template__field--result" : ""}`} key={row.key}><th>{row.label}</th><td>{row.value}</td></tr>)}</tbody></table>
+      {!rows.some((row) => row.result) && resultLabel && <div className="r20-template__result">{resultLabel}</div>}
     </section>
   );
 }
 
 export function Roll20V2Renderer({ document }: { document: LogEntryDocument }) {
+  const presentation = document.presentation ?? {
+    speakerExplicit: Boolean(document.speaker?.name),
+    avatarExplicit: Boolean(document.speaker?.avatarUrl),
+    timestampExplicit: Boolean(document.timestamp.raw),
+    continuation: false
+  };
+  const showSpeaker = presentation.speakerExplicit && Boolean(document.speaker?.name);
+  const showAvatar = presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
+  const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
   return (
-    <article className={`r20-message r20-message--${document.kind}`}>
-      {document.speaker?.avatarUrl && <img className="r20-message__avatar" src={document.speaker.avatarUrl} alt="" loading="lazy" />}
+    <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
+      {showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" />}
       <div className="r20-message__body">
-        <div className="r20-message__line">
-          {document.speaker?.name && <strong className="r20-message__speaker" style={{ color: document.speaker.color ?? undefined }}>{document.speaker.name}:</strong>}
-          <div className="r20-message__content">{document.blocks.map((block) => <BlockView key={block.id} block={block} />)}</div>
+        <div className="r20-message__content-flow">
+          {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? undefined }}>{document.speaker!.name}:</strong>}
+          {document.blocks.map((block) => <BlockView key={block.id} block={block} />)}
         </div>
-        {document.timestamp.raw && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
+        {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
       </div>
     </article>
   );

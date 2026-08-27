@@ -53,7 +53,7 @@ function sanitizeBlock(block: unknown, warnings: ParserWarning[], path: string):
     const src = safeHttpsUrl(value.src, false);
     if (!src) { warnings.push({ code: "dropped-image", message: "안전하지 않은 이미지 URL을 제거했습니다.", path }); return null; }
     const display = value.display && typeof value.display === "object" ? value.display as Record<string, unknown> : {};
-    return { id, type: "image", src, href: safeHttpsUrl(value.href), alt: typeof value.alt === "string" ? value.alt : null, display: {
+    return { id, type: "image", src, href: safeHttpsUrl(value.href), alt: typeof value.alt === "string" ? value.alt : null, caption: typeof value.caption === "string" ? value.caption : null, display: {
       width: typeof display.width === "string" ? display.width : null, height: typeof display.height === "string" ? display.height : null,
       minWidth: typeof display.minWidth === "string" ? display.minWidth : null, maxWidth: typeof display.maxWidth === "string" ? display.maxWidth : null,
       align: ["left", "center", "right"].includes(String(display.align)) ? display.align as "left" | "center" | "right" : null
@@ -71,7 +71,7 @@ function sanitizeBlock(block: unknown, warnings: ParserWarning[], path: string):
     return [{ id: item.id, key: String(item.key ?? ""), label: String(item.label ?? item.key ?? ""), value: String(item.value ?? ""), content }];
   }) : [];
   const level = ["critical", "extreme", "hard", "success", "failure", "fumble"].includes(String(value.resultLevel)) ? value.resultLevel as Extract<LogBlock, { type: "roll-template" }>["resultLevel"] : null;
-  return { id, type: "roll-template", template: typeof value.template === "string" ? value.template : null, system: typeof value.system === "string" ? value.system : null, title: typeof value.title === "string" ? value.title : null, fields, resultLevel: level, fallbackText: String(value.fallbackText ?? "") };
+  return { id, type: "roll-template", template: typeof value.template === "string" ? value.template : null, system: typeof value.system === "string" ? value.system : null, title: typeof value.title === "string" ? value.title : null, fields, resultLevel: level, resultLabel: typeof value.resultLabel === "string" ? value.resultLabel.slice(0, 200) : null, fallbackText: String(value.fallbackText ?? "") };
 }
 
 export function validateLogEntryDocument(input: unknown) {
@@ -81,6 +81,7 @@ export function validateLogEntryDocument(input: unknown) {
   if (value.version !== 2 || !KINDS.has(String(value.kind)) || !Array.isArray(value.blocks)) return { ok: false as const, error: "unsupported document schema", warnings };
   const source = value.source && typeof value.source === "object" ? value.source as Record<string, unknown> : {};
   const timestamp = value.timestamp && typeof value.timestamp === "object" ? value.timestamp as Record<string, unknown> : {};
+  const presentation = value.presentation && typeof value.presentation === "object" ? value.presentation as Record<string, unknown> : null;
   const speakerValue = value.speaker && typeof value.speaker === "object" ? value.speaker as Record<string, unknown> : null;
   const blocks = value.blocks.map((block, index) => sanitizeBlock(block, warnings, `blocks[${index}]`)).filter((block): block is LogBlock => Boolean(block));
   const document: LogEntryDocument = {
@@ -88,6 +89,18 @@ export function validateLogEntryDocument(input: unknown) {
     source: { platform: source.platform === "manual" ? "manual" : "roll20", messageId: typeof source.messageId === "string" ? source.messageId : null, sourceKey: typeof source.sourceKey === "string" ? source.sourceKey : null, sourceOrder: typeof source.sourceOrder === "number" ? source.sourceOrder : null },
     speaker: speakerValue ? { name: typeof speakerValue.name === "string" ? speakerValue.name.replace(/[:：]\s*$/, "").slice(0, 200) : null, color: typeof speakerValue.color === "string" ? speakerValue.color : null, avatarUrl: safeHttpsUrl(speakerValue.avatarUrl) } : null,
     timestamp: { raw: typeof timestamp.raw === "string" ? timestamp.raw : null, iso: typeof timestamp.iso === "string" && !Number.isNaN(Date.parse(timestamp.iso)) ? new Date(timestamp.iso).toISOString() : null },
+    presentation: presentation ? {
+      speakerExplicit: presentation.speakerExplicit === true,
+      avatarExplicit: presentation.avatarExplicit === true,
+      timestampExplicit: presentation.timestampExplicit === true,
+      continuation: presentation.continuation === true,
+      ...(typeof presentation.selfMessage === "boolean" ? { selfMessage: presentation.selfMessage } : {})
+    } : {
+      speakerExplicit: Boolean(speakerValue && typeof speakerValue.name === "string" && speakerValue.name),
+      avatarExplicit: Boolean(speakerValue && typeof speakerValue.avatarUrl === "string" && speakerValue.avatarUrl),
+      timestampExplicit: Boolean(typeof timestamp.raw === "string" && timestamp.raw),
+      continuation: false
+    },
     blocks,
     warnings: [...(Array.isArray(value.warnings) ? value.warnings.filter((item): item is ParserWarning => Boolean(item && typeof item === "object" && typeof (item as ParserWarning).code === "string" && typeof (item as ParserWarning).message === "string")) : []), ...warnings]
   };

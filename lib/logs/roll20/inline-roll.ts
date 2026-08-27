@@ -10,11 +10,17 @@ export function inlineRollStateFromClasses(classes: string): InlineRollState {
   return "normal";
 }
 
-export function inlineRollFromSource(source: unknown, index: number, seed: string, classes = "", displayedValue?: string): InlineRollBlock {
+function expressionFromTooltip(tooltip: string | undefined) {
+  if (!tooltip) return null;
+  const rolling = tooltip.match(/^\s*Rolling\s+([\s\S]+?)\s*=\s*/i)?.[1]?.trim();
+  return rolling?.replace(/^\[\[|]]$/g, "").trim() || null;
+}
+
+export function inlineRollFromSource(source: unknown, index: number, seed: string, classes = "", displayedValue?: string, renderedTooltip?: string): InlineRollBlock {
   const roll = source && typeof source === "object" ? source as InlineRollSource : {};
   const total = roll.results?.total;
-  const expression = typeof roll.expression === "string" ? roll.expression : null;
+  const expression = typeof roll.expression === "string" ? roll.expression : expressionFromTooltip(renderedTooltip);
   const rawFormula = expression ?? (roll.results?.rolls ? JSON.stringify(roll.results.rolls) : null);
   const value = displayedValue?.trim() || (total == null ? `$[[${index}]]` : String(total));
-  return { id: stableRoll20Id("roll", seed, index, value), type: "inline-roll", value, expression, state: inlineRollStateFromClasses(classes), tooltip: expression, rawFormula };
+  return { id: stableRoll20Id("roll", seed, index, value), type: "inline-roll", value, expression, state: inlineRollStateFromClasses(classes), tooltip: renderedTooltip?.trim() || expression, rawFormula };
 }

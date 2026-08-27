@@ -16,7 +16,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (entry.document_version === 2) {
     const validated = validateLogEntryDocument(body.document);
-    if (!validated.ok) return NextResponse.json({ error: "v2 블록 편집기는 다음 단계에서 제공됩니다. 현재는 document 전체 요청만 허용됩니다." }, { status: 409 });
+    if (!validated.ok) return NextResponse.json({ error: validated.error ?? "문서 구조가 올바르지 않습니다." }, { status: 400 });
     const content = projectDocumentText(validated.document);
     const { data, error } = await context.supabase.rpc("update_log_entry_document_v2", {
       target_page_id: id, target_entry_id: entryId, next_document: validated.document, next_content: content,

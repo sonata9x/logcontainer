@@ -17,7 +17,8 @@ export function projectBlockText(block: LogBlock) {
   if (block.type === "inline-roll") return block.value;
   if (block.type === "image") return block.alt ?? "이미지";
   if (block.type === "rich") return block.nodes.map(richNodeText).join("");
-  return block.fallbackText || [block.title, ...block.fields.map(templateFieldText)].filter(Boolean).join(" / ");
+  const current = [block.title, ...block.fields.map(templateFieldText), block.fields.some((field) => field.key === "result") ? null : block.resultLabel].filter(Boolean).join(" / ");
+  return current || block.fallbackText;
 }
 
 export function projectDocumentText(document: LogEntryDocument) {

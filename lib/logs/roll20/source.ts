@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 
 export type Roll20SourceRecord = {
+  origin: "msgdata" | "rendered";
   sourceKey: string;
   sourceOrder: number;
   priority: number;
@@ -44,6 +45,7 @@ export function decodeRoll20MsgData(source: string): Roll20SourceRecord[] | null
       if (!sourceValue || typeof sourceValue !== "object" || Array.isArray(sourceValue)) return [];
       const value = sourceValue as Record<string, unknown>;
       const record: Roll20SourceRecord = {
+        origin: "msgdata",
         sourceKey,
         sourceOrder: ordinal++,
         priority: typeof value[".priority"] === "number" ? value[".priority"] : ordinal,
@@ -83,6 +85,7 @@ export function extractRenderedRoll20(source: string): Roll20SourceRecord[] {
     const node = $(element);
     const speaker = node.find(".by, .speaker, .author, .username, .name, .message-sender, .byline").first().text().replace(/[:：]\s*$/, "").trim() || null;
     return {
+      origin: "rendered" as const,
       sourceKey: `rendered-${index}`,
       sourceOrder: index,
       priority: index,
@@ -102,5 +105,8 @@ export function extractRenderedRoll20(source: string): Roll20SourceRecord[] {
 
 export function detectRoll20Source(source: string) {
   const msgdata = decodeRoll20MsgData(source);
-  return msgdata ? { format: "msgdata" as const, records: msgdata } : { format: "rendered_html_fragment" as const, records: extractRenderedRoll20(source) };
+  if (!msgdata) return { format: "rendered_html_fragment" as const, records: extractRenderedRoll20(source), renderedRecords: [] as Roll20SourceRecord[] };
+  let renderedRecords: Roll20SourceRecord[] = [];
+  try { renderedRecords = extractRenderedRoll20(source); } catch {}
+  return { format: "msgdata" as const, records: msgdata, renderedRecords };
 }
