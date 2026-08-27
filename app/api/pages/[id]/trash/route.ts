@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
+import { toLogEntryDto } from "@/lib/logs/dto";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -7,7 +9,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
   if (!log) return NextResponse.json({ entries: [] });
-  const { data, error } = await context.supabase.from("log_entries").select("*").eq("log_id", log.id).eq("is_deleted", true).order("deleted_at", { ascending: false });
+  const { data, error } = await context.supabase.from("log_entries").select("id, speaker_name, content, deleted_at").eq("log_id", log.id).eq("is_deleted", true).order("deleted_at", { ascending: false });
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ entries: data ?? [] });
 }
 
@@ -17,8 +19,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   const body = await request.json().catch(() => ({}));
   if (typeof body.entryId !== "string") return NextResponse.json({ error: "복원할 블록이 없습니다." }, { status: 400 });
-  const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
-  const { data: entry } = log ? await context.supabase.from("log_entries").select("document_version").eq("id", body.entryId).eq("log_id", log.id).maybeSingle() : { data: null };
-  const { data, error } = await context.supabase.rpc(entry?.document_version === 2 ? "set_log_entry_deleted_v2" : "set_log_entry_deleted", { target_page_id: id, target_entry_id: body.entryId, should_delete: false });
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data);
+  const { data, error } = await context.supabase.rpc("set_log_entry_deleted_v3", { target_page_id: id, target_entry_id: body.entryId, should_delete: false });
+  if (!error) revalidateTag("published-logs");
+  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }

@@ -42,19 +42,22 @@ function canonicalFingerprint(document: LogEntryDocument) {
 function compatibleTimestamp(left: LogEntryDocument, right: LogEntryDocument) {
   if (left.timestamp.iso && right.timestamp.iso) return left.timestamp.iso === right.timestamp.iso;
   if (left.timestamp.raw && right.timestamp.raw) return left.timestamp.raw === right.timestamp.raw;
-  return true;
+  return false;
 }
 
-export function filterErrorDuplicates(documents: LogEntryDocument[], enabled: boolean) {
-  if (!enabled) return { documents, errorDuplicateCount: 0 };
+export function filterErrorDuplicates(documents: LogEntryDocument[]) {
   const kept: LogEntryDocument[] = [];
+  const fingerprints = documents.map(canonicalFingerprint);
   let errorDuplicateCount = 0;
-  for (const document of documents) {
+  for (let index = 0; index < documents.length; index += 1) {
+    const document = documents[index];
     const previous = kept.at(-1);
+    const previousSourceIndex = index - 1;
     if (previous
       && previous.source.messageId !== document.source.messageId
       && compatibleTimestamp(previous, document)
-      && canonicalFingerprint(previous) === canonicalFingerprint(document)) {
+      && previousSourceIndex >= 0
+      && fingerprints[previousSourceIndex] === fingerprints[index]) {
       errorDuplicateCount += 1;
       continue;
     }

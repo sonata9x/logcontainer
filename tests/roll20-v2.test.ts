@@ -62,15 +62,12 @@ test("rendered continuation messages inherit semantic speaker across an interven
   assert.match(roll.tooltip ?? "", /^Rolling 3d6\*5/);
 });
 
-test("duplicate option removes only exact adjacent canonical messages across block types", () => {
-  const off = importRoll20HtmlV2(duplicateFixture, { removeDuplicateMessages: false });
-  const on = importRoll20HtmlV2(duplicateFixture, { removeDuplicateMessages: true });
-  assert.equal(off.report.structuralDuplicateCount, 0);
-  assert.equal(off.report.errorDuplicateCount, 0);
-  assert.equal(off.documents.length, 8);
-  assert.equal(on.report.errorDuplicateCount, 4);
-  assert.equal(on.documents.length, 4);
-  assert.deepEqual(on.documents.map((document) => document.blocks.map((block) => block.type)), [["text"], ["text", "inline-roll", "text"], ["rich"], ["roll-template"]]);
+test("high-confidence exact adjacent canonical duplicates are always normalized", () => {
+  const result = importRoll20HtmlV2(duplicateFixture);
+  assert.equal(result.report.structuralDuplicateCount, 0);
+  assert.equal(result.report.errorDuplicateCount, 4);
+  assert.equal(result.documents.length, 4);
+  assert.deepEqual(result.documents.map((document) => document.blocks.map((block) => block.type)), [["text"], ["text", "inline-roll", "text"], ["rich"], ["roll-template"]]);
 });
 
 test("adjacent styled fragments remain one RichBlock flow", () => {
@@ -107,12 +104,16 @@ test("msgdata semantic rolls are enriched with rendered presentation metadata", 
   assert.equal(roll.value, "7");
 });
 
-test("image error duplicate filter is conservative and option-controlled", () => {
-  const off = importRoll20HtmlV2(renderedFixture, { removeDuplicateMessages: false });
-  const on = importRoll20HtmlV2(renderedFixture, { removeDuplicateMessages: true });
-  assert.equal(off.report.errorDuplicateCount, 0);
-  assert.equal(on.report.errorDuplicateCount, 1);
-  assert.equal(off.documents.length - on.documents.length, 1);
+test("image error duplicate normalization remains conservative and automatic", () => {
+  const result = importRoll20HtmlV2(renderedFixture);
+  assert.equal(result.report.errorDuplicateCount, 0);
+  assert.equal(result.documents.filter((document) => document.source.messageId === "image-1" || document.source.messageId === "image-2").length, 2);
+});
+
+test("intentional adjacent repeated dialogue without matching timestamp evidence is preserved", () => {
+  const result = importRoll20HtmlV2('<div class="message general" data-messageid="a"><span class="by">GM:</span><span>다시!</span></div><div class="message general" data-messageid="b"><span class="by">GM:</span><span>다시!</span></div>');
+  assert.equal(result.report.errorDuplicateCount, 0);
+  assert.equal(result.documents.length, 2);
 });
 
 test("Rich CSS keeps ordered declarations and supported real-world values", () => {

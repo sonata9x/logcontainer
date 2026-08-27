@@ -24,3 +24,9 @@ export function projectBlockText(block: LogBlock) {
 export function projectDocumentText(document: LogEntryDocument) {
   return document.blocks.map(projectBlockText).join("").replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+export function isImageOnlyDocument(document: LogEntryDocument) {
+  return document.blocks.length > 0
+    && document.blocks.some((block) => block.type === "image")
+    && document.blocks.every((block) => block.type === "image" || (block.type === "text" && !block.text.trim()));
+}

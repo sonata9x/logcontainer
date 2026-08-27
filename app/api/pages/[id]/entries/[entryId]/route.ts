@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
-import { projectDocumentText } from "@/lib/logs/model/projection";
+import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
 import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets, type EditableTextChange } from "@/lib/logs/model/user-edit";
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
+import { toLogEntryDto } from "@/lib/logs/dto";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
@@ -35,7 +37,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       nextDocument = applyEditableTextChanges(current.document, changes);
     } else if (Array.isArray(body.styleEdits)) {
-      const original = validateLogEntryDocument(entry.original_document);
+      const original = validateLogEntryDocument(entry.original_document ?? entry.document);
       if (!original.ok || original.document.source.platform !== "roll20") return NextResponse.json({ error: "Roll20 원본 CSS snapshot이 없습니다." }, { status: 400 });
       const allowed = new Set(styledContentTargets(original.document).map((target) => target.id));
       const changes = [];
@@ -50,7 +52,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       nextDocument = applyRichStyleChanges(current.document, changes);
     } else if (body.restoreOriginal === true) {
-      const original = validateLogEntryDocument(entry.original_document);
+      const original = validateLogEntryDocument(entry.original_document ?? entry.document);
       if (!original.ok || original.document.source.platform !== "roll20") return NextResponse.json({ error: "복원할 import 원본 document가 없습니다." }, { status: 400 });
       nextDocument = original.document;
       revisionAction = "restore";
@@ -67,16 +69,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const validated = validateLogEntryDocument(nextDocument);
     if (!validated.ok) return NextResponse.json({ error: validated.error ?? "문서 구조가 올바르지 않습니다." }, { status: 400 });
     const content = projectDocumentText(validated.document);
-    const { data, error } = await context.supabase.rpc("update_log_entry_document_v2", {
+    const { data, error } = await context.supabase.rpc("update_log_entry_document_v3", {
       target_page_id: id, target_entry_id: entryId, next_document: validated.document, next_content: content,
+      next_has_image_content: isImageOnlyDocument(validated.document),
       revision_action: revisionAction,
       expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
     });
-    return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: data, styleWarnings });
+    if (!error) revalidateTag("published-logs");
+    return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings });
   }
   if (typeof body.content !== "string") return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });
 
-  const { data, error } = await context.supabase.rpc("update_log_entry_content", {
+  const { data, error } = await context.supabase.rpc("update_log_entry_content_v3", {
     target_page_id: id,
     target_entry_id: entryId,
     next_content: body.content,
@@ -84,14 +88,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     revision_action: body.revisionAction === "revert" ? "revert" : "edit",
     expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
   });
-  return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json(data);
+  if (!error) revalidateTag("published-logs");
+  return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
   const context = await getApiPageContext(id);
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
-  const { data, error } = await context.supabase.from("log_entry_revisions").select("*").eq("entry_id", entryId).order("created_at", { ascending: false }).limit(50);
+  if (new URL(request.url).searchParams.get("view") === "entry") {
+    const { data, error } = await context.supabase.rpc("get_log_entry_dto", { target_page_id: id, target_entry_id: entryId });
+    return error ? NextResponse.json({ error: error.message }, { status: 400 }) : data ? NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }) : NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
+  }
+  const { data, error } = await context.supabase.from("log_entry_revisions")
+    .select("id, entry_id, action, editor_id, previous_content, next_content, created_at, revision_schema_version")
+    .eq("entry_id", entryId).order("created_at", { ascending: false }).limit(50);
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ revisions: data ?? [] });
 }
 
@@ -99,8 +110,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id, entryId } = await params;
   const context = await getApiPageContext(id);
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
-  const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
-  const { data: entry } = log ? await context.supabase.from("log_entries").select("document_version").eq("id", entryId).eq("log_id", log.id).maybeSingle() : { data: null };
-  const { data, error } = await context.supabase.rpc(entry?.document_version === 2 ? "set_log_entry_deleted_v2" : "set_log_entry_deleted", { target_page_id: id, target_entry_id: entryId, should_delete: true });
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data);
+  const { data, error } = await context.supabase.rpc("set_log_entry_deleted_v3", { target_page_id: id, target_entry_id: entryId, should_delete: true });
+  if (!error) revalidateTag("published-logs");
+  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }

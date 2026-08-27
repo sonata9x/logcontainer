@@ -11,7 +11,7 @@ const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topolog
 const themeCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("v2 renderer emits only service-owned Roll20 classes and structured content", () => {
-  const result = importRoll20HtmlV2(fixture, { removeDuplicateMessages: true });
+  const result = importRoll20HtmlV2(fixture);
   const html = result.documents.map((document) => renderToStaticMarkup(createElement(Roll20V2Renderer, { document }))).join("");
   assert.match(html, /class="r20-message/);
   assert.match(html, /class="r20-inline-roll/);

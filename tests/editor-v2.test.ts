@@ -93,5 +93,6 @@ test("v2 user UI exposes only inline text editing and context-menu actions", () 
   assert.match(updateRoute, /entry\.original_document/);
   assert.match(updateRoute, /revisionAction = "restore"/);
   assert.match(updateRoute, /revisionId/);
-  assert.match(updateRoute, /update_log_entry_document_v2/);
+  assert.match(updateRoute, /entry\.original_document \?\? entry\.document/);
+  assert.match(updateRoute, /update_log_entry_document_v3/);
 });

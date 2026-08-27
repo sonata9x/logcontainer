@@ -21,8 +21,9 @@ export async function middleware(request: NextRequest) {
     }
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user && request.nextUrl.pathname.startsWith("/workspace")) {
+  if (request.nextUrl.pathname.startsWith("/workspace")) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return response;
     const { data: approved } = await supabase.rpc("is_account_approved", { target_user_id: user.id });
     if (!approved) {
       const loginUrl = request.nextUrl.clone();
@@ -34,11 +35,10 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/p/")) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
     response.headers.set("Referrer-Policy", "no-referrer");
-    response.headers.set("Cache-Control", "private, no-store, max-age=0");
   }
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"]
+  matcher: ["/workspace/:path*", "/p/:path*"]
 };

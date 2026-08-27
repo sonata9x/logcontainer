@@ -1,25 +1,10 @@
-import * as cheerio from "cheerio";
 import type { ParserWarning } from "@/lib/logs/model/types";
 import type { Roll20SourceRecord } from "./source";
-import { ROLL20_HEADER_SELECTOR } from "./generated-ui";
 
 const NEARBY_DOM_DISTANCE = 4;
 
-function renderedMessage(record: Roll20SourceRecord) {
-  const $ = cheerio.load(record.renderedHtml ?? "", null, false);
-  return { $, message: $(".message").first() };
-}
-
 export function renderedSemanticPayload(record: Roll20SourceRecord) {
-  if (!record.renderedHtml) return `${record.content || record.htmlContent}`.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-  const { $, message } = renderedMessage(record);
-  const content = message.clone();
-  content.find(ROLL20_HEADER_SELECTOR).remove();
-  const text = content.text().replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-  const images = content.find("img[src]").toArray().map((element) => $(element).attr("src") ?? "");
-  const rolls = content.find(".inlinerollresult").toArray().map((element) => `${$(element).text().trim()}@${$(element).attr("title") ?? ""}`);
-  const templates = content.find("[class*='sheet-rolltemplate-']").toArray().map((element) => $(element).attr("class") ?? "");
-  return [text, ...images, ...rolls, ...templates].filter(Boolean).join("\n");
+  return record.semanticPayload ?? `${record.content || record.htmlContent}`.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function compatibleContent(left: string, right: string) {
@@ -29,11 +14,7 @@ function compatibleContent(left: string, right: string) {
 }
 
 function headerScore(record: Roll20SourceRecord) {
-  if (!record.renderedHtml) return record.who ? 1 : 0;
-  const { message } = renderedMessage(record);
-  return Number(Boolean(record.who)) * 4
-    + Number(message.find(".avatar, .character-avatar, img.avatar, img.character-avatar").length > 0) * 2
-    + Number(message.find(".tstamp, .timestamp, time").length > 0);
+  return record.headerScore || (record.who ? 1 : 0);
 }
 
 function shouldConsiderPair(records: Roll20SourceRecord[], leftIndex: number, rightIndex: number) {
@@ -50,12 +31,20 @@ export function normalizeLogicalMessages(records: Roll20SourceRecord[]) {
   const consumed = new Set<number>();
   const normalized: Roll20SourceRecord[] = [];
 
+  const byMessageId = new Map<string, number[]>();
+  records.forEach((record, index) => {
+    if (!record.renderedHtml || !record.messageId) return;
+    const group = byMessageId.get(record.messageId) ?? [];
+    group.push(index);
+    byMessageId.set(record.messageId, group);
+  });
+
   records.forEach((record, index) => {
     if (consumed.has(index) || !record.renderedHtml || !record.messageId) {
       if (!consumed.has(index)) normalized.push(record);
       return;
     }
-    const indexes = [index, ...records.map((_candidate, candidateIndex) => candidateIndex)
+    const indexes = [index, ...(byMessageId.get(record.messageId) ?? [])
       .filter((candidateIndex) => candidateIndex > index && !consumed.has(candidateIndex) && shouldConsiderPair(records, index, candidateIndex))];
     if (indexes.length === 1) { normalized.push(record); return; }
 

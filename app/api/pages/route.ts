@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   const context = await getApiWorkspaceContext(workspaceId);
   if (!context) return NextResponse.json({ error: "권한이 없습니다." }, { status: 401 });
-  const { data, error } = await context.supabase.from("pages").select("*").eq("original_owner_id", context.user.id).not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+  const { data, error } = await context.supabase.from("pages").select("id, page_type, title, icon, deleted_at, purge_after").eq("original_owner_id", context.user.id).not("deleted_at", "is", null).order("deleted_at", { ascending: false });
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ pages: data ?? [] });
 }
 

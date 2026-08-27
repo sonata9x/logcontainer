@@ -25,19 +25,31 @@
 ## 현재 구현
 
 - Roll20 `msgdata` 및 렌더링 HTML 가져오기
-- 선택적 hidden message/동일 message ID 정리
+- 선택적 hidden message 제거와 항상 적용되는 구조·고신뢰 오류 중복 정규화
 - inline roll, 시트 템플릿, 이미지 링크 렌더링
-- 원본 HTML 가져오기 이력과 다운로드
+- private Storage의 gzip 원본 HTML archive와 권한 검사 다운로드
 - 원문을 바꾸지 않는 TXT 교정 설정과 내보내기
 - 원본 디자인을 보존한 블록 편집
 - 블록 추가, 휴지통, 복원, 수정 이력, 이전 내용 복구
-- 동시 수정 충돌 방지와 공동 편집 실시간 갱신
+- 동시 수정 충돌 방지와 entry 단위 lightweight Realtime 갱신
 - 중첩 폴더와 로그 페이지 트리
 - 이메일 없는 아이디 로그인과 4자 이상 비밀번호
 - 자유 가입 신청, 사이트 관리자 승인/거절, 승인 계정별 개인 Workspace
 - Page/Folder 단위 공유, 공유 Folder 권한 상속, 사용자별 Workspace 배치
 - 초대 권한 위임 제한, 공유 self-remove/revoke/reshare, original owner의 30일 휴지통
 - 12자 난수 링크를 사용하는 단일 로그 게시·게시 중단·링크 재발급
+- 200개 cursor pagination, sparse sort key, copy-on-write 원본과 compact revision
+
+## 기존 로그 데이터 최적화
+
+`202608270004_log_performance.sql` 적용 후에는 신규 import부터 PostgreSQL에 원본 HTML과 중복 canonical snapshot을 저장하지 않습니다. 기존 데이터는 먼저 dry-run으로 확인한 뒤 명시적으로 이전합니다.
+
+```powershell
+npm run backfill:log-storage
+npm run backfill:log-storage -- --apply
+```
+
+이 작업은 `SUPABASE_SERVICE_ROLE_KEY`가 필요하며 raw HTML과 이전 generation을 private Storage로 옮긴 뒤에만 legacy DB payload를 비웁니다.
 
 사용자는 실제 이메일을 입력하거나 인증하지 않습니다. Supabase Auth 호환을 위한 임의 내부 주소와 파생 비밀번호는 서버에서만 처리하며 화면과 프로필에는 노출하지 않습니다.
 

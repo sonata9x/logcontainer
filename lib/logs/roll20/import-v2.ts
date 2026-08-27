@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { projectDocumentText } from "@/lib/logs/model/projection";
+import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
 import type { LogEntryDocument, ParserWarning, Roll20ImportReportV2 } from "@/lib/logs/model/types";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { parseRoll20Blocks } from "./blocks";
@@ -7,7 +7,7 @@ import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
 
-export type Roll20ImportOptionsV2 = { removeHiddenMessages?: boolean; removeDuplicateMessages?: boolean };
+export type Roll20ImportOptionsV2 = { removeHiddenMessages?: boolean };
 
 function kind(record: Roll20SourceRecord): LogEntryDocument["kind"] {
   if (["desc", "emote"].includes(record.type)) return "description";
@@ -16,19 +16,7 @@ function kind(record: Roll20SourceRecord): LogEntryDocument["kind"] {
 }
 
 function renderedMetadata(record: Roll20SourceRecord) {
-  if (!record.renderedHtml) return { avatarUrl: null, color: null, speakerName: null, speakerExplicit: Boolean(record.who), avatarExplicit: false, timestampExplicit: false, selfMessage: false, timestampRaw: null, timestampIso: null };
-  const $ = cheerio.load(record.renderedHtml, null, false);
-  const message = $(".message").first();
-  const avatarValue = $(".avatar img, .character-avatar img, img.avatar, img.character-avatar").first().attr("src");
-  let avatarUrl: string | null = null;
-  try { if (avatarValue) { const url = new URL(avatarValue); if (url.protocol === "https:") avatarUrl = url.href; } } catch {}
-  const speakerStyle = $(".by, .speaker").first().attr("style") ?? "";
-  const color = speakerStyle.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i)?.[1]?.trim() ?? null;
-  const speakerName = $(".by, .speaker, .author, .username, .name, .message-sender, .byline").first().text().replace(/[:：]\s*$/, "").trim() || null;
-  const timestampRaw = $(".tstamp, .timestamp, time").first().text().trim() || null;
-  let timestampIso: string | null = null;
-  if (timestampRaw && !Number.isNaN(Date.parse(timestampRaw))) timestampIso = new Date(timestampRaw).toISOString();
-  return { avatarUrl, color, speakerName, speakerExplicit: Boolean(speakerName), avatarExplicit: Boolean(avatarValue), timestampExplicit: Boolean(timestampRaw), selfMessage: message.hasClass("you"), timestampRaw, timestampIso };
+  return record.renderedMetadata ?? { avatarUrl: null, color: null, speakerName: null, speakerExplicit: Boolean(record.who), avatarExplicit: false, timestampExplicit: false, selfMessage: false, timestampRaw: null, timestampIso: null };
 }
 
 function plainSourceText(record: Roll20SourceRecord) {
@@ -37,15 +25,33 @@ function plainSourceText(record: Roll20SourceRecord) {
   return cheerio.load(html, null, false).root().text().replace(/\s+/g, " ").trim();
 }
 
+function semanticMatchKey(value: string) {
+  return value.toLocaleLowerCase().replace(/\d+(?:\.\d+)?/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 function enrichMsgdataRecords(msgdata: Roll20SourceRecord[], rendered: Roll20SourceRecord[], warnings: ParserWarning[]) {
   const unused = new Set(rendered.map((_record, index) => index));
+  const byMessageId = new Map<string, number[]>();
+  const bySemanticText = new Map<string, number[]>();
+  rendered.forEach((candidate, index) => {
+    if (candidate.messageId) {
+      const ids = byMessageId.get(candidate.messageId) ?? [];
+      ids.push(index); byMessageId.set(candidate.messageId, ids);
+    }
+    const semantic = semanticMatchKey(renderedSemanticPayload(candidate));
+    if (semantic) {
+      const indexes = bySemanticText.get(semantic) ?? [];
+      indexes.push(index); bySemanticText.set(semantic, indexes);
+    }
+  });
   const enriched = msgdata.map((record) => {
-    let matchIndex = rendered.findIndex((candidate, index) => unused.has(index) && Boolean(candidate.messageId) && (candidate.messageId === record.messageId || candidate.messageId === record.sourceKey));
+    const direct = [...(record.messageId ? byMessageId.get(record.messageId) ?? [] : []), ...(byMessageId.get(record.sourceKey) ?? [])];
+    let matchIndex = direct.find((index) => unused.has(index)) ?? -1;
     if (matchIndex < 0) {
       const sourceText = plainSourceText(record);
       if (sourceText) {
-        const matches = rendered.map((candidate, index) => ({ candidate, index })).filter(({ candidate, index }) => unused.has(index) && renderedSemanticPayload(candidate).includes(sourceText));
-        if (matches.length === 1) matchIndex = matches[0].index;
+        const exact = (bySemanticText.get(semanticMatchKey(sourceText)) ?? []).filter((index) => unused.has(index));
+        if (exact.length === 1) matchIndex = exact[0];
       }
     }
     if (matchIndex < 0) return record;
@@ -57,6 +63,9 @@ function enrichMsgdataRecords(msgdata: Roll20SourceRecord[], rendered: Roll20Sou
       renderedHtml: candidate.renderedHtml,
       structuralLane: candidate.structuralLane,
       alternateHtml: [...record.alternateHtml, ...candidate.alternateHtml]
+      ,renderedMetadata: candidate.renderedMetadata
+      ,semanticPayload: candidate.semanticPayload
+      ,headerScore: candidate.headerScore
     };
   });
   if (unused.size) warnings.push({ code: "rendered-enrichment-unmatched", message: `rendered DOM ${unused.size}개를 msgdata와 안전하게 연결하지 못해 msgdata 원문을 유지했습니다.` });
@@ -119,7 +128,7 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     if (documentKind === "dialogue" && speaker?.name) previousDialogueSpeaker = speaker;
     else if (documentKind === "system") previousDialogueSpeaker = null;
   }
-  const duplicates = filterErrorDuplicates(parsedDocuments, options.removeDuplicateMessages === true);
+  const duplicates = filterErrorDuplicates(parsedDocuments);
   const documents = duplicates.documents.map((document) => {
     const validated = validateLogEntryDocument(document);
     if (!validated.ok) throw new Error(validated.error);
@@ -141,12 +150,14 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
       speaker_name: document.speaker?.name ?? null,
       speaker_color: document.speaker?.color ?? null,
       content: projectDocumentText(document),
-      original_content: projectDocumentText(document),
+      original_content: null,
       raw_html: null,
       document_version: 2,
       document,
-      original_document: document,
-      metadata: { roll20MessageId: document.source.messageId, parserVersion: 2, warnings: document.warnings }
+      original_document: null,
+      sort_key: (orderIndex + 1) * 1_000_000,
+      has_image_content: isImageOnlyDocument(document),
+      metadata: {}
     })),
     report
   };

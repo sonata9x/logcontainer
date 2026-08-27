@@ -1,4 +1,17 @@
 import * as cheerio from "cheerio";
+import { ROLL20_HEADER_SELECTOR } from "./generated-ui";
+
+export type RenderedRecordMetadata = {
+  avatarUrl: string | null;
+  color: string | null;
+  speakerName: string | null;
+  speakerExplicit: boolean;
+  avatarExplicit: boolean;
+  timestampExplicit: boolean;
+  selfMessage: boolean;
+  timestampRaw: string | null;
+  timestampIso: string | null;
+};
 
 export type Roll20SourceRecord = {
   origin: "msgdata" | "rendered";
@@ -15,6 +28,9 @@ export type Roll20SourceRecord = {
   renderedHtml: string | null;
   structuralLane: string | null;
   alternateHtml: string[];
+  renderedMetadata: RenderedRecordMetadata | null;
+  semanticPayload: string | null;
+  headerScore: number;
 };
 
 function normalizeText(value: unknown) {
@@ -59,6 +75,9 @@ export function decodeRoll20MsgData(source: string): Roll20SourceRecord[] | null
         renderedHtml: null,
         structuralLane: null,
         alternateHtml: []
+        ,renderedMetadata: null
+        ,semanticPayload: null
+        ,headerScore: 0
       };
       return [record];
     });
@@ -84,6 +103,25 @@ export function extractRenderedRoll20(source: string): Roll20SourceRecord[] {
   return elements.map((element, index) => {
     const node = $(element);
     const speaker = node.find(".by, .speaker, .author, .username, .name, .message-sender, .byline").first().text().replace(/[:：]\s*$/, "").trim() || null;
+    const avatarValue = node.find(".avatar img, .character-avatar img, img.avatar, img.character-avatar").first().attr("src");
+    let avatarUrl: string | null = null;
+    try { if (avatarValue) { const url = new URL(avatarValue); if (url.protocol === "https:") avatarUrl = url.href; } } catch {}
+    const speakerStyle = node.find(".by, .speaker").first().attr("style") ?? "";
+    const color = speakerStyle.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i)?.[1]?.trim() ?? null;
+    const timestampRaw = node.find(".tstamp, .timestamp, time").first().text().trim() || null;
+    const timestampIso = timestampRaw && !Number.isNaN(Date.parse(timestampRaw)) ? new Date(timestampRaw).toISOString() : null;
+    const content = node.clone();
+    content.find(ROLL20_HEADER_SELECTOR).remove();
+    const semanticText = content.text().replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+    const images = content.find("img[src]").toArray().map((item) => $(item).attr("src") ?? "");
+    const rolls = content.find(".inlinerollresult").toArray().map((item) => `${$(item).text().trim()}@${$(item).attr("title") ?? ""}`);
+    const templates = content.find("[class*='sheet-rolltemplate-']").toArray().map((item) => $(item).attr("class") ?? "");
+    const semanticPayload = [semanticText, ...images, ...rolls, ...templates].filter(Boolean).join("\n");
+    const metadata: RenderedRecordMetadata = {
+      avatarUrl, color, speakerName: speaker, speakerExplicit: Boolean(speaker),
+      avatarExplicit: Boolean(avatarValue), timestampExplicit: Boolean(timestampRaw),
+      selfMessage: node.hasClass("you"), timestampRaw, timestampIso
+    };
     return {
       origin: "rendered" as const,
       sourceKey: `rendered-${index}`,
@@ -99,6 +137,9 @@ export function extractRenderedRoll20(source: string): Roll20SourceRecord[] {
       renderedHtml: $.html(element),
       structuralLane: structuralLane($, element),
       alternateHtml: []
+      ,renderedMetadata: metadata
+      ,semanticPayload
+      ,headerScore: Number(Boolean(speaker)) * 4 + Number(Boolean(avatarValue)) * 2 + Number(Boolean(timestampRaw))
     };
   });
 }

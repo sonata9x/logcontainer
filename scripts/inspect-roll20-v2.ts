@@ -5,7 +5,7 @@ import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 const sourcePath = process.argv[2];
 if (!sourcePath) throw new Error("Usage: tsx scripts/inspect-roll20-v2.ts <roll20.html>");
 const source = readFileSync(resolve(sourcePath), "utf8");
-const result = importRoll20HtmlV2(source, { removeHiddenMessages: true, removeDuplicateMessages: true });
+const result = importRoll20HtmlV2(source, { removeHiddenMessages: true });
 const blocks = result.documents.flatMap((document) => document.blocks);
 const rich = blocks.filter((block) => block.type === "rich");
 const templates = blocks.filter((block) => block.type === "roll-template");

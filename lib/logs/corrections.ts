@@ -1,6 +1,5 @@
 import * as cheerio from "cheerio";
 import type { LogEntry } from "@/lib/types";
-import { projectDocumentText } from "@/lib/logs/model/projection";
 
 export type CorrectionSettings = {
   remove_html_tags: boolean;
@@ -42,8 +41,8 @@ export function normalizeQuotes(text: string, open = "“", close = "”") {
 }
 
 function entryToText(entry: LogEntry, settings: CorrectionSettings) {
-  const projected = entry.document_version === 2 && entry.document ? projectDocumentText(entry.document) : entry.content;
-  const v2ImageOnly = entry.document_version === 2 && entry.document?.blocks.length && entry.document.blocks.every((block) => block.type === "image" || (block.type === "text" && !block.text.trim()));
+  const projected = entry.content;
+  const v2ImageOnly = entry.document_version === 2 && entry.has_image_content === true;
   if (settings.mark_handout_position && (v2ImageOnly || ["image", "handout"].includes(entry.entry_type))) {
     return `${settings.custom_handout_icon || "★"} 이미지/핸드아웃 [${projected.trim() || "이미지/핸드아웃"}]`;
   }
@@ -58,7 +57,7 @@ function entryToText(entry: LogEntry, settings: CorrectionSettings) {
 
 export function applyCorrections(entries: LogEntry[], partial: Partial<CorrectionSettings> = {}) {
   const settings = { ...defaultCorrectionSettings, ...partial };
-  let text = [...entries].sort((a, b) => a.order_index - b.order_index).filter((entry) => !entry.is_deleted).map((entry) => entryToText(entry, settings)).filter(Boolean).join("\n\n");
+  let text = [...entries].sort((a, b) => (a.sort_key ?? a.order_index * 1_000_000) - (b.sort_key ?? b.order_index * 1_000_000)).filter((entry) => !entry.is_deleted).map((entry) => entryToText(entry, settings)).filter(Boolean).join("\n\n");
   if (settings.clean_blank_lines) text = text.replace(/\n{3,}/g, "\n\n").trim();
   return `${text}\n`;
 }

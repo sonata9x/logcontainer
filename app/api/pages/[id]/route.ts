@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,11 +11,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const title = body.title.trim().slice(0, 200);
     if (!title) return NextResponse.json({ error: "제목을 입력해주세요." }, { status: 400 });
     const { data, error } = await context.supabase.rpc("update_resource_title", { target_resource_id: id, next_title: title });
+    if (!error) revalidateTag("published-logs");
     return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data);
   }
   if (body.isArchived === true) {
     const rpc = context.isOriginalOwner ? "trash_resource" : "self_remove_resource";
     const { data, error } = await context.supabase.rpc(rpc, { target_resource_id: id });
+    if (!error) revalidateTag("published-logs");
     return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data);
   }
   return NextResponse.json({ error: "변경할 값이 없습니다." }, { status: 400 });

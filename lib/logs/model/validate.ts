@@ -121,3 +121,14 @@ export function validateLogEntryDocument(input: unknown) {
   if (duplicateId) return { ok: false as const, error: `document contains duplicate stable id: ${duplicateId}`, warnings };
   return { ok: true as const, document, warnings };
 }
+
+// Stored canonical documents have already passed the full write-path sanitizer. This
+// hot-path guard deliberately avoids reparsing CSS while rejecting non-v2 shapes.
+export function isStoredLogEntryDocumentV2(input: unknown): input is LogEntryDocument {
+  if (!input || typeof input !== "object") return false;
+  const value = input as Partial<LogEntryDocument>;
+  if (value.version !== 2 || !KINDS.has(String(value.kind)) || !Array.isArray(value.blocks)) return false;
+  if (!value.source || typeof value.source !== "object" || !["roll20", "manual"].includes(String(value.source.platform))) return false;
+  if (!value.timestamp || typeof value.timestamp !== "object" || !value.presentation || typeof value.presentation !== "object") return false;
+  return value.blocks.every((block) => Boolean(block && typeof block === "object" && typeof block.id === "string" && BLOCK_TYPES.has(String(block.type))));
+}

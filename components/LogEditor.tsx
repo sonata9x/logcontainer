@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Archive, Download, History, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { LogEntry, LogEntryRevision, Publication, WorkspacePage } from "@/lib/types";
@@ -9,8 +9,8 @@ import type { CorrectionSettings } from "@/lib/logs/corrections";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
 import { EntryContextMenu } from "@/components/logs/EntryContextMenu";
-import { cloneLogDocument, styleToEditorText } from "@/lib/logs/model/editor";
-import { contentStyleMap, editableTextSegments, styledContentTargets } from "@/lib/logs/model/user-edit";
+import { cloneLogDocument } from "@/lib/logs/model/editor";
+import { editableTextSegments, styledContentTargets } from "@/lib/logs/model/user-edit";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export type ImportSummary = {
@@ -27,59 +27,137 @@ export type ImportSummary = {
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
 
-export function LogEditor({ page, logId, entries, publication, importReport }: { page: WorkspacePage; logId: string; entries: LogEntry[]; publication: Publication | null; importReport: ImportSummary | null }) {
+export function LogEditor({ page, logId, entries, totalEntryCount, publication, importReport }: { page: WorkspacePage; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null }) {
   const router = useRouter();
+  const [liveEntries, setLiveEntries] = useState(entries);
+  const [totalCount, setTotalCount] = useState(totalEntryCount);
+  const totalCountRef = useRef(totalEntryCount);
+  const visibilityEvents = useRef(new Set<string>());
+  const [activePublication, setActivePublication] = useState(publication);
   const [title, setTitle] = useState(page.title);
   const [source, setSource] = useState("");
-  const [showImport, setShowImport] = useState(entries.length === 0);
+  const [showImport, setShowImport] = useState(totalEntryCount === 0);
   const [pending, setPending] = useState(false);
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
-  const [removeDuplicateMessages, setRemoveDuplicateMessages] = useState(false);
   const [copied, setCopied] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
 
+  useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
+
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const channel = supabase.channel(`log-${logId}`).on("postgres_changes", { event: "*", schema: "public", table: "log_entries", filter: `log_id=eq.${logId}` }, () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => router.refresh(), 180);
+    const loadFirstPage = async () => {
+      const response = await fetch(`/api/pages/${page.id}/entries`);
+      const result = await response.json();
+      if (response.ok) {
+        setLiveEntries(result.entries ?? []);
+        if (typeof result.totalCount === "number") setTotalCount(result.totalCount);
+      }
+    };
+    const channel = supabase.channel(`log-${logId}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "log_change_events", filter: `log_id=eq.${logId}` }, async (payload) => {
+      const change = payload.new as { entry_id?: string | null; event_type?: string };
+      if (change.event_type === "log_replaced") { visibilityEvents.current.clear(); await loadFirstPage(); return; }
+      if (!change.entry_id) return;
+      if (change.event_type === "deleted") {
+        const key = `deleted:${change.entry_id}`;
+        visibilityEvents.current.delete(`restored:${change.entry_id}`);
+        if (!visibilityEvents.current.has(key)) {
+          visibilityEvents.current.add(key);
+          setTotalCount((count) => Math.max(0, count - 1));
+        }
+        setLiveEntries((current) => current.filter((entry) => entry.id !== change.entry_id));
+        return;
+      }
+      const response = await fetch(`/api/pages/${page.id}/entries/${change.entry_id}?view=entry`);
+      const result = await response.json();
+      if (!response.ok || !result.entry || result.entry.is_deleted) return;
+      setLiveEntries((current) => {
+        const existed = current.some((entry) => entry.id === result.entry.id);
+        if (!existed && (change.event_type === "inserted" || change.event_type === "restored")) {
+          const key = `${change.event_type}:${result.entry.id}`;
+          if (change.event_type === "restored") visibilityEvents.current.delete(`deleted:${result.entry.id}`);
+          if (!visibilityEvents.current.has(key)) {
+            visibilityEvents.current.add(key);
+            setTotalCount((count) => count + 1);
+          }
+        }
+        const lastLoadedKey = current.at(-1)?.sort_key ?? Number.POSITIVE_INFINITY;
+        if (!existed && current.length < totalCountRef.current && result.entry.sort_key > lastLoadedKey) return current;
+        return [...current.filter((entry) => entry.id !== result.entry.id), result.entry].sort((left, right) => left.sort_key - right.sort_key);
+      });
     }).subscribe((status) => setLiveConnected(status === "SUBSCRIBED"));
     return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [logId, router]);
+  }, [logId, page.id]);
+
+  function updateEntry(next: LogEntry) {
+    setLiveEntries((current) => [...current.filter((entry) => entry.id !== next.id), next].sort((left, right) => left.sort_key - right.sort_key));
+  }
+
+  function removeEntry(entryId: string) {
+    const key = `deleted:${entryId}`;
+    visibilityEvents.current.delete(`restored:${entryId}`);
+    if (!visibilityEvents.current.has(key)) {
+      visibilityEvents.current.add(key);
+      setTotalCount((count) => Math.max(0, count - 1));
+    }
+    setLiveEntries((current) => current.filter((entry) => entry.id !== entryId));
+  }
+
+  function restoreEntry(entry: LogEntry) {
+    const key = `restored:${entry.id}`;
+    visibilityEvents.current.delete(`deleted:${entry.id}`);
+    if (!visibilityEvents.current.has(key)) {
+      visibilityEvents.current.add(key);
+      setTotalCount((count) => count + 1);
+    }
+    updateEntry(entry);
+  }
+
+  async function loadMore() {
+    const cursor = liveEntries.at(-1)?.sort_key;
+    if (cursor == null) return;
+    const response = await fetch(`/api/pages/${page.id}/entries?after=${cursor}`);
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "다음 메시지를 불러오지 못했습니다.");
+    setLiveEntries((current) => {
+      const merged = new Map(current.map((entry) => [entry.id, entry]));
+      for (const entry of result.entries ?? []) merged.set(entry.id, entry);
+      return [...merged.values()].sort((left, right) => left.sort_key - right.sort_key);
+    });
+  }
 
   async function saveTitle() {
     if (title.trim() === page.title) return;
-    await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) });
-    router.refresh();
+    const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) });
+    if (!response.ok) setTitle(page.title);
   }
 
   async function importLog(event: FormEvent) {
     event.preventDefault();
     if (!source.trim()) return;
-    if (entries.length && !window.confirm("현재 편집 블록을 새 Roll20 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
+    if (totalCount && !window.confirm("현재 편집 블록을 새 Roll20 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
     setPending(true);
-    const response = await fetch(`/api/pages/${page.id}/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source, removeHiddenMessages, removeDuplicateMessages }) });
+    const response = await fetch(`/api/pages/${page.id}/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source, removeHiddenMessages }) });
     const result = await response.json();
     setPending(false);
     if (!response.ok) return window.alert(result.error ?? "로그를 가져오지 못했습니다.");
     setSource("");
     setSummary(result.report ?? null);
+    setLiveEntries(result.entries ?? []);
+    setTotalCount(result.count ?? result.entries?.length ?? 0);
     setShowImport(false);
-    router.refresh();
   }
 
   async function togglePublish() {
     setPending(true);
-    const response = await fetch(`/api/pages/${page.id}/publication`, { method: publication?.is_active ? "DELETE" : "POST" });
+    const response = await fetch(`/api/pages/${page.id}/publication`, { method: activePublication?.is_active ? "DELETE" : "POST" });
     const result = await response.json();
     setPending(false);
     if (!response.ok) return window.alert(result.error ?? "게시 상태를 변경하지 못했습니다.");
-    router.refresh();
+    setActivePublication(result as Publication);
   }
 
   async function archivePage() {
@@ -89,10 +167,9 @@ export function LogEditor({ page, logId, entries, publication, importReport }: {
     const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) });
     if (!response.ok) return window.alert("페이지를 보관하지 못했습니다.");
     router.push("/workspace");
-    router.refresh();
   }
 
-  const publicUrl = publication?.is_active ? `/p/${publication.token}` : null;
+  const publicUrl = activePublication?.is_active ? `/p/${activePublication.token}` : null;
 
   async function copyPublicUrl() {
     if (!publicUrl) return;
@@ -103,14 +180,15 @@ export function LogEditor({ page, logId, entries, publication, importReport }: {
 
   return (
     <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />로그 · {liveConnected ? "공동 편집 연결됨" : "연결 중"}</span><div className="toolbar-actions">{(page.is_original_owner || page.can_self_remove) && <button className="button" onClick={archivePage} title={page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}><Archive size={14} /></button>}{page.is_original_owner && <button className="button" onClick={togglePublish} disabled={pending}>{publication?.is_active ? "게시 중단" : "게시하기"}</button>}</div></div>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />로그 · {liveConnected ? "공동 편집 연결됨" : "연결 중"}</span><div className="toolbar-actions">{(page.is_original_owner || page.can_self_remove) && <button className="button" onClick={archivePage} title={page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}><Archive size={14} /></button>}{page.is_original_owner && <button className="button" onClick={togglePublish} disabled={pending}>{activePublication?.is_active ? "게시 중단" : "게시하기"}</button>}</div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" />
-        <div className="page-meta">{entries.length.toLocaleString()}개 메시지 블록{summary?.provider === "roll20" && <> · 원본 {summary.sourceMessageCount ?? 0}개 · 논리 메시지 {summary.logicalMessageCount ?? summary.importedMessageCount ?? 0}개 · 구조 반복 {summary.structuralDuplicateCount ?? 0}개 정규화 · hidden {summary.hiddenRemovedCount ?? summary.hiddenMessageCount ?? 0}개 제거 · 오류 중복 {summary.errorDuplicateCount ?? summary.duplicateMessageCount ?? 0}개 제거{Boolean(summary.warningCount) && <> · 경고 {summary.warningCount}개</>}</>}</div>
-        <div className="editor-actions"><button className="button" onClick={() => setShowImport((value) => !value)}>HTML 가져오기</button><ImportHistoryPanel pageId={page.id} /><CorrectionPanel pageId={page.id} /><a className="button icon-button" href={`/api/pages/${page.id}/export`}><Download size={14} /> TXT 내보내기</a><TrashPanel pageId={page.id} /></div>
-        {publication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
-        {showImport && <form onSubmit={importLog}><label className="field">Roll20 백업 HTML 또는 복사한 Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="Roll20 HTML을 붙여넣으세요. 기존 블록이 있으면 교체됩니다." required /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} /> hidden message 삭제</label><label><input type="checkbox" checked={removeDuplicateMessages} onChange={(event) => setRemoveDuplicateMessages(event.target.checked)} /> 중복 message 삭제</label></div><button className="button button-primary" disabled={pending}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
-        <section>{entries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} />)}</section>
+        <div className="page-meta">{totalCount.toLocaleString()}개 메시지 블록{summary?.provider === "roll20" && <> · 원본 {summary.sourceMessageCount ?? 0}개 · 논리 메시지 {summary.logicalMessageCount ?? summary.importedMessageCount ?? 0}개 · 구조 반복 {summary.structuralDuplicateCount ?? 0}개 정규화 · hidden {summary.hiddenRemovedCount ?? summary.hiddenMessageCount ?? 0}개 제거 · 오류 중복 {summary.errorDuplicateCount ?? summary.duplicateMessageCount ?? 0}개 제거{Boolean(summary.warningCount) && <> · 경고 {summary.warningCount}개</>}</>}</div>
+        <div className="editor-actions"><button className="button" onClick={() => setShowImport((value) => !value)}>HTML 가져오기</button><ImportHistoryPanel pageId={page.id} /><CorrectionPanel pageId={page.id} /><a className="button icon-button" href={`/api/pages/${page.id}/export`}><Download size={14} /> TXT 내보내기</a><TrashPanel pageId={page.id} onRestore={restoreEntry} /></div>
+        {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
+        {showImport && <form onSubmit={importLog}><label className="field">Roll20 백업 HTML 또는 복사한 Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="Roll20 HTML을 붙여넣으세요. 기존 블록이 있으면 교체됩니다." required /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div><button className="button button-primary" disabled={pending}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
+        <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} onChange={updateEntry} onDelete={removeEntry} />)}</section>
+        {liveEntries.length < totalCount && <button className="button load-more-entries" onClick={loadMore}>다음 메시지 200개 불러오기</button>}
       </div>
     </>
   );
@@ -156,8 +234,7 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
   return <div className="trash-control"><button className="button" onClick={toggle}><History size={14} /> 원본 백업</button>{open && <div className="trash-panel import-history-panel">{imports.length ? imports.map((item) => <div className="trash-item" key={item.id}><span><strong>{new Date(item.created_at).toLocaleString("ko-KR")}</strong><small>원본 {item.report?.sourceMessageCount ?? 0}개 · 논리 메시지 {item.report?.logicalMessageCount ?? item.report?.importedMessageCount ?? 0}개 · 오류 중복 제거 {item.report?.errorDuplicateCount ?? item.report?.duplicateMessageCount ?? 0}개</small></span><a className="button" href={`/api/pages/${pageId}/imports/${item.id}`}>HTML 다운로드</a></div>) : <p>저장된 원본이 없습니다.</p>}</div>}</div>;
 }
 
-function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
-  const router = useRouter();
+function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; entry: LogEntry; onChange: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(entry.document ? cloneLogDocument(entry.document) : null);
@@ -194,9 +271,10 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
     setSaving(true);
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     setSaving(false);
-    if (!response.ok) { const result = await response.json(); return window.alert(result.error ?? "블록을 저장하지 못했습니다."); }
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "블록을 저장하지 못했습니다.");
+    if (result.entry) onChange(result.entry);
     setEditing(false);
-    router.refresh();
   }
 
   function cancelEditing() {
@@ -209,7 +287,7 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
     if (!window.confirm("이 블록을 휴지통으로 이동할까요?")) return;
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "DELETE" });
     if (!response.ok) return window.alert("블록을 삭제하지 못했습니다.");
-    router.refresh();
+    onDelete(entry.id);
   }
 
   async function loadHistory() {
@@ -225,19 +303,18 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
   async function revert(revision: LogEntryRevision) {
     if (!window.confirm("이 수정 이전 상태로 복원할까요? 현재 상태도 새 revision으로 기록됩니다.")) return;
     const body = entry.document_version === 2 ? { revisionId: revision.id, expectedUpdatedAt: entry.updated_at } : { content: revision.previous_content, revisionAction: "revert", expectedUpdatedAt: entry.updated_at };
-    if (entry.document_version === 2 && !revision.previous_snapshot) return window.alert("복원할 문서 snapshot이 없습니다.");
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    if (!response.ok) return window.alert("이 버전으로 복원하지 못했습니다.");
-    setContent(revision.previous_content);
-    if (revision.previous_snapshot) setDocument(cloneLogDocument(revision.previous_snapshot));
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "이 버전으로 복원하지 못했습니다.");
+    if (result.entry) onChange(result.entry);
     setShowHistory(false);
-    router.refresh();
   }
 
-  function openCssEditor() {
-    if (entry.original_document?.source.platform !== "roll20" || !entry.document) return;
-    const currentStyles = contentStyleMap(entry.document);
-    setCssDrafts(styledContentTargets(entry.original_document).map((target) => ({ id: target.id, label: target.label, css: styleToEditorText(currentStyles.get(target.id) ?? target.style) })));
+  async function openCssEditor() {
+    const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}/content-styles`);
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "CSS 정보를 불러오지 못했습니다.");
+    setCssDrafts(result.styles ?? []);
     setShowCss(true);
   }
 
@@ -249,7 +326,7 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
     if (!response.ok) return window.alert(result.error ?? "CSS를 저장하지 못했습니다.");
     setShowCss(false);
     if (result.styleWarnings?.length) window.alert("허용되지 않거나 잘못된 CSS 선언은 제외하고 저장했습니다.");
-    router.refresh();
+    if (result.entry) onChange(result.entry);
   }
 
   async function restoreOriginal() {
@@ -259,26 +336,25 @@ function EditableEntry({ pageId, entry }: { pageId: string; entry: LogEntry }) {
     const result = await response.json();
     setSaving(false);
     if (!response.ok) return window.alert(result.error ?? "원본 상태로 복원하지 못했습니다.");
-    router.refresh();
+    if (result.entry) onChange(result.entry);
   }
 
   if (editing && entry.document_version === 2 && document) return <InlineContentEditor document={document} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />;
   if (editing) return <article className="log-entry"><label className="field">{entry.speaker_name ?? "내용"}<textarea value={content} onChange={(event) => setContent(event.target.value)} autoFocus /></label><button className="button button-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button> <button className="button" onClick={cancelEditing} disabled={saving}>취소</button></article>;
 
-  const hasRoll20Original = entry.original_document?.source.platform === "roll20";
-  const canEditCss = Boolean(entry.document && hasRoll20Original && entry.original_document && styledContentTargets(entry.original_document).length);
+  const hasRoll20Original = entry.document?.source.platform === "roll20";
+  const canEditCss = Boolean(entry.document && hasRoll20Original && styledContentTargets(entry.document).length);
   return <div className="entry-wrap">
     <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={startEditing} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }} title="더블클릭: 내용 수정 · 우클릭: 부가 기능">
       {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
     </article>
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {showCss && <div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>Roll20 원본 Content CSS만 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div>}
-    {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || Boolean(revision.previous_snapshot)) && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div>}
+    {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div>}
   </div>;
 }
 
-function TrashPanel({ pageId }: { pageId: string }) {
-  const router = useRouter();
+function TrashPanel({ pageId, onRestore }: { pageId: string; onRestore: (entry: LogEntry) => void }) {
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<LogEntry[]>([]);
   async function toggle() {
@@ -292,9 +368,10 @@ function TrashPanel({ pageId }: { pageId: string }) {
   }
   async function restore(entryId: string) {
     const response = await fetch(`/api/pages/${pageId}/trash`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entryId }) });
-    if (!response.ok) return window.alert("블록을 복원하지 못했습니다.");
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "블록을 복원하지 못했습니다.");
     setEntries((current) => current.filter((entry) => entry.id !== entryId));
-    router.refresh();
+    if (result.entry) onRestore(result.entry);
   }
   return <div className="trash-control"><button className="button" onClick={toggle}><Trash2 size={14} /> 휴지통</button>{open && <div className="trash-panel">{entries.length ? entries.map((entry) => <div className="trash-item" key={entry.id}><span>{entry.speaker_name ? `${entry.speaker_name}: ` : ""}{entry.content.slice(0, 80)}</span><button className="button" onClick={() => restore(entry.id)}>복원</button></div>) : <p>휴지통이 비어 있습니다.</p>}</div>}</div>;
 }

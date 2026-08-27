@@ -3,17 +3,28 @@
 import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { createContext, FormEvent, useContext, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, WorkspacePage } from "@/lib/types";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
 type ShareRow = { share_id: string; user_id: string | null; username: string; display_name: string | null; can_invite: boolean; state: "active" | "pending" };
+const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new Map());
 
 export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
-  const roots = useMemo(() => pages.filter((page) => !page.tree_parent_id), [pages]);
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, WorkspacePage[]>();
+    for (const page of pages) {
+      const parentId = page.tree_parent_id ?? null;
+      const children = map.get(parentId) ?? [];
+      children.push(page);
+      map.set(parentId, children);
+    }
+    return map;
+  }, [pages]);
+  const roots = childrenByParent.get(null) ?? [];
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -33,7 +44,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmi
     const result = await response.json(); setCreating(false);
     if (!response.ok) return window.alert(result.error ?? "페이지를 만들지 못했습니다.");
     if (pageType === "log") router.push(`/workspace/pages/${result.id}`);
-    router.refresh();
+    else router.refresh();
   }
 
   async function logout() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login"); }
@@ -44,7 +55,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmi
       <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
-    <nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={pages} depth={0} createPage={createPage} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav>
+    <PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={pages} depth={0} createPage={createPage} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider>
     <div className="sidebar-footer"><TrashPanel />{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
   </aside>;
 }
@@ -60,7 +71,8 @@ function TrashPanel() {
 
 function PageNode({ page, pages, depth, createPage }: { page: WorkspacePage; pages: WorkspacePage[]; depth: number; createPage: CreatePage }) {
   const pathname = usePathname(); const router = useRouter();
-  const children = pages.filter((candidate) => candidate.tree_parent_id === page.id);
+  const childrenByParent = useContext(PageTreeContext);
+  const children = childrenByParent.get(page.id) ?? [];
   const [expanded, setExpanded] = useState(true); const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); const [sharing, setSharing] = useState(false); const [moving, setMoving] = useState(false);
   const paddingLeft = 9 + depth * 15; const href = page.page_type === "log" ? `/workspace/pages/${page.id}` : null;
   async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); router.refresh(); }
