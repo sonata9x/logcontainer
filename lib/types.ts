@@ -1,3 +1,5 @@
+import type { LogEntryDocument } from "@/lib/logs/model/types";
+
 export type WorkspaceRole = "owner" | "editor";
 export type PageType = "folder" | "log";
 export type LogPlatform = "manual" | "roll20" | "ccfolia" | "other";
@@ -44,6 +46,9 @@ export type LogEntry = {
   content: string;
   original_content: string;
   raw_html: string | null;
+  document_version?: number | null;
+  document?: LogEntryDocument | null;
+  original_document?: LogEntryDocument | null;
   metadata: Record<string, unknown>;
   is_deleted: boolean;
   deleted_at: string | null;
@@ -60,6 +65,9 @@ export type LogEntryRevision = {
   action: "edit" | "delete" | "restore" | "revert";
   previous_content: string;
   next_content: string;
+  previous_snapshot?: LogEntryDocument | null;
+  next_snapshot?: LogEntryDocument | null;
+  revision_schema_version?: number | null;
   created_at: string;
 };
 

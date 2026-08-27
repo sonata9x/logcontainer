@@ -4,6 +4,7 @@ import { requireWorkspaceSession } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { LogEntry, Publication, WorkspacePage } from "@/lib/types";
 import { sanitizeLogHtml } from "@/lib/logs/html";
+import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 
 export default async function WorkspaceLogPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,6 +18,12 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
     supabase.from("publications").select("*").eq("page_id", id).maybeSingle()
   ]);
 
-  const safeEntries = ((entries ?? []) as LogEntry[]).map((entry) => ({ ...entry, raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null }));
+  const safeEntries = ((entries ?? []) as LogEntry[]).map((entry) => {
+    if (entry.document_version === 2 && entry.document) {
+      const validated = validateLogEntryDocument(entry.document);
+      if (validated.ok) return { ...entry, document: validated.document, raw_html: null };
+    }
+    return { ...entry, raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null };
+  });
   return <LogEditor page={page as WorkspacePage} logId={log!.id} entries={safeEntries} publication={(publication as Publication | null) ?? null} importReport={(log?.import_report as ImportSummary | null) ?? null} />;
 }

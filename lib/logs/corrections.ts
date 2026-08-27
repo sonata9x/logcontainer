@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { LogEntry } from "@/lib/types";
+import { projectDocumentText } from "@/lib/logs/model/projection";
 
 export type CorrectionSettings = {
   remove_html_tags: boolean;
@@ -41,10 +42,12 @@ export function normalizeQuotes(text: string, open = "“", close = "”") {
 }
 
 function entryToText(entry: LogEntry, settings: CorrectionSettings) {
-  if (settings.mark_handout_position && ["image", "handout"].includes(entry.entry_type)) {
-    return `${settings.custom_handout_icon || "★"} 이미지/핸드아웃 [${entry.content.trim() || "이미지/핸드아웃"}]`;
+  const projected = entry.document_version === 2 && entry.document ? projectDocumentText(entry.document) : entry.content;
+  const v2ImageOnly = entry.document_version === 2 && entry.document?.blocks.length && entry.document.blocks.every((block) => block.type === "image" || (block.type === "text" && !block.text.trim()));
+  if (settings.mark_handout_position && (v2ImageOnly || ["image", "handout"].includes(entry.entry_type))) {
+    return `${settings.custom_handout_icon || "★"} 이미지/핸드아웃 [${projected.trim() || "이미지/핸드아웃"}]`;
   }
-  let text = entry.content;
+  let text = projected;
   if (settings.remove_html_tags) text = stripHtml(text);
   if (settings.normalize_ellipsis) text = normalizeEllipsis(text, settings.custom_ellipsis);
   if (settings.normalize_quotes) text = normalizeQuotes(text, settings.custom_quote_open, settings.custom_quote_close);

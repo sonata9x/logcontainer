@@ -1,7 +1,13 @@
 import { sanitizeLogHtml } from "@/lib/logs/html";
 import type { LogEntry } from "@/lib/types";
+import { validateLogEntryDocument } from "@/lib/logs/model/validate";
+import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 
 export function LogEntryBlock({ entry }: { entry: LogEntry }) {
+  if (entry.document_version === 2 && entry.document) {
+    const validated = validateLogEntryDocument(entry.document);
+    if (validated.ok) return <div className="log-entry log-entry-v2"><Roll20V2Renderer document={validated.document} /></div>;
+  }
   if (entry.raw_html) {
     return <div className="log-entry" dangerouslySetInnerHTML={{ __html: sanitizeLogHtml(entry.raw_html) }} />;
   }

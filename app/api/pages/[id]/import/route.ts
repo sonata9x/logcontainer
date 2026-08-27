@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
-import { importRoll20Html } from "@/lib/logs/import";
-import { sanitizeLogHtml } from "@/lib/logs/html";
+import { importRoll20HtmlV2 } from "@/lib/logs/roll20/import-v2";
 
 const MAX_SOURCE_SIZE = 25 * 1024 * 1024;
 
@@ -16,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let imported;
   try {
-    imported = importRoll20Html(source, {
+    imported = importRoll20HtmlV2(source, {
       removeHiddenMessages: body.removeHiddenMessages === true,
       removeDuplicateMessages: body.removeDuplicateMessages === true
     });
@@ -25,17 +24,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   if (!imported.entries.length) return NextResponse.json({ error: "메시지 블록을 찾지 못했습니다." }, { status: 400 });
 
-  const safeEntries = imported.entries.map((entry) => ({
-    ...entry,
-    raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null
-  }));
-
-  const { data, error } = await context.supabase.rpc("replace_log_entries", {
+  const { data, error } = await context.supabase.rpc("replace_log_entries_v2", {
     target_page_id: id,
     source_html: source,
     source_platform: imported.platform,
     report: imported.report,
-    entries: safeEntries
+    entries: imported.entries
   });
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ count: data, report: imported.report });
 }

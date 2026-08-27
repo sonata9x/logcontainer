@@ -25,4 +25,8 @@ test("log entry writes are limited to audited security-definer functions", () =>
   assert.match(schema, /grant execute on function public\.update_log_entry_content/);
   assert.match(schema, /grant execute on function public\.set_log_entry_deleted/);
   assert.match(schema, /grant execute on function public\.create_log_entry/);
+  assert.match(schema, /grant execute on function public\.replace_log_entries_v2/);
+  assert.match(schema, /grant execute on function public\.update_log_entry_document_v2/);
+  assert.match(schema, /previous_snapshot jsonb/);
+  assert.match(schema, /replaced_entries_snapshot jsonb/);
 });
