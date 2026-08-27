@@ -82,7 +82,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await removePrivateArchives(uploaded);
     return NextResponse.json({ error: error.code === "40001" ? "가져오기 중 로그가 변경됐습니다. 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 });
   }
-  const { data: pageData } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: null, batch_size: 200 });
+  const { data: pageData } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: null, batch_size: 50 });
   const completedAt = performance.now();
   revalidateTag("published-logs");
   return NextResponse.json({ ...(data as object), report: imported.report, entries: ((pageData?.entries ?? []) as Record<string, unknown>[]).map(toLogEntryDto) }, {

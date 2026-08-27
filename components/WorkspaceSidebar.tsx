@@ -3,7 +3,7 @@
 import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, FormEvent, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, WorkspacePage } from "@/lib/types";
 
@@ -14,37 +14,48 @@ const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new M
 export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
+  const [livePages, setLivePages] = useState(pages);
+  useEffect(() => setLivePages(pages), [pages]);
+  const reloadTree = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/workspace/tree?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+      const result = await response.json();
+      if (response.ok) setLivePages(result.pages ?? []);
+    } catch {
+      // Preserve the current tree and retry on the next mutation or Realtime event.
+    }
+  }, [workspaceId]);
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, WorkspacePage[]>();
-    for (const page of pages) {
+    for (const page of livePages) {
       const parentId = page.tree_parent_id ?? null;
       const children = map.get(parentId) ?? [];
       children.push(page);
       map.set(parentId, children);
     }
     return map;
-  }, [pages]);
+  }, [livePages]);
   const roots = childrenByParent.get(null) ?? [];
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => router.refresh(), 180); };
+    const refresh = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => void reloadTree(), 250); };
     const channel = supabase.channel(`workspace-tree-${workspaceId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "pages" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "folder_items" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "resource_shares" }, refresh)
       .subscribe();
     return () => { if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
-  }, [router, workspaceId]);
+  }, [reloadTree, workspaceId]);
 
   async function createPage(pageType: PageType, parentId: string | null = null) {
     setCreating(true);
     const response = await fetch("/api/pages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, pageType, parentId }) });
     const result = await response.json(); setCreating(false);
     if (!response.ok) return window.alert(result.error ?? "페이지를 만들지 못했습니다.");
+    await reloadTree();
     if (pageType === "log") router.push(`/workspace/pages/${result.id}`);
-    else router.refresh();
   }
 
   async function logout() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login"); }
@@ -55,36 +66,35 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmi
       <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
-    <PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={pages} depth={0} createPage={createPage} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider>
-    <div className="sidebar-footer"><TrashPanel />{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
+    <PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider>
+    <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} />{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
   </aside>;
 }
 
-function TrashPanel() {
-  const router = useRouter();
+function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [resources, setResources] = useState<Array<{ id: string; title: string; deleted_at: string; purge_after: string }>>([]);
   async function toggle() { const next = !open; setOpen(next); if (!next) return; const response = await fetch("/api/resources/trash"); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "휴지통을 불러오지 못했습니다."); setResources(result.resources ?? []); }
-  async function action(resourceId: string, permanent = false) { if (permanent && !window.confirm("이 리소스를 영구 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return; const response = await fetch("/api/resources/trash", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId, permanent }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "휴지통 작업을 완료하지 못했습니다."); setResources((current) => current.filter((resource) => resource.id !== resourceId)); router.refresh(); }
+  async function action(resourceId: string, permanent = false) { if (permanent && !window.confirm("이 리소스를 영구 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return; const response = await fetch("/api/resources/trash", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId, permanent }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "휴지통 작업을 완료하지 못했습니다."); setResources((current) => current.filter((resource) => resource.id !== resourceId)); await onChanged(); }
   return <div className="sidebar-popover-wrap"><button className="sidebar-action" onClick={toggle}><Archive size={15} />휴지통</button>{open && <div className="sidebar-popover">{resources.length ? resources.map((resource) => <div className="sidebar-popover-item trash-resource" key={resource.id}><span><strong>{resource.title}</strong><small>{Math.max(0, Math.ceil((new Date(resource.purge_after).getTime() - Date.now()) / 86400000))}일 후 삭제</small></span><span className="row-actions"><button className="button" onClick={() => action(resource.id)}>복원</button><button className="button button-danger" onClick={() => action(resource.id, true)}>영구 삭제</button></span></div>) : <p>휴지통이 비어 있습니다.</p>}</div>}</div>;
 }
 
-function PageNode({ page, pages, depth, createPage }: { page: WorkspacePage; pages: WorkspacePage[]; depth: number; createPage: CreatePage }) {
+function PageNode({ page, pages, depth, createPage, reloadTree }: { page: WorkspacePage; pages: WorkspacePage[]; depth: number; createPage: CreatePage; reloadTree: () => Promise<void> }) {
   const pathname = usePathname(); const router = useRouter();
   const childrenByParent = useContext(PageTreeContext);
   const children = childrenByParent.get(page.id) ?? [];
   const [expanded, setExpanded] = useState(true); const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); const [sharing, setSharing] = useState(false); const [moving, setMoving] = useState(false);
   const paddingLeft = 9 + depth * 15; const href = page.page_type === "log" ? `/workspace/pages/${page.id}` : null;
-  async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); router.refresh(); }
-  async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); if (pathname === href) router.push("/workspace"); router.refresh(); }
-  async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); router.refresh(); }
+  async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); await reloadTree(); }
+  async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); await reloadTree(); if (pathname === href) router.push("/workspace"); }
+  async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
   const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""}`} style={{ paddingLeft }} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }}>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
-    {href ? <Link href={href} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
+    {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
     <button className="tree-more" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }} aria-label="메뉴"><MoreHorizontal size={14} /></button>
   </div>;
-  return <div className={page.page_type === "folder" ? "tree-folder" : "tree-page"}>{row}{expanded && children.map((child) => <PageNode key={child.id} page={child} pages={pages} depth={depth + 1} createPage={createPage} />)}{menu && <ResourceMenu x={menu.x} y={menu.y} page={page} onClose={() => setMenu(null)} onRename={rename} onShare={() => { setMenu(null); setSharing(true); }} onMove={() => { setMenu(null); setMoving(true); }} onRemove={page.is_original_owner || page.can_self_remove ? remove : undefined} onRemoveFromFolder={page.tree_relation === "folder" ? removeFromFolder : undefined} />}{sharing && <ShareDialog page={page} onClose={() => setSharing(false)} />}{moving && <MoveDialog page={page} pages={pages} onClose={() => setMoving(false)} />}</div>;
+  return <div className={page.page_type === "folder" ? "tree-folder" : "tree-page"}>{row}{expanded && children.map((child) => <PageNode key={child.id} page={child} pages={pages} depth={depth + 1} createPage={createPage} reloadTree={reloadTree} />)}{menu && <ResourceMenu x={menu.x} y={menu.y} page={page} onClose={() => setMenu(null)} onRename={rename} onShare={() => { setMenu(null); setSharing(true); }} onMove={() => { setMenu(null); setMoving(true); }} onRemove={page.is_original_owner || page.can_self_remove ? remove : undefined} onRemoveFromFolder={page.tree_relation === "folder" ? removeFromFolder : undefined} />}{sharing && <ShareDialog page={page} onClose={() => setSharing(false)} />}{moving && <MoveDialog page={page} pages={pages} reloadTree={reloadTree} onClose={() => setMoving(false)} />}</div>;
 }
 
 function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove, onRemoveFromFolder }: { x: number; y: number; page: WorkspacePage; onClose: () => void; onRename: () => void; onShare: () => void; onMove: () => void; onRemove?: () => void; onRemoveFromFolder?: () => void }) {
@@ -92,9 +102,9 @@ function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove
   return <div className="entry-context-menu resource-context-menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onClick={(event) => event.stopPropagation()}><button onClick={onRename}><Pencil size={13} />이름 변경</button>{page.can_invite && <button onClick={onShare}><Share2 size={13} />공유</button>}<button onClick={onMove}><Folder size={13} />이동</button>{onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}{onRemove && <><hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>;
 }
 
-function MoveDialog({ page, pages, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; onClose: () => void }) {
-  const router = useRouter(); const [parentId, setParentId] = useState(""); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
-  async function finish(response: Response) { const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); onClose(); router.refresh(); }
+function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; reloadTree: () => Promise<void>; onClose: () => void }) {
+  const [parentId, setParentId] = useState(""); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
+  async function finish(response: Response) { const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); await reloadTree(); onClose(); }
   async function movePersonal() { await finish(await fetch(`/api/resources/${page.id}/placement`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ parentId: parentId || null }) })); }
   async function moveShared() { if (!parentId) return window.alert("공유 구조의 대상 폴더를 선택해주세요."); await finish(await fetch(`/api/resources/${parentId}/children`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) })); }
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>리소스 이동</h2><p>‘내 위치만 이동’은 나에게만 적용됩니다. ‘공유 구조로 이동’은 Folder 내부 hierarchy를 바꾸므로 모든 공유자에게 반영되며, 서버가 재공유 권한을 검사합니다.</p><label className="field">위치<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose}>취소</button><button className="button" onClick={movePersonal}>내 위치만 이동</button><button className="button button-primary" onClick={moveShared} disabled={!parentId}>공유 구조로 이동</button></div></section></div>;

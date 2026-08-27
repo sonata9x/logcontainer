@@ -6,6 +6,7 @@ import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 
 const migration = readFileSync(new URL("../supabase/migrations/202608270004_log_performance.sql", import.meta.url), "utf8");
 const latencyMigration = readFileSync(new URL("../supabase/migrations/202608280001_response_latency.sql", import.meta.url), "utf8");
+const runtimeMigration = readFileSync(new URL("../supabase/migrations/202608280002_runtime_latency.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const entryRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 const logPage = readFileSync(new URL("../app/workspace/pages/[id]/page.tsx", import.meta.url), "utf8");
@@ -43,9 +44,9 @@ test("copy-on-write and compact revisions preserve restore semantics", () => {
   assert.match(entryRoute, /id, entry_id, action, editor_id, previous_content, next_content, created_at, revision_schema_version/);
 });
 
-test("initial log read is a single 100-row aggregate RPC without original snapshots", () => {
+test("initial log read is a single 50-row aggregate RPC without original snapshots", () => {
   assert.match(logPage, /get_workspace_log_page/);
-  assert.match(logPage, /batch_size: 100/);
+  assert.match(logPage, /batch_size: 50/);
   assert.doesNotMatch(logPage, /select\("\*"\)|original_document/);
   assert.match(migration, /sort_key > after_sort_key/);
   assert.match(migration, /limit bounded_size/);
@@ -64,6 +65,13 @@ test("workspace latency path avoids duplicate tree loads and per-row permission 
   assert.match(serverAuth, /get_personal_session_context/);
   assert.doesNotMatch(serverAuth, /from\("workspaces"\)/);
   assert.match(apiAuth, /get_resource_api_context/);
+  assert.match(runtimeMigration, /root_mounts/);
+  assert.match(runtimeMigration, /get_log_entry_edit_source/);
+  assert.doesNotMatch(runtimeMigration, /distinct on/);
+  assert.match(serverAuth, /auth\.getClaims\(\)/);
+  assert.match(apiAuth, /auth\.getClaims\(\)/);
+  assert.match(editor, /hasStyledContent/);
+  assert.match(editor, /useState<LogEntryDocument \| null>\(null\)/);
 });
 
 test("entry collaboration uses lightweight events and local patches", () => {
@@ -83,8 +91,10 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.match(schema, /202608270004_log_performance\.sql/);
   const marker = "-- 202608270004_log_performance.sql";
   const nextMarker = "-- 202608280001_response_latency.sql";
+  const runtimeMarker = "-- 202608280002_runtime_latency.sql";
   assert.equal(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker)).trim(), migration.trim());
-  assert.equal(schema.slice(schema.indexOf(nextMarker) + nextMarker.length).trim(), latencyMigration.trim());
+  assert.equal(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker)).trim(), latencyMigration.trim());
+  assert.equal(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length).trim(), runtimeMigration.trim());
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {

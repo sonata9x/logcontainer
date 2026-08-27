@@ -3,10 +3,18 @@ import type { Profile, Workspace } from "@/lib/types";
 
 type PersonalSessionPayload = { profile: Profile; workspace: Workspace };
 
-export async function getApprovedApiContext() {
+export async function getAuthenticatedApiContext() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data } = await supabase.auth.getClaims();
+  const userId = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
+  if (!userId) return null;
+  return { supabase, user: { id: userId } };
+}
+
+export async function getApprovedApiContext() {
+  const authenticated = await getAuthenticatedApiContext();
+  if (!authenticated) return null;
+  const { supabase, user } = authenticated;
   const { data } = await supabase.rpc("get_personal_session_context");
   const session = data as PersonalSessionPayload | null;
   if (!session?.profile || !session.workspace) return null;

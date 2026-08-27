@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const startedAt = performance.now();
   let response = NextResponse.next({ request });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -22,10 +23,11 @@ export async function middleware(request: NextRequest) {
   });
 
   if (request.nextUrl.pathname.startsWith("/workspace")) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = await supabase.auth.getClaims();
     // The workspace layout is the approval boundary. Middleware only refreshes
     // the authenticated session so every navigation does not add a second DB RPC.
-    if (!user) return response;
+    response.headers.set("Server-Timing", `middleware-auth;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    if (!data?.claims?.sub) return response;
   }
   if (request.nextUrl.pathname.startsWith("/p/")) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
