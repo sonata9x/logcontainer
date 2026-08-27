@@ -188,7 +188,7 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
         {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
         {showImport && <form onSubmit={importLog}><label className="field">Roll20 백업 HTML 또는 복사한 Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="Roll20 HTML을 붙여넣으세요. 기존 블록이 있으면 교체됩니다." required /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div><button className="button button-primary" disabled={pending}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
         <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} onChange={updateEntry} onDelete={removeEntry} />)}</section>
-        {liveEntries.length < totalCount && <button className="button load-more-entries" onClick={loadMore}>다음 메시지 200개 불러오기</button>}
+        {liveEntries.length < totalCount && <button className="button load-more-entries" onClick={loadMore}>다음 메시지 100개 불러오기</button>}
       </div>
     </>
   );

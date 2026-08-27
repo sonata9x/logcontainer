@@ -23,14 +23,9 @@ export async function middleware(request: NextRequest) {
 
   if (request.nextUrl.pathname.startsWith("/workspace")) {
     const { data: { user } } = await supabase.auth.getUser();
+    // The workspace layout is the approval boundary. Middleware only refreshes
+    // the authenticated session so every navigation does not add a second DB RPC.
     if (!user) return response;
-    const { data: approved } = await supabase.rpc("is_account_approved", { target_user_id: user.id });
-    if (!approved) {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = "/login";
-      loginUrl.search = "?account=unavailable";
-      return NextResponse.redirect(loginUrl);
-    }
   }
   if (request.nextUrl.pathname.startsWith("/p/")) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");

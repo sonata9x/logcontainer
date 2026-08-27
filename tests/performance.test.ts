@@ -5,11 +5,14 @@ import { gunzipArchive, gzipArchive } from "../lib/logs/archive";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 
 const migration = readFileSync(new URL("../supabase/migrations/202608270004_log_performance.sql", import.meta.url), "utf8");
+const latencyMigration = readFileSync(new URL("../supabase/migrations/202608280001_response_latency.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const entryRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 const logPage = readFileSync(new URL("../app/workspace/pages/[id]/page.tsx", import.meta.url), "utf8");
 const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
+const serverAuth = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
+const apiAuth = readFileSync(new URL("../lib/api-auth.ts", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 
 test("raw Roll20 source gzip round-trip is byte-for-byte lossless", () => {
@@ -40,12 +43,27 @@ test("copy-on-write and compact revisions preserve restore semantics", () => {
   assert.match(entryRoute, /id, entry_id, action, editor_id, previous_content, next_content, created_at, revision_schema_version/);
 });
 
-test("initial log read is a 200-row cursor DTO without original snapshots", () => {
-  assert.match(logPage, /get_log_entries_page/);
-  assert.match(logPage, /batch_size: 200/);
+test("initial log read is a single 100-row aggregate RPC without original snapshots", () => {
+  assert.match(logPage, /get_workspace_log_page/);
+  assert.match(logPage, /batch_size: 100/);
   assert.doesNotMatch(logPage, /select\("\*"\)|original_document/);
   assert.match(migration, /sort_key > after_sort_key/);
   assert.match(migration, /limit bounded_size/);
+  assert.match(latencyMigration, /'entries', result_entries/);
+  assert.match(latencyMigration, /'publication', publication/);
+});
+
+test("workspace latency path avoids duplicate tree loads and per-row permission helpers", () => {
+  const workspaceHome = readFileSync(new URL("../app/workspace/page.tsx", import.meta.url), "utf8");
+  const optimizedTree = latencyMigration.slice(latencyMigration.indexOf("create or replace function public.get_workspace_tree"));
+  assert.doesNotMatch(workspaceHome, /get_workspace_tree/);
+  assert.doesNotMatch(optimizedTree, /public\.can_view_resource\(p\.id|public\.can_invite_resource\(p\.id/);
+  assert.match(latencyMigration, /folder_items_child_folder_idx/);
+  assert.match(latencyMigration, /create or replace function public\.get_workspace_log_page/);
+  assert.match(latencyMigration, /create or replace function public\.get_personal_session_context/);
+  assert.match(serverAuth, /get_personal_session_context/);
+  assert.doesNotMatch(serverAuth, /from\("workspaces"\)/);
+  assert.match(apiAuth, /get_resource_api_context/);
 });
 
 test("entry collaboration uses lightweight events and local patches", () => {
@@ -64,7 +82,9 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.match(logPage, /toLogEntryDto/);
   assert.match(schema, /202608270004_log_performance\.sql/);
   const marker = "-- 202608270004_log_performance.sql";
-  assert.equal(schema.slice(schema.indexOf(marker) + marker.length).trim(), migration.trim());
+  const nextMarker = "-- 202608280001_response_latency.sql";
+  assert.equal(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker)).trim(), migration.trim());
+  assert.equal(schema.slice(schema.indexOf(nextMarker) + nextMarker.length).trim(), latencyMigration.trim());
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {

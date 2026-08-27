@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   const value = new URL(request.url).searchParams.get("after");
   const after = value && /^\d+$/.test(value) ? Number(value) : null;
-  const { data, error } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: after, batch_size: 200 });
+  const { data, error } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: after, batch_size: 100 });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const result = data as { entries?: Record<string, unknown>[]; totalCount?: number; batchSize?: number } | null;
   return NextResponse.json({ ...result, entries: (result?.entries ?? []).map(toLogEntryDto) });
