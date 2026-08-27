@@ -8,6 +8,7 @@ const migration = readFileSync(new URL("../supabase/migrations/202608270004_log_
 const latencyMigration = readFileSync(new URL("../supabase/migrations/202608280001_response_latency.sql", import.meta.url), "utf8");
 const runtimeMigration = readFileSync(new URL("../supabase/migrations/202608280002_runtime_latency.sql", import.meta.url), "utf8");
 const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280003_workspace_settings.sql", import.meta.url), "utf8");
+const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const entryRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 const logPage = readFileSync(new URL("../app/workspace/pages/[id]/page.tsx", import.meta.url), "utf8");
@@ -95,10 +96,12 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const nextMarker = "-- 202608280001_response_latency.sql";
   const runtimeMarker = "-- 202608280002_runtime_latency.sql";
   const settingsMarker = "-- 202608280003_workspace_settings.sql";
+  const bulkMoveMarker = "-- 202608280004_bulk_resource_move.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(settingsMarker) + settingsMarker.length)), normalizedSql(settingsMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(settingsMarker) + settingsMarker.length, schema.indexOf(bulkMoveMarker))), normalizedSql(settingsMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(bulkMoveMarker) + bulkMoveMarker.length)), normalizedSql(bulkMoveMigration));
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {

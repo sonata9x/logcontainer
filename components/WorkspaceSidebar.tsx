@@ -1,26 +1,77 @@
 "use client";
 
-import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
+import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, Menu, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, WorkspacePage } from "@/lib/types";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
 type ShareRow = { share_id: string; user_id: string | null; username: string; display_name: string | null; can_invite: boolean; state: "active" | "pending" };
 const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new Map());
+const RESOURCE_DRAG_TYPE = "application/x-logcontainer-resources";
+type TreeInteraction = {
+  selectedIds: Set<string>;
+  draggingIds: string[];
+  dropTargetId: string | null;
+  select: (event: ReactMouseEvent, resourceId: string) => void;
+  startDrag: (event: ReactDragEvent, resourceId: string) => void;
+  endDrag: () => void;
+  setDropTargetId: (resourceId: string | null) => void;
+  drop: (event: ReactDragEvent, targetFolderId: string | null) => void;
+};
+const TreeInteractionContext = createContext<TreeInteraction | null>(null);
+
+function topLevelSelection(resourceIds: string[], pages: WorkspacePage[]) {
+  const selected = new Set(resourceIds);
+  const parentById = new Map(pages.map((page) => [page.id, page.tree_parent_id ?? null]));
+  return resourceIds.filter((resourceId) => {
+    let parentId = parentById.get(resourceId) ?? null;
+    const visited = new Set<string>();
+    while (parentId && !visited.has(parentId)) {
+      if (selected.has(parentId)) return false;
+      visited.add(parentId);
+      parentId = parentById.get(parentId) ?? null;
+    }
+    return true;
+  });
+}
+
+function OverlayPortal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted ? createPortal(children, document.body) : null;
+}
 
 export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; nickname: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [creating, setCreating] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentWorkspaceName, setCurrentWorkspaceName] = useState(workspaceName);
   const [currentNickname, setCurrentNickname] = useState(nickname);
   const [livePages, setLivePages] = useState(pages);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [draggingIds, setDraggingIds] = useState<string[]>([]);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const selectionAnchor = useRef<string | null>(null);
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
   useEffect(() => setCurrentNickname(nickname), [nickname]);
   useEffect(() => setLivePages(pages), [pages]);
+  useEffect(() => setMobileSidebarOpen(false), [pathname]);
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMobileSidebarOpen(false); };
+    document.body.classList.add("sidebar-drawer-open");
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.classList.remove("sidebar-drawer-open");
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileSidebarOpen]);
   const reloadTree = useCallback(async () => {
     try {
       const response = await fetch(`/api/workspace/tree?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
@@ -41,6 +92,75 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, 
     return map;
   }, [livePages]);
   const roots = childrenByParent.get(null) ?? [];
+
+  const selectResource = useCallback((event: ReactMouseEvent, resourceId: string) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      if (selectedIds.size) setSelectedIds(new Set());
+      selectionAnchor.current = resourceId;
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.shiftKey) {
+      const visibleIds = Array.from(document.querySelectorAll<HTMLElement>("#workspace-navigation [data-resource-id]")).map((element) => element.dataset.resourceId).filter((value): value is string => Boolean(value));
+      const anchorIndex = selectionAnchor.current ? visibleIds.indexOf(selectionAnchor.current) : -1;
+      const currentIndex = visibleIds.indexOf(resourceId);
+      const range = anchorIndex >= 0 && currentIndex >= 0 ? visibleIds.slice(Math.min(anchorIndex, currentIndex), Math.max(anchorIndex, currentIndex) + 1) : [resourceId];
+      setSelectedIds((current) => event.ctrlKey || event.metaKey ? new Set([...current, ...range]) : new Set(range));
+    } else {
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        if (next.has(resourceId)) next.delete(resourceId); else next.add(resourceId);
+        return next;
+      });
+      selectionAnchor.current = resourceId;
+    }
+  }, [selectedIds.size]);
+
+  const startResourceDrag = useCallback((event: ReactDragEvent, resourceId: string) => {
+    const selectedForDrag = selectedIds.has(resourceId) ? [...selectedIds] : [resourceId];
+    const resourceIds = topLevelSelection(selectedForDrag, livePages);
+    if (!selectedIds.has(resourceId)) {
+      setSelectedIds(new Set([resourceId]));
+      selectionAnchor.current = resourceId;
+    }
+    setDraggingIds(resourceIds);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(RESOURCE_DRAG_TYPE, JSON.stringify(resourceIds));
+    event.dataTransfer.setData("text/plain", resourceIds.join(","));
+  }, [livePages, selectedIds]);
+
+  const endResourceDrag = useCallback(() => {
+    setDraggingIds([]);
+    setDropTargetId(null);
+  }, []);
+
+  const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null) => {
+    const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId }) });
+    const result = await response.json();
+    if (!response.ok) return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+    setSelectedIds(new Set());
+    selectionAnchor.current = null;
+    await reloadTree();
+  }, [reloadTree]);
+
+  const dropResources = useCallback((event: ReactDragEvent, targetFolderId: string | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    let resourceIds = draggingIds;
+    try {
+      const parsed = JSON.parse(event.dataTransfer.getData(RESOURCE_DRAG_TYPE));
+      if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) resourceIds = parsed;
+    } catch {
+      // Keep the in-memory drag selection for browsers that omit custom drag data.
+    }
+    endResourceDrag();
+    if (resourceIds.length) void moveResources(resourceIds, targetFolderId);
+  }, [draggingIds, endResourceDrag, moveResources]);
+
+  const treeInteraction = useMemo<TreeInteraction>(() => ({ selectedIds, draggingIds, dropTargetId, select: selectResource, startDrag: startResourceDrag, endDrag: endResourceDrag, setDropTargetId, drop: dropResources }), [selectedIds, draggingIds, dropTargetId, selectResource, startResourceDrag, endResourceDrag, dropResources]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -65,16 +185,22 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, 
 
   async function logout() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login"); }
 
-  return <aside className="workspace-sidebar">
-    <div className="workspace-title">{currentWorkspaceName}</div>
+  return <>
+    <button className="mobile-sidebar-toggle" onClick={() => setMobileSidebarOpen(true)} aria-expanded={mobileSidebarOpen} aria-controls="workspace-navigation"><Menu size={19} /><span>메뉴</span></button>
+    <button className={`workspace-sidebar-scrim ${mobileSidebarOpen ? "is-open" : ""}`} onClick={() => setMobileSidebarOpen(false)} aria-label="메뉴 닫기" tabIndex={mobileSidebarOpen ? 0 : -1} />
+    <aside id="workspace-navigation" className={`workspace-sidebar ${mobileSidebarOpen ? "mobile-open" : ""}`}>
+    <div className="workspace-title-row"><div className="workspace-title">{currentWorkspaceName}</div><button className="mobile-sidebar-close" onClick={() => setMobileSidebarOpen(false)} aria-label="메뉴 닫기"><X size={19} /></button></div>
     <div className="sidebar-create-actions">
       <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
-    <PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider>
+    {selectedIds.size > 0 && <div className="sidebar-selection-status"><span>{selectedIds.size}개 선택됨</span><button onClick={() => setSelectedIds(new Set())}>선택 해제</button></div>}
+    {draggingIds.length > 0 && <div className={`workspace-root-drop ${dropTargetId === "root" ? "drop-target" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDropTargetId("root"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId("root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>}
+    <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
     {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); setSettingsOpen(false); }} />}
-  </aside>;
+    </aside>
+  </>;
 }
 
 function WorkspaceSettingsDialog({ workspaceName, nickname, onClose, onSaved }: { workspaceName: string; nickname: string; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string }) => void }) {
@@ -97,7 +223,7 @@ function WorkspaceSettingsDialog({ workspaceName, nickname, onClose, onSaved }: 
       setPending(false);
     }
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기"><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스와 계정에 표시할 이름을 변경합니다.</p><form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending}>{pending ? "저장 중…" : "저장"}</button></div></form></section></div>;
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기"><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스와 계정에 표시할 이름을 변경합니다.</p><form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending}>{pending ? "저장 중…" : "저장"}</button></div></form></section></div></OverlayPortal>;
 }
 
 function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {
@@ -111,13 +237,16 @@ function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {
 function PageNode({ page, pages, depth, createPage, reloadTree }: { page: WorkspacePage; pages: WorkspacePage[]; depth: number; createPage: CreatePage; reloadTree: () => Promise<void> }) {
   const pathname = usePathname(); const router = useRouter();
   const childrenByParent = useContext(PageTreeContext);
+  const treeInteraction = useContext(TreeInteractionContext);
   const children = childrenByParent.get(page.id) ?? [];
   const [expanded, setExpanded] = useState(true); const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); const [sharing, setSharing] = useState(false); const [moving, setMoving] = useState(false);
   const paddingLeft = 9 + depth * 15; const href = page.page_type === "log" ? `/workspace/pages/${page.id}` : null;
   async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); await reloadTree(); }
   async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); await reloadTree(); if (pathname === href) router.push("/workspace"); }
   async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
-  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""}`} style={{ paddingLeft }}>
+  const selected = Boolean(treeInteraction?.selectedIds.has(page.id));
+  const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id;
+  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} draggable onClick={(event) => treeInteraction?.select(event, page.id)} onDragStart={(event) => treeInteraction?.startDrag(event, page.id)} onDragEnd={() => treeInteraction?.endDrag()} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
@@ -128,7 +257,7 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
 
 function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove, onRemoveFromFolder }: { x: number; y: number; page: WorkspacePage; onClose: () => void; onRename: () => void; onShare: () => void; onMove: () => void; onRemove?: () => void; onRemoveFromFolder?: () => void }) {
   useEffect(() => { const close = () => onClose(); window.addEventListener("pointerdown", close); return () => window.removeEventListener("pointerdown", close); }, [onClose]);
-  return <div className="entry-context-menu resource-context-menu" role="menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onPointerDown={(event) => event.stopPropagation()}><button onClick={onRename}><Pencil size={13} />이름 변경</button>{page.can_invite && <button onClick={onShare}><Share2 size={13} />공유</button>}<button onClick={onMove}><Folder size={13} />이동</button>{onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}{onRemove && <><hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>;
+  return <OverlayPortal><div className="entry-context-menu resource-context-menu" role="menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onPointerDown={(event) => event.stopPropagation()}><button onClick={onRename}><Pencil size={13} />이름 변경</button>{page.can_invite && <button onClick={onShare}><Share2 size={13} />공유</button>}<button onClick={onMove}><Folder size={13} />이동</button>{onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}{onRemove && <><hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div></OverlayPortal>;
 }
 
 function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; reloadTree: () => Promise<void>; onClose: () => void }) {
@@ -136,7 +265,7 @@ function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage;
   async function finish(response: Response) { const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); await reloadTree(); onClose(); }
   async function movePersonal() { await finish(await fetch(`/api/resources/${page.id}/placement`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ parentId: parentId || null }) })); }
   async function moveShared() { if (!parentId) return window.alert("공유 구조의 대상 폴더를 선택해주세요."); await finish(await fetch(`/api/resources/${parentId}/children`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) })); }
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>리소스 이동</h2><p>‘내 위치만 이동’은 나에게만 적용됩니다. ‘공유 구조로 이동’은 Folder 내부 hierarchy를 바꾸므로 모든 공유자에게 반영되며, 서버가 재공유 권한을 검사합니다.</p><label className="field">위치<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose}>취소</button><button className="button" onClick={movePersonal}>내 위치만 이동</button><button className="button button-primary" onClick={moveShared} disabled={!parentId}>공유 구조로 이동</button></div></section></div>;
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>리소스 이동</h2><p>‘내 위치만 이동’은 나에게만 적용됩니다. ‘공유 구조로 이동’은 Folder 내부 hierarchy를 바꾸므로 모든 공유자에게 반영되며, 서버가 재공유 권한을 검사합니다.</p><label className="field">위치<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose}>취소</button><button className="button" onClick={movePersonal}>내 위치만 이동</button><button className="button button-primary" onClick={moveShared} disabled={!parentId}>공유 구조로 이동</button></div></section></div></OverlayPortal>;
 }
 
 function ShareDialog({ page, onClose }: { page: WorkspacePage; onClose: () => void }) {
@@ -146,5 +275,5 @@ function ShareDialog({ page, onClose }: { page: WorkspacePage; onClose: () => vo
   async function add(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setMessage(""); const form = new FormData(event.currentTarget); const response = await fetch(`/api/resources/${page.id}/shares`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: form.get("username"), canInvite: form.get("canInvite") === "on" }) }); const result = await response.json(); if (!response.ok) return setMessage(result.error ?? "공유하지 못했습니다."); setMessage(result.state === "pending" ? "가입 또는 승인을 기다리는 공유 예약으로 저장했습니다." : "공유했습니다."); event.currentTarget.reset(); await load(); }
   async function toggleInvite(share: ShareRow) { const response = await fetch(`/api/resources/${page.id}/shares`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ shareId: share.share_id, canInvite: !share.can_invite }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "초대 권한을 바꾸지 못했습니다."); await load(); }
   async function revoke(share: ShareRow) { if (!window.confirm(`@${share.username}의 공유 권한을 회수할까요?`)) return; const response = await fetch(`/api/resources/${page.id}/shares`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ shareId: share.share_id, state: share.state }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "공유를 해제하지 못했습니다."); await load(); }
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card share-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>{page.title} 공유</h2><p>{page.page_type === "folder" ? "폴더와 내부 구조가 함께 공유됩니다." : "상대방 워크스페이스에 이 페이지만 나타납니다."}</p><form className="share-form" onSubmit={add}><label className="field">사용자 아이디<input name="username" placeholder="username" minLength={2} required /></label>{canManage && <label className="checkbox-row"><input name="canInvite" type="checkbox" /> 이 리소스에 다른 사람을 초대할 수 있음</label>}<button className="button button-primary">공유</button></form>{message && <p>{message}</p>}{canManage && <div className="member-list">{loading ? <p>불러오는 중…</p> : shares.map((share) => <div className="member-row" key={share.share_id}><div><strong>{share.display_name || share.username}</strong><small>@{share.username} · {share.state === "pending" ? "대기 중" : "편집 가능"}</small></div><div className="row-actions">{share.state === "active" && <button className="button" onClick={() => toggleInvite(share)}>초대 {share.can_invite ? "가능" : "불가"}</button>}<button className="button button-danger" onClick={() => revoke(share)}>권한 제거</button></div></div>)}</div>}</section></div>;
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card share-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>{page.title} 공유</h2><p>{page.page_type === "folder" ? "폴더와 내부 구조가 함께 공유됩니다." : "상대방 워크스페이스에 이 페이지만 나타납니다."}</p><form className="share-form" onSubmit={add}><label className="field">사용자 아이디<input name="username" placeholder="username" minLength={2} required /></label>{canManage && <label className="checkbox-row"><input name="canInvite" type="checkbox" /> 이 리소스에 다른 사람을 초대할 수 있음</label>}<button className="button button-primary">공유</button></form>{message && <p>{message}</p>}{canManage && <div className="member-list">{loading ? <p>불러오는 중…</p> : shares.map((share) => <div className="member-row" key={share.share_id}><div><strong>{share.display_name || share.username}</strong><small>@{share.username} · {share.state === "pending" ? "대기 중" : "편집 가능"}</small></div><div className="row-actions">{share.state === "active" && <button className="button" onClick={() => toggleInvite(share)}>초대 {share.can_invite ? "가능" : "불가"}</button>}<button className="button button-danger" onClick={() => revoke(share)}>권한 제거</button></div></div>)}</div>}</section></div></OverlayPortal>;
 }

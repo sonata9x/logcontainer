@@ -6,6 +6,7 @@ const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), 
 const migration = readFileSync(new URL("../supabase/migrations/202608270002_personal_resources.sql", import.meta.url), "utf8");
 const hardeningMigration = readFileSync(new URL("../supabase/migrations/202608270003_personal_resources_hardening.sql", import.meta.url), "utf8");
 const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280003_workspace_settings.sql", import.meta.url), "utf8");
+const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const loginRoute = readFileSync(new URL("../app/api/login/route.ts", import.meta.url), "utf8");
 const signupRoute = readFileSync(new URL("../app/api/signup/route.ts", import.meta.url), "utf8");
 const adminHelper = readFileSync(new URL("../lib/admin-auth.ts", import.meta.url), "utf8");
@@ -13,6 +14,7 @@ const memberRoute = readFileSync(new URL("../app/api/members/route.ts", import.m
 const passwordRoute = readFileSync(new URL("../app/api/account/password/route.ts", import.meta.url), "utf8");
 const settingsRoute = readFileSync(new URL("../app/api/account/settings/route.ts", import.meta.url), "utf8");
 const childrenRoute = readFileSync(new URL("../app/api/resources/[id]/children/route.ts", import.meta.url), "utf8");
+const bulkMoveRoute = readFileSync(new URL("../app/api/resources/move/route.ts", import.meta.url), "utf8");
 const publicationRoute = readFileSync(new URL("../app/api/pages/[id]/publication/route.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -123,6 +125,38 @@ test("personal settings update only the approved account and its one owned works
   assert.match(sidebar, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(globalCss, /\.tree-more \{[^}]*opacity: 0;[^}]*pointer-events: none/);
   assert.match(globalCss, /\.tree-row:hover \.tree-more, \.tree-row:focus-within \.tree-more \{ opacity: 1; pointer-events: auto; \}/);
+  assert.match(sidebar, /mobile-sidebar-toggle/);
+  assert.match(sidebar, /workspace-sidebar-scrim/);
+  assert.match(sidebar, /mobileSidebarOpen/);
+  assert.match(sidebar, /event\.key === "Escape"/);
+  assert.match(globalCss, /@media \(max-width: 960px\)/);
+  assert.match(globalCss, /\.workspace-sidebar\.mobile-open \{[^}]*left: 0;[^}]*visibility: visible/);
+  assert.match(globalCss, /\.workspace-sidebar-scrim\.is-open/);
+  assert.match(globalCss, /--log-column-width: 680px/);
+  assert.match(globalCss, /\.workspace-content \{ width: min\(var\(--log-column-width\), calc\(100% - 24px\)\)/);
+  assert.match(globalCss, /\.public-log \{ width: min\(var\(--log-column-width\)/);
+  assert.match(globalCss, /\.modal-backdrop \{[^}]*z-index: 100/);
+});
+
+test("resource tree supports portal overlays, range selection and atomic drag moves", () => {
+  assert.match(sidebar, /createPortal\(children, document\.body\)/);
+  assert.match(sidebar, /event\.ctrlKey.*event\.metaKey.*event\.shiftKey/);
+  assert.match(sidebar, /querySelectorAll<HTMLElement>\("#workspace-navigation \[data-resource-id\]"\)/);
+  assert.match(sidebar, /draggable/);
+  assert.match(sidebar, /RESOURCE_DRAG_TYPE/);
+  assert.match(sidebar, /fetch\("\/api\/resources\/move"/);
+  assert.match(sidebar, /workspace-root-drop/);
+  assert.match(globalCss, /\.tree-row\.selected/);
+  assert.match(globalCss, /\.tree-row\.drop-target/);
+
+  assert.match(bulkMoveRoute, /getAuthenticatedApiContext/);
+  assert.match(bulkMoveRoute, /move_resources_bulk/);
+  assert.match(bulkMoveRoute, /resourceIds\.length > 100/);
+  assert.match(bulkMoveMigration, /is_account_approved\(actor_id\)/);
+  assert.match(bulkMoveMigration, /public\.insert_folder_item\(target_folder_id, resource_id, next_order\)/);
+  assert.match(bulkMoveMigration, /public\.remove_folder_item\(source_folder_id, resource_id\)/);
+  assert.match(bulkMoveMigration, /public\.move_workspace_item\(resource_id, null, next_order\)/);
+  assert.match(bulkMoveMigration, /grant execute on function public\.move_resources_bulk\(uuid\[\], uuid\) to authenticated/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {
