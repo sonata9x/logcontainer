@@ -118,7 +118,11 @@ test("personal settings update only the approved account and its one owned works
   assert.doesNotMatch(sidebar, /onContextMenu/);
   assert.match(sidebar, /aria-haspopup="menu"/);
   assert.match(sidebar, />닉네임<input/);
-  assert.doesNotMatch(globalCss, /\.tree-more \{ visibility: hidden/);
+  assert.match(sidebar, /event\.stopPropagation\(\); const rect/);
+  assert.match(sidebar, /addEventListener\("pointerdown", close\)/);
+  assert.match(sidebar, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(globalCss, /\.tree-more \{[^}]*opacity: 0;[^}]*pointer-events: none/);
+  assert.match(globalCss, /\.tree-row:hover \.tree-more, \.tree-row:focus-within \.tree-more \{ opacity: 1; pointer-events: auto; \}/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {
