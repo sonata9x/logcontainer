@@ -3,7 +3,7 @@ import { projectDocumentText } from "@/lib/logs/model/projection";
 import type { LogEntryDocument, ParserWarning, Roll20ImportReportV2 } from "@/lib/logs/model/types";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { parseRoll20Blocks } from "./blocks";
-import { filterErrorImageDuplicates } from "./duplicates";
+import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
 
@@ -117,9 +117,9 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     };
     parsedDocuments.push(document);
     if (documentKind === "dialogue" && speaker?.name) previousDialogueSpeaker = speaker;
-    else if (documentKind !== "dialogue") previousDialogueSpeaker = null;
+    else if (documentKind === "system") previousDialogueSpeaker = null;
   }
-  const duplicates = filterErrorImageDuplicates(parsedDocuments, options.removeDuplicateMessages === true);
+  const duplicates = filterErrorDuplicates(parsedDocuments, options.removeDuplicateMessages === true);
   const documents = duplicates.documents.map((document) => {
     const validated = validateLogEntryDocument(document);
     if (!validated.ok) throw new Error(validated.error);

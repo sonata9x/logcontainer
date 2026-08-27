@@ -72,15 +72,17 @@ function BlockView({ block }: { block: LogBlock }) {
   if (block.type === "image") {
     const style: CSSProperties = { width: block.display?.width ?? undefined, height: block.display?.height ?? undefined, minWidth: block.display?.minWidth ?? undefined, maxWidth: block.display?.maxWidth ?? undefined };
     const image = <img className="r20-image" src={block.src} alt={block.alt ?? ""} style={style} loading="lazy" />;
-    return <figure className={`r20-image-block r20-image-block--${block.display?.align ?? "left"}`}>{block.href ? <a href={block.href} target="_blank" rel="noopener noreferrer">{image}</a> : image}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
+    return <figure className={`r20-image-block r20-image-block--${block.display?.align ?? "default"}`}>{block.href ? <a href={block.href} target="_blank" rel="noopener noreferrer">{image}</a> : image}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
   }
   if (block.type === "rich") return <RichBlockView block={block} />;
   const rows = templateRows(block);
   const resultLabel = block.resultLabel || localizedResultLabel(block.resultLevel);
   return (
     <section className={`r20-template r20-template--${block.resultLevel ?? "normal"}`}>
-      {block.title && <h3 className="r20-template__title">{block.title}</h3>}
-      <table className="r20-template__table"><tbody>{rows.map((row) => <tr className={`r20-template__field${row.result ? " r20-template__field--result" : ""}`} key={row.key}><th>{row.label}</th><td>{row.value}</td></tr>)}</tbody></table>
+      <table className="r20-template__table">
+        {block.title && <caption>{block.title}</caption>}
+        <tbody>{rows.map((row) => <tr className={`r20-template__field${row.result ? " r20-template__field--result" : ""}`} key={row.key}><td className="r20-template__label">{row.label}{/[：:]$/.test(row.label) ? "" : ":"}</td><td className={`r20-template__value${row.result && block.resultLevel ? ` r20-template__value--${block.resultLevel}` : ""}`}>{row.value}</td></tr>)}</tbody>
+      </table>
       {!rows.some((row) => row.result) && resultLabel && <div className="r20-template__result">{resultLabel}</div>}
     </section>
   );
@@ -93,12 +95,12 @@ export function Roll20V2Renderer({ document }: { document: LogEntryDocument }) {
     timestampExplicit: Boolean(document.timestamp.raw),
     continuation: false
   };
-  const showSpeaker = presentation.speakerExplicit && Boolean(document.speaker?.name);
-  const showAvatar = presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
+  const showSpeaker = document.kind === "dialogue" && presentation.speakerExplicit && Boolean(document.speaker?.name);
+  const showAvatar = document.kind === "dialogue" && presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
   return (
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
-      {showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" />}
+      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" />}</div>}
       <div className="r20-message__body">
         <div className="r20-message__content-flow">
           {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? undefined }}>{document.speaker!.name}:</strong>}

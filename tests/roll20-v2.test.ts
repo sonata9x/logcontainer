@@ -10,6 +10,7 @@ const realFixture = readFileSync(new URL("./fixtures/roll20/real-msgdata-anonymi
 const renderedFixture = readFileSync(new URL("./fixtures/roll20/rendered-v2-cases.html", import.meta.url), "utf8");
 const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topology-v2.html", import.meta.url), "utf8");
 const enrichmentFixture = readFileSync(new URL("./fixtures/roll20/msgdata-rendered-enrichment.html", import.meta.url), "utf8");
+const duplicateFixture = readFileSync(new URL("./fixtures/roll20/rendered-error-duplicates.html", import.meta.url), "utf8");
 
 test("actual-derived msgdata fixture matches the v2 canonical golden projection", () => {
   const result = importRoll20HtmlV2(realFixture);
@@ -41,24 +42,35 @@ test("rendered adapter normalizes structural lanes and preserves inline roll ord
 
 test("actual sibling topology normalizes nearby same-id DOM without requiring different lanes", () => {
   const result = importRoll20HtmlV2(topologyFixture);
-  assert.equal(result.report.sourceMessageCount, 8);
-  assert.equal(result.report.logicalMessageCount, 7);
+  assert.equal(result.report.sourceMessageCount, 10);
+  assert.equal(result.report.logicalMessageCount, 9);
   assert.equal(result.report.structuralDuplicateCount, 1);
   const sibling = result.documents.find((document) => document.source.messageId === "sibling-1");
   assert.equal(sibling?.speaker?.name, "GM");
   assert.equal(projectDocumentText(sibling!), "첫 문장");
 });
 
-test("rendered continuation messages inherit semantic speaker but keep header presentation state", () => {
+test("rendered continuation messages inherit semantic speaker across an intervening description", () => {
   const result = importRoll20HtmlV2(topologyFixture);
-  const messages = ["continuation-1", "continuation-2", "continuation-3"].map((id) => result.documents.find((document) => document.source.messageId === id)!);
-  assert.deepEqual(messages.map((document) => document.speaker?.name), ["GM", "GM", "GM"]);
-  assert.deepEqual(messages.map((document) => document.presentation?.speakerExplicit), [true, false, false]);
-  assert.deepEqual(messages.map((document) => document.presentation?.continuation), [false, true, true]);
+  const messages = ["continuation-1", "continuation-2", "continuation-3", "continuation-4"].map((id) => result.documents.find((document) => document.source.messageId === id)!);
+  assert.deepEqual(messages.map((document) => document.speaker?.name), ["GM", "GM", "GM", "GM"]);
+  assert.deepEqual(messages.map((document) => document.presentation?.speakerExplicit), [true, false, false, false]);
+  assert.deepEqual(messages.map((document) => document.presentation?.continuation), [false, true, true, true]);
   const roll = messages[1].blocks.find((block) => block.type === "inline-roll");
   assert.ok(roll && roll.type === "inline-roll");
   assert.equal(roll.expression, "3d6*5");
   assert.match(roll.tooltip ?? "", /^Rolling 3d6\*5/);
+});
+
+test("duplicate option removes only exact adjacent canonical messages across block types", () => {
+  const off = importRoll20HtmlV2(duplicateFixture, { removeDuplicateMessages: false });
+  const on = importRoll20HtmlV2(duplicateFixture, { removeDuplicateMessages: true });
+  assert.equal(off.report.structuralDuplicateCount, 0);
+  assert.equal(off.report.errorDuplicateCount, 0);
+  assert.equal(off.documents.length, 8);
+  assert.equal(on.report.errorDuplicateCount, 4);
+  assert.equal(on.documents.length, 4);
+  assert.deepEqual(on.documents.map((document) => document.blocks.map((block) => block.type)), [["text"], ["text", "inline-roll", "text"], ["rich"], ["roll-template"]]);
 });
 
 test("adjacent styled fragments remain one RichBlock flow", () => {
