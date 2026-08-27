@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { requireWorkspaceSession } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { WorkspacePage } from "@/lib/types";
 
 export default async function WorkspacePage() {
   const session = await requireWorkspaceSession();
   const supabase = await createSupabaseServerClient();
-  const { data: firstPage } = await supabase.from("pages").select("id")
-    .eq("workspace_id", session.workspace.id).eq("is_archived", false)
-    .order("order_index").limit(1).maybeSingle();
+  const { data } = await supabase.rpc("get_workspace_tree", { target_workspace_id: session.workspace.id });
+  const firstPage = ((data ?? []) as WorkspacePage[]).find((item) => item.page_type === "log");
 
   return (
     <section className="empty-state">

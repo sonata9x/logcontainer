@@ -1,131 +1,97 @@
 "use client";
 
-import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, Plus, UserPlus, X } from "lucide-react";
+import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, MoreHorizontal, Pencil, Plus, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, WorkspacePage } from "@/lib/types";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
-type WorkspaceMember = { user_id: string; role: "owner" | "editor"; profile: { username: string; display_name: string | null } | null };
+type ShareRow = { share_id: string; user_id: string | null; username: string; display_name: string | null; can_invite: boolean; state: "active" | "pending" };
 
-export function WorkspaceSidebar({ workspaceId, workspaceName, pages, canInvite }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; canInvite: boolean }) {
+export function WorkspaceSidebar({ workspaceId, workspaceName, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
-  const [invitePending, setInvitePending] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState("");
-  const [members, setMembers] = useState<WorkspaceMember[]>([]);
-  const roots = useMemo(() => pages.filter((page) => !page.parent_id), [pages]);
+  const roots = useMemo(() => pages.filter((page) => !page.tree_parent_id), [pages]);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => router.refresh(), 180); };
+    const channel = supabase.channel(`workspace-tree-${workspaceId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pages" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "folder_items" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "resource_shares" }, refresh)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); void supabase.removeChannel(channel); };
+  }, [router, workspaceId]);
 
   async function createPage(pageType: PageType, parentId: string | null = null) {
     setCreating(true);
-    const response = await fetch("/api/pages", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId, pageType, parentId })
-    });
-    const result = await response.json();
-    setCreating(false);
+    const response = await fetch("/api/pages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, pageType, parentId }) });
+    const result = await response.json(); setCreating(false);
     if (!response.ok) return window.alert(result.error ?? "페이지를 만들지 못했습니다.");
     if (pageType === "log") router.push(`/workspace/pages/${result.id}`);
     router.refresh();
   }
 
-  async function logout() {
-    await createSupabaseBrowserClient().auth.signOut();
-    window.location.assign("/login");
-  }
+  async function logout() { await createSupabaseBrowserClient().auth.signOut(); window.location.assign("/login"); }
 
-  async function invite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setInvitePending(true);
-    setInviteMessage("");
-    const data = new FormData(event.currentTarget);
-    const response = await fetch("/api/members", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId, username: data.get("username"), password: data.get("password") })
-    });
-    const result = await response.json();
-    setInvitePending(false);
-    setInviteMessage(response.ok ? "편집자 계정을 추가했습니다." : result.error ?? "계정을 추가하지 못했습니다.");
-    if (response.ok) { event.currentTarget.reset(); await loadMembers(); }
-  }
-
-  async function loadMembers() {
-    const response = await fetch(`/api/members?workspaceId=${encodeURIComponent(workspaceId)}`);
-    const result = await response.json();
-    if (response.ok) setMembers(result.members ?? []);
-  }
-
-  async function openInvite() {
-    setShowInvite(true);
-    await loadMembers();
-  }
-
-  async function removeMember(userId: string) {
-    if (!window.confirm("이 편집자를 워크스페이스에서 내보낼까요?")) return;
-    const response = await fetch("/api/members", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, userId }) });
-    const result = await response.json();
-    if (!response.ok) return window.alert(result.error ?? "멤버를 내보내지 못했습니다.");
-    setMembers((current) => current.filter((member) => member.user_id !== userId));
-  }
-
-  return (
-    <aside className="workspace-sidebar">
-      <div className="workspace-title">{workspaceName}</div>
-      <div className="sidebar-create-actions">
-        <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
-        <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
-      </div>
-      <nav className="page-tree" aria-label="페이지">
-        {roots.map((page) => <PageNode key={page.id} page={page} pages={pages} depth={0} createPage={createPage} />)}
-        {!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}
-      </nav>
-      <div className="sidebar-footer">
-        <ArchivePanel workspaceId={workspaceId} />
-        {canInvite && <button className="sidebar-action" onClick={openInvite}><UserPlus size={15} />멤버 관리</button>}
-        <button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button>
-      </div>
-      {showInvite && <div className="modal-backdrop" onMouseDown={() => setShowInvite(false)}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowInvite(false)} aria-label="닫기"><X size={17} /></button><h2>멤버 관리</h2><p>편집자는 이 워크스페이스의 모든 로그를 보고 수정할 수 있습니다. 새 아이디와 전달할 임시 비밀번호를 정해주세요.</p><form onSubmit={invite}><label className="field">편집자 아이디<input name="username" minLength={2} maxLength={40} required /></label><label className="field">임시 비밀번호<input name="password" type="password" minLength={4} required /></label><button className="button button-primary" disabled={invitePending}>{invitePending ? "추가 중…" : "편집자 추가"}</button></form>{inviteMessage && <p>{inviteMessage}</p>}<div className="member-list">{members.map((member) => <div className="member-row" key={member.user_id}><div><strong>{member.profile?.display_name || member.profile?.username || "사용자"}</strong><small>@{member.profile?.username} · {member.role}</small></div>{member.role === "editor" && <button className="button button-danger" onClick={() => removeMember(member.user_id)}>내보내기</button>}</div>)}</div></section></div>}
-    </aside>
-  );
+  return <aside className="workspace-sidebar">
+    <div className="workspace-title">{workspaceName}</div>
+    <div className="sidebar-create-actions">
+      <button className="sidebar-action" onClick={() => createPage("log")} disabled={creating}><Plus size={16} />새 로그</button>
+      <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
+    </div>
+    <nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={pages} depth={0} createPage={createPage} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav>
+    <div className="sidebar-footer"><TrashPanel />{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
+  </aside>;
 }
 
-function ArchivePanel({ workspaceId }: { workspaceId: string }) {
+function TrashPanel() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [pages, setPages] = useState<WorkspacePage[]>([]);
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (!next) return;
-    const response = await fetch(`/api/pages?workspaceId=${encodeURIComponent(workspaceId)}&archived=true`);
-    const result = await response.json();
-    if (!response.ok) return window.alert(result.error ?? "보관함을 불러오지 못했습니다.");
-    setPages(result.pages ?? []);
-  }
-  async function restore(pageId: string) {
-    const response = await fetch(`/api/pages/${pageId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: false }) });
-    if (!response.ok) return window.alert("페이지를 복원하지 못했습니다.");
-    setPages((current) => current.filter((page) => page.id !== pageId));
-    router.refresh();
-  }
-  return <div className="sidebar-popover-wrap"><button className="sidebar-action" onClick={toggle}><Archive size={15} />보관함</button>{open && <div className="sidebar-popover">{pages.length ? pages.map((page) => <div className="sidebar-popover-item" key={page.id}><span>{page.title}</span><button className="button" onClick={() => restore(page.id)}>복원</button></div>) : <p>보관한 페이지가 없습니다.</p>}</div>}</div>;
+  const [resources, setResources] = useState<Array<{ id: string; title: string; deleted_at: string; purge_after: string }>>([]);
+  async function toggle() { const next = !open; setOpen(next); if (!next) return; const response = await fetch("/api/resources/trash"); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "휴지통을 불러오지 못했습니다."); setResources(result.resources ?? []); }
+  async function action(resourceId: string, permanent = false) { if (permanent && !window.confirm("이 리소스를 영구 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return; const response = await fetch("/api/resources/trash", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceId, permanent }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "휴지통 작업을 완료하지 못했습니다."); setResources((current) => current.filter((resource) => resource.id !== resourceId)); router.refresh(); }
+  return <div className="sidebar-popover-wrap"><button className="sidebar-action" onClick={toggle}><Archive size={15} />휴지통</button>{open && <div className="sidebar-popover">{resources.length ? resources.map((resource) => <div className="sidebar-popover-item trash-resource" key={resource.id}><span><strong>{resource.title}</strong><small>{Math.max(0, Math.ceil((new Date(resource.purge_after).getTime() - Date.now()) / 86400000))}일 후 삭제</small></span><span className="row-actions"><button className="button" onClick={() => action(resource.id)}>복원</button><button className="button button-danger" onClick={() => action(resource.id, true)}>영구 삭제</button></span></div>) : <p>휴지통이 비어 있습니다.</p>}</div>}</div>;
 }
 
 function PageNode({ page, pages, depth, createPage }: { page: WorkspacePage; pages: WorkspacePage[]; depth: number; createPage: CreatePage }) {
-  const pathname = usePathname();
-  const children = pages.filter((candidate) => candidate.parent_id === page.id);
-  const [expanded, setExpanded] = useState(true);
-  const paddingLeft = 9 + depth * 15;
+  const pathname = usePathname(); const router = useRouter();
+  const children = pages.filter((candidate) => candidate.tree_parent_id === page.id);
+  const [expanded, setExpanded] = useState(true); const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); const [sharing, setSharing] = useState(false); const [moving, setMoving] = useState(false);
+  const paddingLeft = 9 + depth * 15; const href = page.page_type === "log" ? `/workspace/pages/${page.id}` : null;
+  async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); router.refresh(); }
+  async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); if (pathname === href) router.push("/workspace"); router.refresh(); }
+  async function removeFromFolder() { setMenu(null); if (!page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); router.refresh(); }
+  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""}`} style={{ paddingLeft }} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }}>
+    {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
+    {href ? <Link href={href} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
+    {page.page_type === "folder" && <button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button>}
+    <button className="tree-more" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }} aria-label="메뉴"><MoreHorizontal size={14} /></button>
+  </div>;
+  return <div className={page.page_type === "folder" ? "tree-folder" : "tree-page"}>{row}{expanded && children.map((child) => <PageNode key={child.id} page={child} pages={pages} depth={depth + 1} createPage={createPage} />)}{menu && <ResourceMenu x={menu.x} y={menu.y} page={page} onClose={() => setMenu(null)} onRename={rename} onShare={() => { setMenu(null); setSharing(true); }} onMove={() => { setMenu(null); setMoving(true); }} onRemove={remove} onRemoveFromFolder={Number(page.tree_depth) > 0 ? removeFromFolder : undefined} />}{sharing && <ShareDialog page={page} onClose={() => setSharing(false)} />}{moving && <MoveDialog page={page} pages={pages} onClose={() => setMoving(false)} />}</div>;
+}
 
-  if (page.page_type === "folder") {
-    return <div className="tree-folder"><div className="page-link tree-row" style={{ paddingLeft }}><button className="tree-toggle" onClick={() => setExpanded((value) => !value)} aria-label={expanded ? "폴더 접기" : "폴더 펼치기"}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}<span className="tree-title">{page.title}</span><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button></div>{expanded && children.map((child) => <PageNode key={child.id} page={child} pages={pages} depth={depth + 1} createPage={createPage} />)}</div>;
-  }
+function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove, onRemoveFromFolder }: { x: number; y: number; page: WorkspacePage; onClose: () => void; onRename: () => void; onShare: () => void; onMove: () => void; onRemove: () => void; onRemoveFromFolder?: () => void }) {
+  useEffect(() => { const close = () => onClose(); window.addEventListener("click", close); return () => window.removeEventListener("click", close); }, [onClose]);
+  return <div className="entry-context-menu resource-context-menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onClick={(event) => event.stopPropagation()}><button onClick={onRename}><Pencil size={13} />이름 변경</button>{page.can_invite && <button onClick={onShare}><Share2 size={13} />공유</button>}{Number(page.tree_depth) === 0 && <button onClick={onMove}><Folder size={13} />내 워크스페이스에서 이동</button>}{onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}<hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></div>;
+}
 
-  const href = `/workspace/pages/${page.id}`;
-  return <Link className={`page-link ${pathname === href ? "active" : ""}`} style={{ paddingLeft: paddingLeft + 18 }} href={href}><span>{page.icon ?? <FileText size={15} />}</span><span className="tree-title">{page.title}</span></Link>;
+function MoveDialog({ page, pages, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; onClose: () => void }) {
+  const router = useRouter(); const [parentId, setParentId] = useState(""); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
+  async function move() { const response = await fetch(`/api/resources/${page.id}/placement`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ parentId: parentId || null }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); onClose(); router.refresh(); }
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>내 워크스페이스에서 이동</h2><p>이 위치는 나에게만 적용되며 다른 공유자의 정리에는 영향을 주지 않습니다.</p><label className="field">위치<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose}>취소</button><button className="button button-primary" onClick={move}>이동</button></div></section></div>;
+}
+
+function ShareDialog({ page, onClose }: { page: WorkspacePage; onClose: () => void }) {
+  const [shares, setShares] = useState<ShareRow[]>([]); const [canManage, setCanManage] = useState(false); const [loading, setLoading] = useState(true); const [message, setMessage] = useState("");
+  async function load() { const response = await fetch(`/api/resources/${page.id}/shares`); const result = await response.json(); setLoading(false); if (!response.ok) return setMessage(result.error ?? "공유 정보를 불러오지 못했습니다."); setShares(result.shares ?? []); setCanManage(Boolean(result.canManage)); }
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function add(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setMessage(""); const form = new FormData(event.currentTarget); const response = await fetch(`/api/resources/${page.id}/shares`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: form.get("username"), canInvite: form.get("canInvite") === "on" }) }); const result = await response.json(); if (!response.ok) return setMessage(result.error ?? "공유하지 못했습니다."); setMessage(result.state === "pending" ? "가입 또는 승인을 기다리는 공유 예약으로 저장했습니다." : "공유했습니다."); event.currentTarget.reset(); await load(); }
+  async function toggleInvite(share: ShareRow) { const response = await fetch(`/api/resources/${page.id}/shares`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ shareId: share.share_id, canInvite: !share.can_invite }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "초대 권한을 바꾸지 못했습니다."); await load(); }
+  async function revoke(share: ShareRow) { if (!window.confirm(`@${share.username}의 공유 권한을 회수할까요?`)) return; const response = await fetch(`/api/resources/${page.id}/shares`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ shareId: share.share_id, state: share.state }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "공유를 해제하지 못했습니다."); await load(); }
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card share-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>{page.title} 공유</h2><p>{page.page_type === "folder" ? "폴더와 내부 구조가 함께 공유됩니다." : "상대방 워크스페이스에 이 페이지만 나타납니다."}</p><form className="share-form" onSubmit={add}><label className="field">사용자 아이디<input name="username" placeholder="username" minLength={2} required /></label>{canManage && <label className="checkbox-row"><input name="canInvite" type="checkbox" /> 이 리소스에 다른 사람을 초대할 수 있음</label>}<button className="button button-primary">공유</button></form>{message && <p>{message}</p>}{canManage && <div className="member-list">{loading ? <p>불러오는 중…</p> : shares.map((share) => <div className="member-row" key={share.share_id}><div><strong>{share.display_name || share.username}</strong><small>@{share.username} · {share.state === "pending" ? "대기 중" : "편집 가능"}</small></div><div className="row-actions">{share.state === "active" && <button className="button" onClick={() => toggleInvite(share)}>초대 {share.can_invite ? "가능" : "불가"}</button>}<button className="button button-danger" onClick={() => revoke(share)}>권한 제거</button></div></div>)}</div>}</section></div>;
 }

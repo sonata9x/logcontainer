@@ -14,5 +14,5 @@ export async function POST(request: Request) {
   if (listError) return NextResponse.json({ error: listError.message }, { status: 400 });
   if (users.users.length) return NextResponse.json({ error: "최초 설정이 이미 완료되었습니다." }, { status: 409 });
   const { data, error } = await admin.auth.admin.createUser({ email: createInternalAuthEmail(), password: deriveAuthPassword(password), email_confirm: true, user_metadata: { username, display_name: displayName || username } });
-  return error || !data.user ? NextResponse.json({ error: error?.message ?? "소유자를 만들지 못했습니다." }, { status: 400 }) : NextResponse.json({ created: true }, { status: 201 });
+  return error || !data.user ? NextResponse.json({ error: error?.message ?? "관리자를 만들지 못했습니다." }, { status: 400 }) : NextResponse.json({ created: true }, { status: 201 });
 }

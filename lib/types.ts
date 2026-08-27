@@ -3,6 +3,19 @@ import type { LogEntryDocument } from "@/lib/logs/model/types";
 export type WorkspaceRole = "owner" | "editor";
 export type PageType = "folder" | "log";
 export type LogPlatform = "manual" | "roll20" | "ccfolia" | "other";
+export type AccountStatus = "pending" | "approved" | "rejected" | "disabled";
+
+export type Profile = {
+  id: string;
+  username: string;
+  display_name: string | null;
+  account_status: AccountStatus;
+  is_site_admin: boolean;
+  approved_at: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type Workspace = {
   id: string;
@@ -21,6 +34,14 @@ export type WorkspacePage = {
   icon: string | null;
   order_index: number;
   is_archived: boolean;
+  original_owner_id: string;
+  deleted_at: string | null;
+  purge_after?: string | null;
+  deleted_by?: string | null;
+  tree_parent_id?: string | null;
+  tree_depth?: number;
+  is_original_owner?: boolean;
+  can_invite?: boolean;
   created_at: string;
   updated_at: string;
 };

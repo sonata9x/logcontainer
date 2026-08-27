@@ -12,7 +12,7 @@ export default async function PublishedLogPage({ params }: { params: Promise<{ t
   const admin = createSupabaseAdminClient();
   const { data: publication } = await admin.from("publications").select("page_id, published_at").eq("token", token).eq("is_active", true).maybeSingle();
   if (!publication) notFound();
-  const { data: page } = await admin.from("pages").select("*").eq("id", publication.page_id).eq("page_type", "log").eq("is_archived", false).maybeSingle();
+  const { data: page } = await admin.from("pages").select("*").eq("id", publication.page_id).eq("page_type", "log").eq("is_archived", false).is("deleted_at", null).maybeSingle();
   if (!page) notFound();
   const { data: log } = await admin.from("logs").select("id").eq("page_id", page.id).maybeSingle();
   if (!log) notFound();

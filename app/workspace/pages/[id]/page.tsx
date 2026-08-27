@@ -10,7 +10,7 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const session = await requireWorkspaceSession();
   const supabase = await createSupabaseServerClient();
-  const { data: page } = await supabase.from("pages").select("*").eq("id", id).eq("workspace_id", session.workspace.id).eq("page_type", "log").maybeSingle();
+  const { data: page } = await supabase.from("pages").select("*").eq("id", id).eq("page_type", "log").is("deleted_at", null).maybeSingle();
   if (!page) notFound();
   const { data: log } = await supabase.from("logs").select("id, import_report").eq("page_id", id).single();
   const [{ data: entries }, { data: publication }] = await Promise.all([
@@ -26,5 +26,6 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
     }
     return { ...entry, raw_html: entry.raw_html ? sanitizeLogHtml(entry.raw_html) : null };
   });
-  return <LogEditor page={page as WorkspacePage} logId={log!.id} entries={safeEntries} publication={(publication as Publication | null) ?? null} importReport={(log?.import_report as ImportSummary | null) ?? null} />;
+  const resourcePage = { ...page, is_original_owner: page.original_owner_id === session.user.id } as WorkspacePage;
+  return <LogEditor page={resourcePage} logId={log!.id} entries={safeEntries} publication={(publication as Publication | null) ?? null} importReport={(log?.import_report as ImportSummary | null) ?? null} />;
 }

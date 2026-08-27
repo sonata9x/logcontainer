@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 
 export function LoginForm() {
   const [pending, setPending] = useState(false);
@@ -28,6 +29,7 @@ export function LoginForm() {
       <label className="field">비밀번호<input name="password" type="password" autoComplete="current-password" minLength={4} required /></label>
       {error && <p className="error">{error}</p>}
       <button className="button button-primary" type="submit" disabled={pending}>{pending ? "로그인 중…" : "로그인"}</button>
+      <p className="auth-footnote">계정이 없나요? <Link href="/signup">회원가입</Link></p>
     </form>
   );
 }

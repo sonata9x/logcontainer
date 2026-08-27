@@ -8,5 +8,5 @@ export default async function SetupPage() {
   const admin = createSupabaseAdminClient();
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
   if (data?.users.length) redirect("/login");
-  return <main className="auth-page"><section className="auth-card"><h1>첫 워크스페이스 만들기</h1><p>이 화면은 사용자가 아직 한 명도 없을 때만 열립니다.</p><SetupForm /></section></main>;
+  return <main className="auth-page"><section className="auth-card"><h1>서비스 최초 설정</h1><p>첫 계정은 자동 승인되며 가입 신청을 관리하는 사이트 관리자가 됩니다.</p><SetupForm /></section></main>;
 }
