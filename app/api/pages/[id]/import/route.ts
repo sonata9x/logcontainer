@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const startedAt = performance.now();
   const { id } = await params;
   const context = await getApiPageContext(id);
-  if (!context || context.page.page_type !== "log" || !context.isOriginalOwner) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
+  if (!context || context.page.page_type !== "log" || !context.canReimport) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
   const limited = await enforceRateLimit(request, { scope: "log-import", identity: context.user.id, maxRequests: 6, windowSeconds: 600, blockSeconds: 900 });
   if (limited) return limited;
   const body = await request.json().catch(() => ({}));

@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { defaultCorrectionSettings, type CorrectionSettings } from "@/lib/logs/corrections";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 export function ExportDialog({ endpoint, title, usePersonalDefaults, onClose }: { endpoint: string; title: string; usePersonalDefaults: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<CorrectionSettings>(defaultCorrectionSettings);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  useEscapeClose(onClose, pending);
   useEffect(() => {
     if (!usePersonalDefaults) return;
     void fetch("/api/account/settings").then((response) => response.json()).then((result) => { if (result.correctionSettings) setSettings(result.correctionSettings); }).catch(() => undefined);

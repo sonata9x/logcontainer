@@ -7,7 +7,7 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 
 async function getOwnerLogContext(pageId: string) {
   const context = await getApiPageContext(pageId);
-  if (!context || context.page.page_type !== "log" || !context.isOriginalOwner) return null;
+  if (!context || context.page.page_type !== "log" || !context.canReimport) return null;
   const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", pageId).maybeSingle();
   return log ? { ...context, log } : null;
 }

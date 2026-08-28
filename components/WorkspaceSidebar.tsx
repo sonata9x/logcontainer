@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, ResourceRole, WorkspacePage } from "@/lib/types";
 import { defaultCorrectionSettings, type CorrectionSettings } from "@/lib/logs/corrections";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
 type ShareRow = { share_id: string | null; user_id: string | null; username: string; display_name: string | null; access_level: ResourceRole; state: "active" | "pending"; is_owner: boolean };
@@ -64,6 +65,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
   useEffect(() => setCurrentNickname(nickname), [nickname]);
   useEffect(() => setLivePages(pages), [pages]);
+  useEffect(() => { document.title = currentWorkspaceName; }, [currentWorkspaceName]);
   useEffect(() => setMobileSidebarOpen(false), [pathname]);
   useEffect(() => {
     if (!mobileSidebarOpen) return;
@@ -213,6 +215,7 @@ function WorkspaceSettingsDialog({ workspaceName, nickname, accentColor, onClose
   const [error, setError] = useState("");
   const [nextAccentColor, setNextAccentColor] = useState(accentColor);
   const [correctionSettings, setCorrectionSettings] = useState<CorrectionSettings>(defaultCorrectionSettings);
+  useEscapeClose(onClose, pending);
   useEffect(() => { void fetch("/api/account/settings").then((response) => response.json()).then((result) => { if (result.accentColor) setNextAccentColor(result.accentColor); if (result.correctionSettings) setCorrectionSettings(result.correctionSettings); }); }, []);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -269,6 +272,7 @@ function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove
 
 function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; reloadTree: () => Promise<void>; onClose: () => void }) {
   const [parentId, setParentId] = useState(""); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
+  useEscapeClose(onClose);
   async function finish(response: Response) { const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); await reloadTree(); onClose(); }
   async function movePersonal() { await finish(await fetch(`/api/resources/${page.id}/placement`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ parentId: parentId || null }) })); }
   async function moveShared() { if (!parentId) return window.alert("공유 구조의 대상 폴더를 선택해주세요."); await finish(await fetch(`/api/resources/${parentId}/children`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) })); }
@@ -278,6 +282,7 @@ function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage;
 export function ShareDialog({ page, onClose }: { page: WorkspacePage; onClose: () => void }) {
   const [shares, setShares] = useState<ShareRow[]>([]); const [actorRole, setActorRole] = useState<ResourceRole>(page.resource_role ?? "viewer"); const [allowedRoles, setAllowedRoles] = useState<ResourceRole[]>([]); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false); const [message, setMessage] = useState("");
   const [guestLink, setGuestLink] = useState<{ isActive: boolean; defaultAccessLevel: "viewer" | "editor" } | null>(null); const [guests, setGuests] = useState<GuestParticipantRow[]>([]); const [guestUrl, setGuestUrl] = useState("");
+  useEscapeClose(onClose, pending);
   async function load() { const [response, guestResponse] = await Promise.all([fetch(`/api/resources/${page.id}/shares`), page.page_type === "log" ? fetch(`/api/pages/${page.id}/guest-link`) : Promise.resolve(null)]); const result = await response.json(); setLoading(false); if (!response.ok) return setMessage(result.error ?? "공유 정보를 불러오지 못했습니다."); setShares(result.shares ?? []); setActorRole(result.actorRole); setAllowedRoles(result.allowedRoles ?? []); if (guestResponse) { const guestResult = await guestResponse.json(); if (guestResponse.ok) { setGuestLink(guestResult.link); setGuests(guestResult.participants ?? []); } } }
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   async function add(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setMessage(""); setPending(true); const form = new FormData(event.currentTarget); const response = await fetch(`/api/resources/${page.id}/shares`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: form.get("username"), accessLevel: form.get("accessLevel") }) }); const result = await response.json(); setPending(false); if (!response.ok) return setMessage(result.error ?? "공유하지 못했습니다."); setMessage(result.state === "pending" ? "가입 또는 승인을 기다리는 공유 예약으로 저장했습니다." : "공유했습니다."); event.currentTarget.reset(); await load(); }

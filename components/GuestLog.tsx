@@ -7,6 +7,7 @@ import { editableTextSegments, styledContentTargets } from "@/lib/logs/model/use
 import { styleToEditorText } from "@/lib/logs/model/editor";
 import type { LogEntry } from "@/lib/types";
 import { ExportDialog } from "@/components/ExportDialog";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 type GuestPayload = { page: { id: string; title: string }; participant: { id: string; nickname: string; accessLevel: "viewer" | "editor" }; entries: LogEntry[]; totalCount: number; canEdit: boolean; eventCursor: number };
 
@@ -19,6 +20,7 @@ export function GuestLog({ token }: { token: string }) {
   const [trash, setTrash] = useState<LogEntry[] | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const cursor = useRef(0);
+  useEscapeClose(() => setTrash(null), pending || !trash);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/share/${encodeURIComponent(token)}/log`, { cache: "no-store" });

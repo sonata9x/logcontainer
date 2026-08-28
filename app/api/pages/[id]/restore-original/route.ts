@@ -4,6 +4,8 @@ import { getApiPageContext } from "@/lib/api-auth";
 import { gzipArchive, LOG_GENERATION_BUCKET, removePrivateArchives, uploadPrivateArchive } from "@/lib/logs/archive";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { databaseErrorResponse, internalErrorResponse } from "@/lib/api-error";
+import { validateLogEntryDocument } from "@/lib/logs/model/validate";
+import { projectDocumentText } from "@/lib/logs/model/projection";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,13 +26,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const restoreId = randomUUID();
   const storagePath = `${log.id}/${restoreId}-pre-restore.json.gz`;
   const archive = gzipArchive(JSON.stringify({ schemaVersion: 1, reason: "restore-original", logId: log.id, contentVersion: log.content_version, entries: entries ?? [], revisions: revisionResult.data ?? [] }));
+  const baselineContents = Object.fromEntries((entries ?? []).filter((entry) => !entry.is_added).map((entry) => {
+    const baseline = validateLogEntryDocument(entry.original_document ?? entry.document);
+    return [entry.id, baseline.ok ? projectDocumentText(baseline.document) : entry.original_content ?? entry.content];
+  }));
   try {
     await uploadPrivateArchive(LOG_GENERATION_BUCKET, storagePath, archive.compressed, "application/gzip");
   } catch (error) {
     return internalErrorResponse(error, "복원 전 generation archive 저장에 실패했습니다.");
   }
-  const { data, error } = await context.supabase.rpc("restore_log_original", {
-    target_page_id: id, restore_event_id: restoreId, generation_storage_path: storagePath
+  const { data, error } = await context.supabase.rpc("restore_log_original_v2", {
+    target_page_id: id, restore_event_id: restoreId, generation_storage_path: storagePath,
+    baseline_contents: baselineContents
   });
   if (error) {
     await removePrivateArchives([{ bucket: LOG_GENERATION_BUCKET, path: storagePath }]);

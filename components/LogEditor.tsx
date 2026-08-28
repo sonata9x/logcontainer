@@ -15,6 +15,7 @@ import type { LogEntryDocument } from "@/lib/logs/model/types";
 import { MAX_STAGED_ROLL20_SOURCE_SIZE, SUPABASE_TUS_CHUNK_SIZE } from "@/lib/logs/import-limits";
 import { ShareDialog } from "@/components/WorkspaceSidebar";
 import { ExportDialog } from "@/components/ExportDialog";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 export type ImportSummary = {
   provider?: string;
@@ -304,6 +305,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
 
 function LogInfoDialog({ pageId, totalCount, summary, isOwner, canEdit, onRestore, onClose }: { pageId: string; totalCount: number; summary: ImportSummary | null; isOwner: boolean; canEdit: boolean; onRestore: (entry: LogEntry) => void; onClose: () => void }) {
   const [info, setInfo] = useState<{ platform?: string; latestImportAt?: string | null } | null>(null);
+  useEscapeClose(onClose);
   useEffect(() => { void fetch(`/api/pages/${pageId}/info`).then((response) => response.json()).then(setInfo).catch(() => setInfo({})); }, [pageId]);
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card log-info-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>로그 정보</h2><dl className="log-info-grid"><dt>현재 총 메시지 수</dt><dd>{totalCount.toLocaleString()}</dd><dt>Platform</dt><dd>{info?.platform ?? summary?.provider ?? "불러오는 중…"}</dd><dt>최신 import 날짜</dt><dd>{info?.latestImportAt ? new Date(info.latestImportAt).toLocaleString("ko-KR") : "없음"}</dd><dt>원본 source message count</dt><dd>{summary?.sourceMessageCount ?? 0}</dd><dt>logical/imported count</dt><dd>{summary?.logicalMessageCount ?? summary?.importedMessageCount ?? 0}</dd><dt>structural duplicate count</dt><dd>{summary?.structuralDuplicateCount ?? 0}</dd><dt>error duplicate count</dt><dd>{summary?.errorDuplicateCount ?? summary?.duplicateMessageCount ?? 0}</dd><dt>hidden removed</dt><dd>{summary?.hiddenRemovedCount ?? summary?.hiddenMessageCount ?? 0}</dd><dt>warning count</dt><dd>{summary?.warningCount ?? 0}</dd></dl><div className="log-info-actions">{isOwner && <ImportHistoryPanel pageId={pageId} />}{canEdit && <TrashPanel pageId={pageId} onRestore={onRestore} />}</div></section></div>;
 }
@@ -315,6 +317,7 @@ function PublicationDialog({ pageId, publication, onChange, onClose }: { pageId:
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  useEscapeClose(onClose, pending);
   useEffect(() => { void fetch(`/api/pages/${pageId}/publication`).then(async (response) => ({ response, result: await response.json() })).then(({ response, result }) => { if (!response.ok || !result?.id) return; const normalized: Publication = { id: result.id, page_id: result.pageId, token: result.token, is_active: result.isActive, visibility: result.visibility, password_version: result.passwordVersion, published_at: result.publishedAt, updated_at: result.updatedAt }; setCurrent(normalized); setVisibility(normalized.visibility ?? "public"); onChange(normalized); }); }, [onChange, pageId]);
   async function save(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const response = await fetch(`/api/pages/${pageId}/publication`, { method: current?.is_active ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility, password, passwordConfirm }) }); const result = await response.json(); setPending(false); if (!response.ok) return setError(result.error ?? "게시 설정을 저장하지 못했습니다."); setCurrent(result); onChange(result); setPassword(""); setPasswordConfirm(""); }
   async function stop() { if (!window.confirm("게시를 중단할까요? 기존 비밀번호 세션도 모두 종료됩니다.")) return; setPending(true); const response = await fetch(`/api/pages/${pageId}/publication`, { method: "DELETE" }); const result = await response.json(); setPending(false); if (!response.ok) return setError(result.error ?? "게시를 중단하지 못했습니다."); setCurrent(result); onChange(result); }
@@ -349,6 +352,7 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onCh
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [editingVersion, setEditingVersion] = useState(entry.updated_at);
   const [saving, setSaving] = useState(false);
+  useEscapeClose(() => { setShowCss(false); setShowHistory(false); }, saving || (!showCss && !showHistory));
 
   useEffect(() => {
     if (editing) return;

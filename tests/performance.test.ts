@@ -19,6 +19,7 @@ const guestSharingMigration = readFileSync(new URL("../supabase/migrations/20260
 const restoreMigration = readFileSync(new URL("../supabase/migrations/202608280012_log_restore_original.sql", import.meta.url), "utf8");
 const publicationPrivacyMigration = readFileSync(new URL("../supabase/migrations/202608280013_publication_privacy.sql", import.meta.url), "utf8");
 const preferencesMigration = readFileSync(new URL("../supabase/migrations/202608280014_user_preferences.sql", import.meta.url), "utf8");
+const finalPolishMigration = readFileSync(new URL("../supabase/migrations/202608280015_privacy_security_polish.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -123,6 +124,7 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const restoreMarker = "-- 202608280012_log_restore_original.sql";
   const publicationPrivacyMarker = "-- 202608280013_publication_privacy.sql";
   const preferencesMarker = "-- 202608280014_user_preferences.sql";
+  const finalPolishMarker = "-- 202608280015_privacy_security_polish.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
@@ -137,7 +139,8 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(guestSharingMarker) + guestSharingMarker.length, schema.indexOf(restoreMarker))), normalizedSql(guestSharingMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(restoreMarker) + restoreMarker.length, schema.indexOf(publicationPrivacyMarker))), normalizedSql(restoreMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(publicationPrivacyMarker) + publicationPrivacyMarker.length, schema.indexOf(preferencesMarker))), normalizedSql(publicationPrivacyMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(preferencesMarker) + preferencesMarker.length)), normalizedSql(preferencesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(preferencesMarker) + preferencesMarker.length, schema.indexOf(finalPolishMarker))), normalizedSql(preferencesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(finalPolishMarker) + finalPolishMarker.length)), normalizedSql(finalPolishMigration));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {
@@ -145,7 +148,7 @@ test("large Roll20 imports upload directly to private staging storage", () => {
   assert.match(largeImportMigration, /create table if not exists public\.log_import_uploads/);
   assert.match(largeImportMigration, /alter table public\.log_import_uploads enable row level security/);
   assert.match(largeImportMigration, /revoke all on table public\.log_import_uploads from public, anon, authenticated/);
-  assert.match(uploadRoute, /context\.isOriginalOwner/);
+  assert.match(uploadRoute, /context\.canReimport/);
   assert.match(uploadRoute, /createImportUploadTarget/);
   assert.match(uploadRoute, /log-import-upload-target/);
   assert.match(stagingPolicyMigration, /create or replace function public\.can_upload_log_import/);
@@ -166,8 +169,8 @@ test("large Roll20 imports upload directly to private staging storage", () => {
   assert.match(editor, /requestBody = \{ uploadId, removeHiddenMessages \}/);
   assert.match(proxy, /contentLength > 4 \* 1024 \* 1024/);
   assert.match(purgeRoute, /purgeExpiredImportUploads/);
-  assert.match(importsRoute, /context\.isOriginalOwner/);
-  assert.match(importArchiveRoute, /context\.isOriginalOwner/);
+  assert.match(importsRoute, /context\.canReimport/);
+  assert.match(importArchiveRoute, /context\.canReimport/);
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {
