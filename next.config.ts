@@ -7,6 +7,10 @@ function contentSecurityPolicy() {
     try {
       const url = new URL(supabaseUrl);
       connectSources.push(url.origin, `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`);
+      if (url.hostname.endsWith(".supabase.co")) {
+        const projectRef = url.hostname.slice(0, -".supabase.co".length);
+        connectSources.push(`${url.protocol}//${projectRef}.storage.supabase.co`);
+      }
     } catch {
       // The environment validator will surface an invalid URL at runtime.
     }

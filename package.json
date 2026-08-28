@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "tsx --test tests/**/*.test.ts",
+    "benchmark:roll20-import": "node --expose-gc ./node_modules/tsx/dist/cli.mjs scripts/benchmark-roll20-import.ts",
     "backfill:log-storage": "tsx scripts/backfill-log-storage.ts"
   },
   "dependencies": {
@@ -20,7 +21,8 @@
     "postcss-value-parser": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sanitize-html": "^2.13.1"
+    "sanitize-html": "^2.13.1",
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

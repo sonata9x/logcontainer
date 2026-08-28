@@ -3,6 +3,7 @@
 import { FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import { Archive, Download, History, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Upload } from "tus-js-client";
 import type { LogEntry, LogEntryRevision, Publication, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CorrectionSettings } from "@/lib/logs/corrections";
@@ -12,6 +13,7 @@ import { EntryContextMenu } from "@/components/logs/EntryContextMenu";
 import { cloneLogDocument } from "@/lib/logs/model/editor";
 import { editableTextSegments, hasStyledContent } from "@/lib/logs/model/user-edit";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
+import { MAX_STAGED_ROLL20_SOURCE_SIZE, SUPABASE_TUS_CHUNK_SIZE } from "@/lib/logs/import-limits";
 
 export type ImportSummary = {
   provider?: string;
@@ -27,6 +29,38 @@ export type ImportSummary = {
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
 
+type ImportUploadTarget = {
+  uploadId: string;
+  storagePath: string;
+  storageOrigin: string;
+  bucket: string;
+};
+
+function uploadRoll20File(file: File, target: ImportUploadTarget, accessToken: string, onProgress: (percentage: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const upload = new Upload(file, {
+      endpoint: `${target.storageOrigin}/storage/v1/upload/resumable`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      metadata: {
+        bucketName: target.bucket,
+        objectName: target.storagePath,
+        contentType: "text/html",
+        cacheControl: "0"
+      },
+      chunkSize: SUPABASE_TUS_CHUNK_SIZE,
+      retryDelays: [0, 3_000, 5_000, 10_000, 20_000],
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      onProgress(bytesSent, bytesTotal) {
+        onProgress(bytesTotal ? Math.round((bytesSent / bytesTotal) * 100) : 0);
+      },
+      onError(error) { reject(error); },
+      onSuccess() { resolve(); }
+    });
+    upload.start();
+  });
+}
+
 export function LogEditor({ page, logId, entries, totalEntryCount, publication, importReport }: { page: WorkspacePage; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null }) {
   const router = useRouter();
   const [liveEntries, setLiveEntries] = useState(entries);
@@ -36,8 +70,10 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
   const [activePublication, setActivePublication] = useState(publication);
   const [title, setTitle] = useState(page.title);
   const [source, setSource] = useState("");
-  const [showImport, setShowImport] = useState(totalEntryCount === 0);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [showImport, setShowImport] = useState(Boolean(page.is_original_owner) && totalEntryCount === 0);
   const [pending, setPending] = useState(false);
+  const [importStatus, setImportStatus] = useState("");
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -45,6 +81,7 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
+  const importFileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
 
@@ -160,18 +197,65 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
 
   async function importLog(event: FormEvent) {
     event.preventDefault();
-    if (!source.trim()) return;
+    if (!page.is_original_owner || (!sourceFile && !source.trim())) return;
+    if (sourceFile && (sourceFile.size < 1 || sourceFile.size > MAX_STAGED_ROLL20_SOURCE_SIZE)) {
+      return window.alert("Roll20 HTML 파일은 최대 12MB까지 업로드할 수 있습니다.");
+    }
     if (totalCount && !window.confirm("현재 편집 블록을 새 Roll20 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
     setPending(true);
-    const response = await fetch(`/api/pages/${page.id}/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source, removeHiddenMessages }) });
-    const result = await response.json();
-    setPending(false);
-    if (!response.ok) return window.alert(result.error ?? "로그를 가져오지 못했습니다.");
-    setSource("");
-    setSummary(result.report ?? null);
-    setLiveEntries(result.entries ?? []);
-    setTotalCount(result.count ?? result.entries?.length ?? 0);
-    setShowImport(false);
+    let uploadId: string | null = null;
+    let completed = false;
+    try {
+      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean } = { source, removeHiddenMessages };
+      if (sourceFile) {
+        setImportStatus("안전한 업로드 주소를 준비하는 중…");
+        const targetResponse = await fetch(`/api/pages/${page.id}/import/upload`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sizeBytes: sourceFile.size })
+        });
+        const targetResult = await targetResponse.json().catch(() => ({}));
+        if (!targetResponse.ok) return window.alert(targetResult.error ?? "파일 업로드를 준비하지 못했습니다.");
+        const target = targetResult as ImportUploadTarget;
+        uploadId = target.uploadId;
+        const { data: { session } } = await createSupabaseBrowserClient().auth.getSession();
+        if (!session?.access_token) throw new Error("Supabase session is unavailable");
+        setImportStatus("파일 업로드 중… 0%");
+        await uploadRoll20File(sourceFile, target, session.access_token, (percentage) => setImportStatus(`파일 업로드 중… ${percentage}%`));
+        setImportStatus("HTML 분석 및 저장 중…");
+        requestBody = { uploadId, removeHiddenMessages };
+      } else {
+        setImportStatus("HTML 분석 및 저장 중…");
+      }
+
+      const response = await fetch(`/api/pages/${page.id}/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return window.alert(result.error ?? "로그를 가져오지 못했습니다.");
+      completed = true;
+      setSource("");
+      setSourceFile(null);
+      if (importFileInput.current) importFileInput.current.value = "";
+      setSummary(result.report ?? null);
+      setLiveEntries(result.entries ?? []);
+      setTotalCount(result.count ?? result.entries?.length ?? 0);
+      setShowImport(false);
+    } catch {
+      window.alert("로그 파일을 업로드하거나 가져오지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.");
+    } finally {
+      if (uploadId && !completed) {
+        await fetch(`/api/pages/${page.id}/import/upload`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ uploadId })
+        }).catch(() => undefined);
+      }
+      setImportStatus("");
+      setPending(false);
+    }
   }
 
   async function togglePublish() {
@@ -207,9 +291,9 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" />
         <div className="page-meta">{totalCount.toLocaleString()}개 메시지 블록{summary?.provider === "roll20" && <> · 원본 {summary.sourceMessageCount ?? 0}개 · 논리 메시지 {summary.logicalMessageCount ?? summary.importedMessageCount ?? 0}개 · 구조 반복 {summary.structuralDuplicateCount ?? 0}개 정규화 · hidden {summary.hiddenRemovedCount ?? summary.hiddenMessageCount ?? 0}개 제거 · 오류 중복 {summary.errorDuplicateCount ?? summary.duplicateMessageCount ?? 0}개 제거{Boolean(summary.warningCount) && <> · 경고 {summary.warningCount}개</>}</>}</div>
-        <div className="editor-actions"><button className="button" onClick={() => setShowImport((value) => !value)}>HTML 가져오기</button><ImportHistoryPanel pageId={page.id} /><CorrectionPanel pageId={page.id} /><a className="button icon-button" href={`/api/pages/${page.id}/export`}><Download size={14} /> TXT 내보내기</a><TrashPanel pageId={page.id} onRestore={restoreEntry} /></div>
+        <div className="editor-actions">{page.is_original_owner && <><button className="button" onClick={() => setShowImport((value) => !value)}>HTML 가져오기</button><ImportHistoryPanel pageId={page.id} /></>}<CorrectionPanel pageId={page.id} /><a className="button icon-button" href={`/api/pages/${page.id}/export`}><Download size={14} /> TXT 내보내기</a><TrashPanel pageId={page.id} onRestore={restoreEntry} /></div>
         {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
-        {showImport && <form onSubmit={importLog}><label className="field">Roll20 백업 HTML 또는 복사한 Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="Roll20 HTML을 붙여넣으세요. 기존 블록이 있으면 교체됩니다." required /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div><button className="button button-primary" disabled={pending}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
+        {showImport && page.is_original_owner && <form onSubmit={importLog} className="roll20-import-form"><label className="field">Roll20 백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 Roll20 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending} /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || (!sourceFile && !source.trim())}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
         <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} onChange={updateEntry} onDelete={removeEntry} />)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>

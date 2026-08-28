@@ -11,7 +11,15 @@ const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280
 const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
+const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
+const stagingPolicyMigration = readFileSync(new URL("../supabase/migrations/202608280008_roll20_staging_upload_policy.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
+const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
+const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
+const importLimits = readFileSync(new URL("../lib/logs/import-limits.ts", import.meta.url), "utf8");
+const purgeRoute = readFileSync(new URL("../app/api/internal/purge/route.ts", import.meta.url), "utf8");
+const importsRoute = readFileSync(new URL("../app/api/pages/[id]/imports/route.ts", import.meta.url), "utf8");
+const importArchiveRoute = readFileSync(new URL("../app/api/pages/[id]/imports/[importId]/route.ts", import.meta.url), "utf8");
 const entryRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 const logPage = readFileSync(new URL("../app/workspace/pages/[id]/page.tsx", import.meta.url), "utf8");
 const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
@@ -101,13 +109,47 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const bulkMoveMarker = "-- 202608280004_bulk_resource_move.sql";
   const securityMarker = "-- 202608280005_security_hardening.sql";
   const securityFixMarker = "-- 202608280006_fix_security_rate_limit_timestamp.sql";
+  const largeImportMarker = "-- 202608280007_roll20_large_import_uploads.sql";
+  const stagingPolicyMarker = "-- 202608280008_roll20_staging_upload_policy.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(settingsMarker) + settingsMarker.length, schema.indexOf(bulkMoveMarker))), normalizedSql(settingsMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(bulkMoveMarker) + bulkMoveMarker.length, schema.indexOf(securityMarker))), normalizedSql(bulkMoveMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(securityMarker) + securityMarker.length, schema.indexOf(securityFixMarker))), normalizedSql(securityMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(securityFixMarker) + securityFixMarker.length)), normalizedSql(securityFixMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(securityFixMarker) + securityFixMarker.length, schema.indexOf(largeImportMarker))), normalizedSql(securityFixMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(largeImportMarker) + largeImportMarker.length, schema.indexOf(stagingPolicyMarker))), normalizedSql(largeImportMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(stagingPolicyMarker) + stagingPolicyMarker.length)), normalizedSql(stagingPolicyMigration));
+});
+
+test("large Roll20 imports upload directly to private staging storage", () => {
+  assert.match(largeImportMigration, /roll20-import-staging[\s\S]*false[\s\S]*12582912/);
+  assert.match(largeImportMigration, /create table if not exists public\.log_import_uploads/);
+  assert.match(largeImportMigration, /alter table public\.log_import_uploads enable row level security/);
+  assert.match(largeImportMigration, /revoke all on table public\.log_import_uploads from public, anon, authenticated/);
+  assert.match(uploadRoute, /context\.isOriginalOwner/);
+  assert.match(uploadRoute, /createImportUploadTarget/);
+  assert.match(uploadRoute, /log-import-upload-target/);
+  assert.match(stagingPolicyMigration, /create or replace function public\.can_upload_log_import/);
+  assert.match(stagingPolicyMigration, /page\.original_owner_id = auth\.uid\(\)/);
+  assert.match(stagingPolicyMigration, /roll20_import_staging_insert[\s\S]*for insert to authenticated/);
+  assert.match(uploadHelper, /expected_size_bytes/);
+  assert.match(uploadHelper, /payload\.byteLength !== Number\(intent\.expected_size_bytes\)/);
+  assert.match(importRoute, /consumeImportUpload/);
+  assert.match(importLimits, /MAX_DIRECT_ROLL20_SOURCE_SIZE = 4 \* 1024 \* 1024/);
+  assert.match(importLimits, /MAX_STAGED_ROLL20_SOURCE_SIZE = 12 \* 1024 \* 1024/);
+  assert.match(importLimits, /SUPABASE_TUS_CHUNK_SIZE = 6 \* 1024 \* 1024/);
+  assert.match(importRoute, /MAX_DIRECT_ROLL20_SOURCE_SIZE/);
+  assert.match(importRoute, /MAX_STAGED_ROLL20_SOURCE_SIZE/);
+  assert.match(editor, /storage\/v1\/upload\/resumable/);
+  assert.match(editor, /authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(editor, /auth\.getSession\(\)/);
+  assert.match(editor, /chunkSize: SUPABASE_TUS_CHUNK_SIZE/);
+  assert.match(editor, /requestBody = \{ uploadId, removeHiddenMessages \}/);
+  assert.match(proxy, /contentLength > 4 \* 1024 \* 1024/);
+  assert.match(purgeRoute, /purgeExpiredImportUploads/);
+  assert.match(importsRoute, /context\.isOriginalOwner/);
+  assert.match(importArchiveRoute, /context\.isOriginalOwner/);
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {

@@ -9,6 +9,8 @@ const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280
 const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
+const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
+const stagingPolicyMigration = readFileSync(new URL("../supabase/migrations/202608280008_roll20_staging_upload_policy.sql", import.meta.url), "utf8");
 const loginRoute = readFileSync(new URL("../app/api/login/route.ts", import.meta.url), "utf8");
 const signupRoute = readFileSync(new URL("../app/api/signup/route.ts", import.meta.url), "utf8");
 const adminHelper = readFileSync(new URL("../lib/admin-auth.ts", import.meta.url), "utf8");
@@ -271,6 +273,22 @@ test("browser security boundaries reject cross-site writes and emit hardened hea
   for (const header of ["Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy", "Strict-Transport-Security"]) {
     assert.match(nextConfig, new RegExp(header));
   }
+  assert.match(nextConfig, /\.storage\.supabase\.co/);
+});
+
+test("large import staging is private, size-limited and service-role only", () => {
+  assert.match(largeImportMigration, /'roll20-import-staging'[\s\S]*false[\s\S]*12582912/);
+  assert.match(largeImportMigration, /allowed_mime_types[\s\S]*text\/html/);
+  assert.match(largeImportMigration, /expected_size_bytes bigint not null check \(expected_size_bytes between 1 and 12582912\)/);
+  assert.match(largeImportMigration, /alter table public\.log_import_uploads enable row level security/);
+  assert.match(largeImportMigration, /revoke all on table public\.log_import_uploads from public, anon, authenticated/);
+  assert.match(largeImportMigration, /grant select, insert, update, delete on table public\.log_import_uploads to service_role/);
+  assert.match(stagingPolicyMigration, /security definer set search_path = public/);
+  assert.match(stagingPolicyMigration, /upload\.owner_id = auth\.uid\(\)/);
+  assert.match(stagingPolicyMigration, /upload\.expires_at > now\(\)/);
+  assert.match(stagingPolicyMigration, /page\.deleted_at is null/);
+  assert.match(stagingPolicyMigration, /revoke execute on function public\.can_upload_log_import\(text\) from public, anon/);
+  assert.match(stagingPolicyMigration, /owner_id = \(select auth\.uid\(\)::text\)/);
 });
 
 test("drag movement preserves private placement and shared-folder hierarchy boundaries", () => {
