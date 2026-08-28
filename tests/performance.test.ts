@@ -14,6 +14,7 @@ const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
 const stagingPolicyMigration = readFileSync(new URL("../supabase/migrations/202608280008_roll20_staging_upload_policy.sql", import.meta.url), "utf8");
 const resourceRolesMigration = readFileSync(new URL("../supabase/migrations/202608280009_resource_roles.sql", import.meta.url), "utf8");
+const registeredSharingMigration = readFileSync(new URL("../supabase/migrations/202608280010_registered_resource_sharing.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -113,6 +114,7 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const largeImportMarker = "-- 202608280007_roll20_large_import_uploads.sql";
   const stagingPolicyMarker = "-- 202608280008_roll20_staging_upload_policy.sql";
   const resourceRolesMarker = "-- 202608280009_resource_roles.sql";
+  const registeredSharingMarker = "-- 202608280010_registered_resource_sharing.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
@@ -122,7 +124,8 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(securityFixMarker) + securityFixMarker.length, schema.indexOf(largeImportMarker))), normalizedSql(securityFixMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(largeImportMarker) + largeImportMarker.length, schema.indexOf(stagingPolicyMarker))), normalizedSql(largeImportMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(stagingPolicyMarker) + stagingPolicyMarker.length, schema.indexOf(resourceRolesMarker))), normalizedSql(stagingPolicyMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(resourceRolesMarker) + resourceRolesMarker.length)), normalizedSql(resourceRolesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(resourceRolesMarker) + resourceRolesMarker.length, schema.indexOf(registeredSharingMarker))), normalizedSql(resourceRolesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(registeredSharingMarker) + registeredSharingMarker.length)), normalizedSql(registeredSharingMigration));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

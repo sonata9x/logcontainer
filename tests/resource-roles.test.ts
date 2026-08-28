@@ -54,9 +54,10 @@ test("page payload exposes a compact role permission DTO", () => {
 
 test("bootstrap schema includes the additive role migration", () => {
   const marker = "-- 202608280009_resource_roles.sql";
+  const nextMarker = "-- 202608280010_registered_resource_sharing.sql";
   assert.ok(schema.includes(marker));
   assert.equal(
-    schema.slice(schema.indexOf(marker) + marker.length).replace(/\r\n/g, "\n").trim(),
+    schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker)).replace(/\r\n/g, "\n").trim(),
     migration.replace(/\r\n/g, "\n").trim()
   );
 });

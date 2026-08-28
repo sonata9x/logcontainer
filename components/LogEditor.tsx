@@ -289,12 +289,12 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
     <>
       <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />로그 · {liveConnected ? "공동 편집 연결됨" : "연결 중"}</span><div className="toolbar-actions">{(page.is_original_owner || page.can_self_remove) && <button className="button" onClick={archivePage} title={page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}><Archive size={14} /></button>}{page.is_original_owner && <button className="button" onClick={togglePublish} disabled={pending}>{activePublication?.is_active ? "게시 중단" : "게시하기"}</button>}</div></div>
       <div className="workspace-content">
-        <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" />
+        <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         <div className="page-meta">{totalCount.toLocaleString()}개 메시지 블록{summary?.provider === "roll20" && <> · 원본 {summary.sourceMessageCount ?? 0}개 · 논리 메시지 {summary.logicalMessageCount ?? summary.importedMessageCount ?? 0}개 · 구조 반복 {summary.structuralDuplicateCount ?? 0}개 정규화 · hidden {summary.hiddenRemovedCount ?? summary.hiddenMessageCount ?? 0}개 제거 · 오류 중복 {summary.errorDuplicateCount ?? summary.duplicateMessageCount ?? 0}개 제거{Boolean(summary.warningCount) && <> · 경고 {summary.warningCount}개</>}</>}</div>
         <div className="editor-actions">{page.is_original_owner && <><button className="button" onClick={() => setShowImport((value) => !value)}>HTML 가져오기</button><ImportHistoryPanel pageId={page.id} /></>}<CorrectionPanel pageId={page.id} /><a className="button icon-button" href={`/api/pages/${page.id}/export`}><Download size={14} /> TXT 내보내기</a><TrashPanel pageId={page.id} onRestore={restoreEntry} /></div>
         {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
         {showImport && page.is_original_owner && <form onSubmit={importLog} className="roll20-import-form"><label className="field">Roll20 백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 Roll20 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending} /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || (!sourceFile && !source.trim())}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
-        <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} onChange={updateEntry} onDelete={removeEntry} />)}</section>
+        <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onDelete={removeEntry} />)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
     </>
@@ -341,7 +341,7 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
   return <div className="trash-control"><button className="button" onClick={toggle}><History size={14} /> 원본 백업</button>{open && <div className="trash-panel import-history-panel">{imports.length ? imports.map((item) => <div className="trash-item" key={item.id}><span><strong>{new Date(item.created_at).toLocaleString("ko-KR")}</strong><small>원본 {item.report?.sourceMessageCount ?? 0}개 · 논리 메시지 {item.report?.logicalMessageCount ?? item.report?.importedMessageCount ?? 0}개 · 오류 중복 제거 {item.report?.errorDuplicateCount ?? item.report?.duplicateMessageCount ?? 0}개</small></span><a className="button" href={`/api/pages/${pageId}/imports/${item.id}`}>HTML 다운로드</a></div>) : <p>저장된 원본이 없습니다.</p>}</div>}</div>;
 }
 
-const EditableEntry = memo(function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; entry: LogEntry; onChange: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
+const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onChange, onDelete }: { pageId: string; entry: LogEntry; canEdit: boolean; onChange: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(null);
@@ -361,6 +361,7 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, onChange, onD
   }, [editing, entry.content, entry.document]);
 
   function startEditing() {
+    if (!canEdit) return;
     setContent(entry.content);
     setDocument(entry.document ? cloneLogDocument(entry.document) : null);
     setEditingVersion(entry.updated_at);
@@ -453,7 +454,7 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, onChange, onD
   const hasRoll20Original = entry.document?.source.platform === "roll20";
   const canEditCss = Boolean(entry.document && hasRoll20Original && hasStyledContent(entry.document));
   return <div className="entry-wrap">
-    <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={startEditing} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }} title="더블클릭: 내용 수정 · 우클릭: 부가 기능">
+    <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={canEdit ? startEditing : undefined} onContextMenu={canEdit ? (event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } : undefined} title={canEdit ? "더블클릭: 내용 수정 · 우클릭: 부가 기능" : undefined}>
       {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
     </article>
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
