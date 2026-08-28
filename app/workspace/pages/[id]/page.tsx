@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { LogEditor, type ImportSummary } from "@/components/LogEditor";
 import { requireApprovedSession } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { LogEntry, Publication, WorkspacePage } from "@/lib/types";
+import type { LogEntry, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
 import { toLogEntryDto } from "@/lib/logs/dto";
 
 type WorkspaceLogPagePayload = {
@@ -12,6 +12,7 @@ type WorkspaceLogPagePayload = {
   totalCount: number;
   entries: Record<string, unknown>[];
   publication: Publication | null;
+  permissions: ResourcePermissions;
 };
 
 export default async function WorkspaceLogPage({ params }: { params: Promise<{ id: string }> }) {
@@ -26,5 +27,5 @@ export default async function WorkspaceLogPage({ params }: { params: Promise<{ i
   const payload = data as WorkspaceLogPagePayload;
   const safeEntries = (payload.entries ?? []).map(toLogEntryDto) as LogEntry[];
   console.info(JSON.stringify({ event: "workspace_log_page_timing", sessionMs: Math.round(sessionAt - startedAt), dbMs: Math.round(completedAt - sessionAt), entryCount: safeEntries.length, payloadBytes: Buffer.byteLength(JSON.stringify(payload.entries ?? [])), totalMs: Math.round(completedAt - startedAt) }));
-  return <LogEditor page={payload.page} logId={payload.logId} entries={safeEntries} totalEntryCount={payload.totalCount ?? safeEntries.length} publication={payload.publication ?? null} importReport={payload.importReport ?? null} />;
+  return <LogEditor page={payload.page} permissions={payload.permissions} logId={payload.logId} entries={safeEntries} totalEntryCount={payload.totalCount ?? safeEntries.length} publication={payload.publication ?? null} importReport={payload.importReport ?? null} />;
 }

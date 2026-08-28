@@ -4,7 +4,7 @@ import { FormEvent, memo, useCallback, useEffect, useRef, useState } from "react
 import { Archive, Download, History, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
-import type { LogEntry, LogEntryRevision, Publication, WorkspacePage } from "@/lib/types";
+import type { LogEntry, LogEntryRevision, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CorrectionSettings } from "@/lib/logs/corrections";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
@@ -61,7 +61,7 @@ function uploadRoll20File(file: File, target: ImportUploadTarget, accessToken: s
   });
 }
 
-export function LogEditor({ page, logId, entries, totalEntryCount, publication, importReport }: { page: WorkspacePage; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null }) {
+export function LogEditor({ page, logId, entries, totalEntryCount, publication, importReport }: { page: WorkspacePage; permissions: ResourcePermissions; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null }) {
   const router = useRouter();
   const [liveEntries, setLiveEntries] = useState(entries);
   const [totalCount, setTotalCount] = useState(totalEntryCount);

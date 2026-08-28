@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Profile, Workspace } from "@/lib/types";
+import type { Profile, ResourcePermissions, ResourceRole, Workspace } from "@/lib/types";
 
 type PersonalSessionPayload = { profile: Profile; workspace: Workspace };
 
@@ -33,14 +33,44 @@ export async function getApiPageContext(pageId: string) {
   const context = await getApprovedApiContext();
   if (!context) return null;
   const { data } = await context.supabase.rpc("get_resource_api_context", { target_resource_id: pageId });
-  const resource = data as { page?: { id: string; page_type: string; original_owner_id: string; deleted_at: string | null }; canEdit?: boolean; canInvite?: boolean; canManage?: boolean; isOriginalOwner?: boolean; canSelfRemove?: boolean } | null;
+  const resource = data as {
+    page?: { id: string; page_type: string; original_owner_id: string; deleted_at: string | null };
+    permissions?: Partial<ResourcePermissions> & { role?: ResourceRole };
+    canEdit?: boolean;
+    canInvite?: boolean;
+    canManage?: boolean;
+    isOriginalOwner?: boolean;
+    canSelfRemove?: boolean;
+  } | null;
+  const role = resource?.permissions?.role
+    ?? (resource?.isOriginalOwner ? "owner" : resource?.canInvite ? "admin" : resource?.canEdit ? "editor" : "viewer");
+  const permissions: ResourcePermissions = {
+    role,
+    canView: resource?.permissions?.canView ?? true,
+    canEdit: resource?.permissions?.canEdit ?? Boolean(resource?.canEdit),
+    canManageShares: resource?.permissions?.canManageShares ?? Boolean(resource?.canInvite),
+    canManageGuestLink: resource?.permissions?.canManageGuestLink ?? false,
+    canPublish: resource?.permissions?.canPublish ?? Boolean(resource?.isOriginalOwner),
+    canReimport: resource?.permissions?.canReimport ?? Boolean(resource?.isOriginalOwner),
+    canRestoreOriginal: resource?.permissions?.canRestoreOriginal ?? Boolean(resource?.isOriginalOwner),
+    canTrashResource: resource?.permissions?.canTrashResource ?? Boolean(resource?.isOriginalOwner),
+    canSelfRemove: resource?.permissions?.canSelfRemove ?? Boolean(resource?.canSelfRemove)
+  };
   return resource?.page ? {
     ...context,
     page: resource.page,
-    canEdit: Boolean(resource.canEdit),
-    canInvite: Boolean(resource.canInvite),
+    permissions,
+    resourceRole: permissions.role,
+    canEdit: permissions.canEdit,
+    canInvite: permissions.canManageShares,
+    canManageShares: permissions.canManageShares,
+    canManageGuestLink: permissions.canManageGuestLink,
+    canPublish: permissions.canPublish,
+    canReimport: permissions.canReimport,
+    canRestoreOriginal: permissions.canRestoreOriginal,
+    canTrashResource: permissions.canTrashResource,
     canManage: Boolean(resource.canManage),
-    isOriginalOwner: Boolean(resource.isOriginalOwner),
-    canSelfRemove: Boolean(resource.canSelfRemove)
+    isOriginalOwner: permissions.role === "owner",
+    canSelfRemove: permissions.canSelfRemove
   } : null;
 }

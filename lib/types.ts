@@ -1,6 +1,7 @@
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export type WorkspaceRole = "owner" | "editor";
+export type ResourceRole = "viewer" | "editor" | "admin" | "owner";
 export type PageType = "folder" | "log";
 export type LogPlatform = "manual" | "roll20" | "ccfolia" | "other";
 export type AccountStatus = "pending" | "approved" | "rejected" | "disabled";
@@ -41,11 +42,27 @@ export type WorkspacePage = {
   tree_parent_id?: string | null;
   tree_depth?: number;
   tree_relation?: "workspace" | "folder";
+  resource_role?: ResourceRole;
   is_original_owner?: boolean;
+  can_edit?: boolean;
+  can_manage_shares?: boolean;
   can_invite?: boolean;
   can_self_remove?: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type ResourcePermissions = {
+  role: ResourceRole;
+  canView: boolean;
+  canEdit: boolean;
+  canManageShares: boolean;
+  canManageGuestLink: boolean;
+  canPublish: boolean;
+  canReimport: boolean;
+  canRestoreOriginal: boolean;
+  canTrashResource: boolean;
+  canSelfRemove: boolean;
 };
 
 export type TrpgLog = {
