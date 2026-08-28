@@ -27,6 +27,17 @@ export const defaultCorrectionSettings: CorrectionSettings = {
   custom_handout_icon: "★"
 };
 
+const correctionBooleanKeys = ["remove_html_tags", "normalize_ellipsis", "normalize_quotes", "speaker_tab_format", "clean_blank_lines", "mark_handout_position"] as const;
+const correctionTextKeys = ["custom_quote_open", "custom_quote_close", "custom_ellipsis", "custom_handout_icon"] as const;
+
+export function parseCorrectionSettings(input: unknown): CorrectionSettings | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  for (const key of correctionBooleanKeys) if (typeof record[key] !== "boolean") return null;
+  for (const key of correctionTextKeys) if (typeof record[key] !== "string" || record[key].length > 8) return null;
+  return Object.fromEntries([...correctionBooleanKeys, ...correctionTextKeys].map((key) => [key, record[key]])) as CorrectionSettings;
+}
+
 export function stripHtml(text: string) {
   return cheerio.load(text).text();
 }

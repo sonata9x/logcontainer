@@ -14,6 +14,7 @@ import { editableTextSegments, hasStyledContent } from "@/lib/logs/model/user-ed
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 import { MAX_STAGED_ROLL20_SOURCE_SIZE, SUPABASE_TUS_CHUNK_SIZE } from "@/lib/logs/import-limits";
 import { ShareDialog } from "@/components/WorkspaceSidebar";
+import { ExportDialog } from "@/components/ExportDialog";
 
 export type ImportSummary = {
   provider?: string;
@@ -82,6 +83,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [shareOpen, setShareOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [publicationOpen, setPublicationOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const loadingMoreRef = useRef(false);
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
   const importFileInput = useRef<HTMLInputElement>(null);
@@ -285,7 +287,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
 
   return (
     <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<a href={`/api/pages/${page.id}/export`}><Download size={13} />TXT 내보내기</a><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">Roll20 백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 Roll20 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending} /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
@@ -295,6 +297,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}
       {infoOpen && <LogInfoDialog pageId={page.id} totalCount={totalCount} summary={summary} isOwner={permissions.role === "owner"} canEdit={permissions.canEdit} onRestore={restoreEntry} onClose={() => setInfoOpen(false)} />}
       {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
+      {exportOpen && <ExportDialog endpoint={`/api/pages/${page.id}/export`} title={title} usePersonalDefaults onClose={() => setExportOpen(false)} />}
     </>
   );
 }

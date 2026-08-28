@@ -7,6 +7,7 @@ import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, 
 import { createPortal } from "react-dom";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, ResourceRole, WorkspacePage } from "@/lib/types";
+import { defaultCorrectionSettings, type CorrectionSettings } from "@/lib/logs/corrections";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
 type ShareRow = { share_id: string | null; user_id: string | null; username: string; display_name: string | null; access_level: ResourceRole; state: "active" | "pending"; is_owner: boolean };
@@ -47,7 +48,7 @@ function OverlayPortal({ children }: { children: ReactNode }) {
   return mounted ? createPortal(children, document.body) : null;
 }
 
-export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; nickname: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
+export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentColor, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; nickname: string; accentColor: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const [creating, setCreating] = useState(false);
@@ -200,32 +201,36 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, pages, 
     {draggingIds.length > 0 && <div className={`workspace-root-drop ${dropTargetId === "root" ? "drop-target" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDropTargetId("root"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId("root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>}
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
-    {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); setSettingsOpen(false); }} />}
+    {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
     </aside>
   </>;
 }
 
-function WorkspaceSettingsDialog({ workspaceName, nickname, onClose, onSaved }: { workspaceName: string; nickname: string; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string }) => void }) {
+function WorkspaceSettingsDialog({ workspaceName, nickname, accentColor, onClose, onSaved }: { workspaceName: string; nickname: string; accentColor: string; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string; accentColor: string }) => void }) {
   const [nextWorkspaceName, setNextWorkspaceName] = useState(workspaceName);
   const [nextNickname, setNextNickname] = useState(nickname);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [nextAccentColor, setNextAccentColor] = useState(accentColor);
+  const [correctionSettings, setCorrectionSettings] = useState<CorrectionSettings>(defaultCorrectionSettings);
+  useEffect(() => { void fetch("/api/account/settings").then((response) => response.json()).then((result) => { if (result.accentColor) setNextAccentColor(result.accentColor); if (result.correctionSettings) setCorrectionSettings(result.correctionSettings); }); }, []);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError("");
     try {
-      const response = await fetch("/api/account/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceName: nextWorkspaceName, nickname: nextNickname }) });
+      const response = await fetch("/api/account/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceName: nextWorkspaceName, nickname: nextNickname, accentColor: nextAccentColor, correctionSettings }) });
       const result = await response.json();
       if (!response.ok) return setError(result.error ?? "설정을 저장하지 못했습니다.");
-      onSaved({ workspaceName: result.workspaceName, nickname: result.nickname });
+      onSaved({ workspaceName: result.workspaceName, nickname: result.nickname, accentColor: result.accentColor });
     } catch {
       setError("설정을 저장하지 못했습니다.");
     } finally {
       setPending(false);
     }
   }
-  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기"><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스와 계정에 표시할 이름을 변경합니다.</p><form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending}>{pending ? "저장 중…" : "저장"}</button></div></form></section></div></OverlayPortal>;
+  const toggles: Array<[keyof CorrectionSettings, string]> = [["remove_html_tags", "HTML 태그 제거"], ["normalize_ellipsis", "말줄임표 통일"], ["normalize_quotes", "큰따옴표 통일"], ["speaker_tab_format", "화자명 뒤에 탭"], ["clean_blank_lines", "빈 줄 정리"], ["mark_handout_position", "이미지·핸드아웃 위치 표시"]];
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card settings-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기" disabled={pending}><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스, 표시 색상과 TXT 기본값을 변경합니다.</p><form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label><label className="field">포인트 색상<input type="color" value={nextAccentColor} onChange={(event) => setNextAccentColor(event.target.value.toUpperCase())} /></label><fieldset><legend>TXT 교정 기본값</legend><div className="correction-toggles">{toggles.map(([key, label]) => <label key={key}><input type="checkbox" checked={Boolean(correctionSettings[key])} onChange={(event) => setCorrectionSettings((current) => ({ ...current, [key]: event.target.checked }))} /> {label}</label>)}</div><div className="correction-symbols"><label>여는 따옴표<input value={correctionSettings.custom_quote_open} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_open: event.target.value }))} /></label><label>닫는 따옴표<input value={correctionSettings.custom_quote_close} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_close: event.target.value }))} /></label><label>말줄임표<input value={correctionSettings.custom_ellipsis} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_ellipsis: event.target.value }))} /></label><label>핸드아웃 기호<input value={correctionSettings.custom_handout_icon} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_handout_icon: event.target.value }))} /></label></div></fieldset>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending}>{pending ? "저장 중…" : "저장"}</button></div></form></section></div></OverlayPortal>;
 }
 
 function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {
