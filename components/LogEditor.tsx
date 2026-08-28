@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import { Archive, Download, History, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { LogEntry, LogEntryRevision, Publication, WorkspacePage } from "@/lib/types";
@@ -10,7 +10,7 @@ import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
 import { EntryContextMenu } from "@/components/logs/EntryContextMenu";
 import { cloneLogDocument } from "@/lib/logs/model/editor";
-import { editableTextSegments, styledContentTargets } from "@/lib/logs/model/user-edit";
+import { editableTextSegments, hasStyledContent } from "@/lib/logs/model/user-edit";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export type ImportSummary = {
@@ -42,6 +42,9 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
   const [copied, setCopied] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const loadMoreSentinel = useRef<HTMLDivElement>(null);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
 
@@ -92,11 +95,11 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
     };
   }, [logId, page.id]);
 
-  function updateEntry(next: LogEntry) {
+  const updateEntry = useCallback((next: LogEntry) => {
     setLiveEntries((current) => [...current.filter((entry) => entry.id !== next.id), next].sort((left, right) => left.sort_key - right.sort_key));
-  }
+  }, []);
 
-  function removeEntry(entryId: string) {
+  const removeEntry = useCallback((entryId: string) => {
     const key = `deleted:${entryId}`;
     visibilityEvents.current.delete(`restored:${entryId}`);
     if (!visibilityEvents.current.has(key)) {
@@ -104,9 +107,9 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
       setTotalCount((count) => Math.max(0, count - 1));
     }
     setLiveEntries((current) => current.filter((entry) => entry.id !== entryId));
-  }
+  }, []);
 
-  function restoreEntry(entry: LogEntry) {
+  const restoreEntry = useCallback((entry: LogEntry) => {
     const key = `restored:${entry.id}`;
     visibilityEvents.current.delete(`deleted:${entry.id}`);
     if (!visibilityEvents.current.has(key)) {
@@ -114,20 +117,40 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
       setTotalCount((count) => count + 1);
     }
     updateEntry(entry);
-  }
+  }, [updateEntry]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current) return;
     const cursor = liveEntries.at(-1)?.sort_key;
     if (cursor == null) return;
-    const response = await fetch(`/api/pages/${page.id}/entries?after=${cursor}`);
-    const result = await response.json();
-    if (!response.ok) return window.alert(result.error ?? "다음 메시지를 불러오지 못했습니다.");
-    setLiveEntries((current) => {
-      const merged = new Map(current.map((entry) => [entry.id, entry]));
-      for (const entry of result.entries ?? []) merged.set(entry.id, entry);
-      return [...merged.values()].sort((left, right) => left.sort_key - right.sort_key);
-    });
-  }
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const response = await fetch(`/api/pages/${page.id}/entries?after=${cursor}`);
+      const result = await response.json();
+      if (!response.ok) return window.alert(result.error ?? "다음 메시지를 불러오지 못했습니다.");
+      setLiveEntries((current) => {
+        const merged = new Map(current.map((entry) => [entry.id, entry]));
+        for (const entry of result.entries ?? []) merged.set(entry.id, entry);
+        return [...merged.values()].sort((left, right) => left.sort_key - right.sort_key);
+      });
+    } catch {
+      window.alert("다음 메시지를 불러오지 못했습니다.");
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [liveEntries, page.id]);
+
+  useEffect(() => {
+    const target = loadMoreSentinel.current;
+    if (!target || liveEntries.length >= totalCount) return;
+    const observer = new IntersectionObserver((records) => {
+      if (records.some((record) => record.isIntersecting)) void loadMore();
+    }, { rootMargin: "400px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [liveEntries.length, loadMore, totalCount]);
 
   async function saveTitle() {
     if (title.trim() === page.title) return;
@@ -188,7 +211,7 @@ export function LogEditor({ page, logId, entries, totalEntryCount, publication, 
         {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
         {showImport && <form onSubmit={importLog}><label className="field">Roll20 백업 HTML 또는 복사한 Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="Roll20 HTML을 붙여넣으세요. 기존 블록이 있으면 교체됩니다." required /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div><button className="button button-primary" disabled={pending}>{pending ? "가져오는 중…" : "가져오기"}</button></form>}
         <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} onChange={updateEntry} onDelete={removeEntry} />)}</section>
-        {liveEntries.length < totalCount && <button className="button load-more-entries" onClick={loadMore}>다음 메시지 200개 불러오기</button>}
+        {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
     </>
   );
@@ -234,10 +257,10 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
   return <div className="trash-control"><button className="button" onClick={toggle}><History size={14} /> 원본 백업</button>{open && <div className="trash-panel import-history-panel">{imports.length ? imports.map((item) => <div className="trash-item" key={item.id}><span><strong>{new Date(item.created_at).toLocaleString("ko-KR")}</strong><small>원본 {item.report?.sourceMessageCount ?? 0}개 · 논리 메시지 {item.report?.logicalMessageCount ?? item.report?.importedMessageCount ?? 0}개 · 오류 중복 제거 {item.report?.errorDuplicateCount ?? item.report?.duplicateMessageCount ?? 0}개</small></span><a className="button" href={`/api/pages/${pageId}/imports/${item.id}`}>HTML 다운로드</a></div>) : <p>저장된 원본이 없습니다.</p>}</div>}</div>;
 }
 
-function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; entry: LogEntry; onChange: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
+const EditableEntry = memo(function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; entry: LogEntry; onChange: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
-  const [document, setDocument] = useState<LogEntryDocument | null>(entry.document ? cloneLogDocument(entry.document) : null);
+  const [document, setDocument] = useState<LogEntryDocument | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showCss, setShowCss] = useState(false);
@@ -250,7 +273,7 @@ function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; 
   useEffect(() => {
     if (editing) return;
     setContent(entry.content);
-    setDocument(entry.document ? cloneLogDocument(entry.document) : null);
+    setDocument(null);
   }, [editing, entry.content, entry.document]);
 
   function startEditing() {
@@ -274,12 +297,13 @@ function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; 
     const result = await response.json();
     if (!response.ok) return window.alert(result.error ?? "블록을 저장하지 못했습니다.");
     if (result.entry) onChange(result.entry);
+    setDocument(null);
     setEditing(false);
   }
 
   function cancelEditing() {
     setContent(entry.content);
-    setDocument(entry.document ? cloneLogDocument(entry.document) : null);
+    setDocument(null);
     setEditing(false);
   }
 
@@ -343,7 +367,7 @@ function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; 
   if (editing) return <article className="log-entry"><label className="field">{entry.speaker_name ?? "내용"}<textarea value={content} onChange={(event) => setContent(event.target.value)} autoFocus /></label><button className="button button-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button> <button className="button" onClick={cancelEditing} disabled={saving}>취소</button></article>;
 
   const hasRoll20Original = entry.document?.source.platform === "roll20";
-  const canEditCss = Boolean(entry.document && hasRoll20Original && styledContentTargets(entry.document).length);
+  const canEditCss = Boolean(entry.document && hasRoll20Original && hasStyledContent(entry.document));
   return <div className="entry-wrap">
     <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={startEditing} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }} title="더블클릭: 내용 수정 · 우클릭: 부가 기능">
       {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
@@ -352,7 +376,7 @@ function EditableEntry({ pageId, entry, onChange, onDelete }: { pageId: string; 
     {showCss && <div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>Roll20 원본 Content CSS만 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div>}
     {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div>}
   </div>;
-}
+});
 
 function TrashPanel({ pageId, onRestore }: { pageId: string; onRestore: (entry: LogEntry) => void }) {
   const [open, setOpen] = useState(false);

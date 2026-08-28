@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiPageContext } from "@/lib/api-auth";
+import { getAuthenticatedApiContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
 import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
 import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets, type EditableTextChange } from "@/lib/logs/model/user-edit";
@@ -9,13 +9,14 @@ import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
+  const startedAt = performance.now();
   const { id, entryId } = await params;
-  const context = await getApiPageContext(id);
-  if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
+  const context = await getAuthenticatedApiContext();
+  if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const authAt = performance.now();
   const body = await request.json().catch(() => ({}));
-  const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
-  if (!log) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
-  const { data: entry } = await context.supabase.from("log_entries").select("id, raw_html, document_version, document, original_document").eq("id", entryId).eq("log_id", log.id).maybeSingle();
+  const { data: entry } = await context.supabase.rpc("get_log_entry_edit_source", { target_page_id: id, target_entry_id: entryId });
+  const sourceAt = performance.now();
   if (!entry) return NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
 
   if (entry.document_version === 2) {
@@ -76,7 +77,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
     });
     if (error?.code === "40001") return NextResponse.json({ error: "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." }, { status: 409 });
-    return error ? databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings });
+    if (error) return databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.");
+    const completedAt = performance.now();
+    return NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings }, { headers: { "Server-Timing": `auth;dur=${(authAt - startedAt).toFixed(1)}, source;dur=${(sourceAt - authAt).toFixed(1)}, write;dur=${(completedAt - sourceAt).toFixed(1)}` } });
   }
   if (typeof body.content !== "string") return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });
 
@@ -89,13 +92,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
   });
   if (error?.code === "40001") return NextResponse.json({ error: "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." }, { status: 409 });
-  return error ? databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
+  if (error) return databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.");
+  const completedAt = performance.now();
+  return NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }, { headers: { "Server-Timing": `auth;dur=${(authAt - startedAt).toFixed(1)}, source;dur=${(sourceAt - authAt).toFixed(1)}, write;dur=${(completedAt - sourceAt).toFixed(1)}` } });
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
-  const context = await getApiPageContext(id);
-  if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
+  const context = await getAuthenticatedApiContext();
+  if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   if (new URL(request.url).searchParams.get("view") === "entry") {
     const { data, error } = await context.supabase.rpc("get_log_entry_dto", { target_page_id: id, target_entry_id: entryId });
     return error ? databaseErrorResponse(error, "로그 블록을 불러오지 못했습니다.") : data ? NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }) : NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
@@ -108,8 +113,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
-  const context = await getApiPageContext(id);
-  if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
+  const context = await getAuthenticatedApiContext();
+  if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const { data, error } = await context.supabase.rpc("set_log_entry_deleted_v3", { target_page_id: id, target_entry_id: entryId, should_delete: true });
   return error ? databaseErrorResponse(error, "로그 블록을 삭제하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }

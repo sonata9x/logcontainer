@@ -9,30 +9,33 @@ export type WorkspaceSession = {
   profile: Profile;
 };
 
-export const requireApprovedSession = cache(async function requireApprovedSession() {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+type PersonalSessionPayload = { profile: Profile; workspace: Workspace };
 
-  if (!user) {
+export const requireApprovedSession = cache(async function requireApprovedSession() {
+  const startedAt = performance.now();
+  const supabase = await createSupabaseServerClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;
+  const verifiedAt = performance.now();
+
+  if (!userId) {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase.from("profiles").select("id, username, display_name, account_status, is_site_admin, approved_at, approved_by, created_at, updated_at").eq("id", user.id).maybeSingle();
-  if (!profile || profile.account_status !== "approved") redirect("/login?account=unavailable");
-  return { supabase, user: { id: user.id }, profile: profile as Profile };
+  const { data } = await supabase.rpc("get_personal_session_context");
+  const completedAt = performance.now();
+  const session = data as PersonalSessionPayload | null;
+  if (!session?.profile || !session.workspace) redirect("/login?account=unavailable");
+  console.info(JSON.stringify({ event: "workspace_session_timing", verifyMs: Math.round(verifiedAt - startedAt), dbMs: Math.round(completedAt - verifiedAt), totalMs: Math.round(completedAt - startedAt) }));
+  return { supabase, user: { id: userId }, profile: session.profile, workspace: session.workspace };
 });
 
 export const requireWorkspaceSession = cache(async function requireWorkspaceSession(): Promise<WorkspaceSession> {
   const session = await requireApprovedSession();
-  const { data: workspace, error } = await session.supabase.from("workspaces").select("id, name, owner_id, created_at, updated_at").eq("owner_id", session.user.id).single();
-
-  if (error || !workspace) {
-    throw new Error("개인 워크스페이스를 찾을 수 없습니다.");
-  }
 
   return {
     user: session.user,
-    workspace: workspace as Workspace,
+    workspace: session.workspace,
     profile: session.profile
   };
 });

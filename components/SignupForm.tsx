@@ -31,7 +31,7 @@ export function SignupForm() {
 
   return <form onSubmit={submit}>
     <label className="field">아이디<input name="username" autoComplete="username" minLength={2} maxLength={40} required /></label>
-    <label className="field">표시 이름<input name="displayName" maxLength={80} required /></label>
+    <label className="field">닉네임<input name="displayName" maxLength={80} required /></label>
     <label className="field">비밀번호<input name="password" type="password" autoComplete="new-password" minLength={4} required /></label>
     <label className="field">비밀번호 확인<input name="passwordConfirm" type="password" autoComplete="new-password" minLength={4} required /></label>
     {message && <p className={success ? "success" : "error"}>{message}</p>}

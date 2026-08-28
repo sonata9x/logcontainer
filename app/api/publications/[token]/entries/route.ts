@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   const cursorValue = new URL(request.url).searchParams.get("after");
   const after = cursorValue && /^\d+$/.test(cursorValue) ? Number(cursorValue) : null;
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin.rpc("get_published_log", { publication_token: token, after_sort_key: after, batch_size: 300 });
+  const { data, error } = await admin.rpc("get_published_log", { publication_token: token, after_sort_key: after, batch_size: 50 });
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ entries: ((data.entries ?? []) as Record<string, unknown>[]).map(toLogEntryDto), totalCount: data.totalCount ?? 0 }, { headers: { "Cache-Control": "no-store" } });
 }

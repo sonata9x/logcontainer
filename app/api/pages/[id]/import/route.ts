@@ -87,7 +87,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ? NextResponse.json({ error: "가져오기 중 로그가 변경됐습니다. 다시 시도해주세요." }, { status: 409 })
       : databaseErrorResponse(error, "로그를 저장하지 못했습니다.");
   }
-  const { data: pageData } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: null, batch_size: 200 });
+  const { data: pageData } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: null, batch_size: 50 });
   const completedAt = performance.now();
   return NextResponse.json({ ...(data as object), report: imported.report, entries: ((pageData?.entries ?? []) as Record<string, unknown>[]).map(toLogEntryDto) }, {
     headers: { "Server-Timing": `parse;dur=${(parsedAt - startedAt).toFixed(1)}, archive;dur=${(archivedAt - parsedAt).toFixed(1)}, db;dur=${(completedAt - archivedAt).toFixed(1)}` }

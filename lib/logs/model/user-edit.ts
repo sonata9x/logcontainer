@@ -60,6 +60,14 @@ export function styledContentTargets(document: LogEntryDocument) {
   return targets;
 }
 
+export function hasStyledContent(document: LogEntryDocument) {
+  const visit = (node: RichNode): boolean => {
+    if ((node.type === "element" || node.type === "image") && node.style.length > 0) return true;
+    return node.type === "element" && node.children.some(visit);
+  };
+  return document.blocks.some((block) => block.type === "rich" && block.nodes.some(visit));
+}
+
 export function contentStyleMap(document: LogEntryDocument) {
   const styles = new Map<string, RichStyle>();
   const visit = (node: RichNode) => {

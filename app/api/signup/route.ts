@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   const password = typeof body.password === "string" ? body.password : "";
   const displayName = typeof body.displayName === "string" ? body.displayName.trim().slice(0, 80) : "";
   if (!isValidUsername(username) || !displayName || password.length < 4) {
-    return NextResponse.json({ error: "아이디는 2~40자, 표시 이름은 필수, 비밀번호는 4자 이상으로 입력해주세요." }, { status: 400 });
+    return NextResponse.json({ error: "아이디는 2~40자, 닉네임은 필수, 비밀번호는 4자 이상으로 입력해주세요." }, { status: 400 });
   }
   const admin = createSupabaseAdminClient();
   const { data: users, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
