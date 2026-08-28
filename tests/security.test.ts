@@ -180,3 +180,13 @@ test("already-applied WIP databases receive an additive hardening migration", ()
   assert.match(hardeningMigration, /grant execute on function public\.can_view_resource\(uuid, uuid\) to authenticated/);
   assert.doesNotMatch(hardeningMigration, /create table if not exists public\.(workspace_items|folder_items|resource_shares)/);
 });
+
+test("drag movement preserves private placement and shared-folder hierarchy boundaries", () => {
+  assert.match(sidebar, /draggable/);
+  assert.match(sidebar, /onDragStart/);
+  assert.match(sidebar, /onDrop/);
+  assert.match(sidebar, /page\.tree_relation === "folder"/);
+  assert.match(sidebar, /\/placement/);
+  assert.match(sidebar, /\/children/);
+  assert.match(sidebar, /개인 최상위로 이동/);
+});

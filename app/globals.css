@@ -58,6 +58,11 @@ a { color: inherit; text-decoration: none; }
 .tree-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row a.tree-title { flex: 1; display: block; }
 .tree-file-spacer { display: grid; place-items: center; width: 20px; flex: 0 0 20px; }
+.tree-row[draggable="true"] { user-select: none; }
+.tree-row.dragging { opacity: .42; }
+.tree-row.drop-ready { outline: 1px dashed transparent; outline-offset: -2px; }
+.tree-row.drop-ready:hover { outline-color: var(--accent); background: #eee9f6; }
+.tree-root-drop { width: calc(100% - 12px); margin: 3px 6px 7px; padding: 7px; border: 1px dashed var(--accent); border-radius: 5px; background: #f4f0fa; color: var(--accent); font-size: 12px; cursor: move; }
 .sidebar-empty { margin: 14px 10px; color: var(--muted); font-size: 12px; }
 .sidebar-footer { border-top: 1px solid var(--line); padding-top: 8px; }
 .sidebar-popover-wrap { position: relative; }
