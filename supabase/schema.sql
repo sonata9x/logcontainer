@@ -3538,25 +3538,28 @@ returns table(
   share_id uuid, user_id uuid, username text, display_name text, access_level text,
   granted_by uuid, created_at timestamptz, state text, is_owner boolean
 ) language sql stable security definer set search_path = public as $$
-  select null::uuid, owner_profile.id, owner_profile.username, owner_profile.display_name,
-    'owner'::text, null::uuid, page.created_at, 'active'::text, true
-  from public.pages page
-  join public.profiles owner_profile on owner_profile.id = page.original_owner_id
-  where page.id = target_resource_id
-    and public.can_manage_resource_shares(target_resource_id, auth.uid())
-  union all
-  select rs.id, rs.user_id, profile.username, profile.display_name, rs.access_level,
-    rs.granted_by, rs.created_at, 'active'::text, false
-  from public.resource_shares rs join public.profiles profile on profile.id = rs.user_id
-  where rs.resource_id = target_resource_id and rs.revoked_at is null
-    and public.can_manage_resource_shares(target_resource_id, auth.uid())
-  union all
-  select prs.id, null::uuid, prs.username, null::text, prs.access_level,
-    prs.granted_by, prs.created_at, 'pending'::text, false
-  from public.pending_resource_shares prs
-  where prs.resource_id = target_resource_id and prs.accepted_at is null and prs.revoked_at is null
-    and prs.expires_at > now() and public.can_manage_resource_shares(target_resource_id, auth.uid())
-  order by is_owner desc, created_at;
+  select members.* from (
+    select null::uuid as share_id, owner_profile.id as user_id,
+      owner_profile.username, owner_profile.display_name, 'owner'::text as access_level,
+      null::uuid as granted_by, page.created_at, 'active'::text as state, true as is_owner
+    from public.pages page
+    join public.profiles owner_profile on owner_profile.id = page.original_owner_id
+    where page.id = target_resource_id
+      and public.can_manage_resource_shares(target_resource_id, auth.uid())
+    union all
+    select rs.id, rs.user_id, profile.username, profile.display_name, rs.access_level,
+      rs.granted_by, rs.created_at, 'active'::text, false
+    from public.resource_shares rs join public.profiles profile on profile.id = rs.user_id
+    where rs.resource_id = target_resource_id and rs.revoked_at is null
+      and public.can_manage_resource_shares(target_resource_id, auth.uid())
+    union all
+    select prs.id, null::uuid, prs.username, null::text, prs.access_level,
+      prs.granted_by, prs.created_at, 'pending'::text, false
+    from public.pending_resource_shares prs
+    where prs.resource_id = target_resource_id and prs.accepted_at is null and prs.revoked_at is null
+      and prs.expires_at > now() and public.can_manage_resource_shares(target_resource_id, auth.uid())
+  ) as members
+  order by members.is_owner desc, members.created_at;
 $$;
 
 create or replace function public.update_resource_share_role(

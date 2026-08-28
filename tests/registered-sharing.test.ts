@@ -26,6 +26,8 @@ test("owner is projected and cannot be mutated as a share row", () => {
   assert.match(migration, /page\.original_owner_id/);
   assert.match(migration, /'owner'::text/);
   assert.match(migration, /null::uuid/);
+  assert.match(migration, /true as is_owner/);
+  assert.match(migration, /order by members\.is_owner desc, members\.created_at/);
   assert.match(sidebar, /share\.is_owner \? <span>\{ROLE_LABELS\.owner\}<\/span>/);
 });
 
