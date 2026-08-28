@@ -225,7 +225,7 @@ test("revoked editors fail at save time while optimistic concurrency remains int
 });
 
 test("publication remains token-scoped and owner-managed under resource permissions", () => {
-  assert.match(publicationRoute, /context\.isOriginalOwner/);
+  assert.match(publicationRoute, /context\?\.canPublish/);
   assert.match(migration, /public\.can_manage_resource_shares\(page_id, auth\.uid\(\)\)/);
   assert.match(schema, /publications_token_format/);
 });

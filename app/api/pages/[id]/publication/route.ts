@@ -1,27 +1,49 @@
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
 import { createPublicationToken } from "@/lib/publication-token";
+import { hashPassword } from "@/lib/secure-credentials";
 import { databaseErrorResponse } from "@/lib/api-error";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const context = await getApiPageContext(id);
-  if (!context || context.page.page_type !== "log") return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
-  if (!context.isOriginalOwner) return NextResponse.json({ error: "최초 소유자만 게시 링크를 관리할 수 있습니다." }, { status: 403 });
-  const token = createPublicationToken();
-  const { data: existing } = await context.supabase.from("publications").select("id").eq("page_id", id).maybeSingle();
-  const query = existing
-    ? context.supabase.from("publications").update({ token, is_active: true, published_at: new Date().toISOString() }).eq("id", existing.id)
-    : context.supabase.from("publications").insert({ page_id: id, token, is_active: true });
-  const { data, error } = await query.select("id, page_id, token, is_active, published_at, updated_at").single();
-  return error ? databaseErrorResponse(error, "게시 링크를 만들지 못했습니다.") : NextResponse.json(data);
+  if (!context?.canPublish || context.page.page_type !== "log") return NextResponse.json({ error: "게시 관리 권한이 없습니다." }, { status: 403 });
+  const { data, error } = await context.supabase.rpc("get_publication_management", { target_page_id: id });
+  return error ? databaseErrorResponse(error, "게시 설정을 불러오지 못했습니다.") : NextResponse.json(data ?? { isActive: false });
+}
+
+async function configure(request: Request, id: string) {
+  const context = await getApiPageContext(id);
+  if (!context?.canPublish || context.page.page_type !== "log") return NextResponse.json({ error: "게시 관리 권한이 없습니다." }, { status: 403 });
+  const body = await request.json().catch(() => ({}));
+  const visibility = body.visibility === "password" ? "password" : body.visibility === "public" ? "public" : null;
+  if (!visibility) return NextResponse.json({ error: "공개 범위를 선택해주세요." }, { status: 400 });
+  let passwordHash: string | null = null;
+  if (visibility === "password") {
+    const password = typeof body.password === "string" ? body.password : "";
+    if (password.length < 4 || password.length > 200) return NextResponse.json({ error: "비밀번호는 4~200자로 입력해주세요." }, { status: 400 });
+    if (password !== body.passwordConfirm) return NextResponse.json({ error: "비밀번호 확인이 일치하지 않습니다." }, { status: 400 });
+    passwordHash = await hashPassword(password);
+  }
+  const { data, error } = await context.supabase.rpc("configure_publication", {
+    target_page_id: id, next_token: createPublicationToken(),
+    next_visibility: visibility, next_password_hash: passwordHash
+  });
+  return error ? databaseErrorResponse(error, "게시 설정을 저장하지 못했습니다.") : NextResponse.json(data, { status: 201 });
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return configure(request, (await params).id);
+}
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return configure(request, (await params).id);
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const context = await getApiPageContext(id);
-  if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
-  if (!context.isOriginalOwner) return NextResponse.json({ error: "최초 소유자만 게시 링크를 관리할 수 있습니다." }, { status: 403 });
-  const { data, error } = await context.supabase.from("publications").update({ is_active: false }).eq("page_id", id).select("id, page_id, token, is_active, published_at, updated_at").maybeSingle();
+  if (!context?.canPublish || context.page.page_type !== "log") return NextResponse.json({ error: "게시 관리 권한이 없습니다." }, { status: 403 });
+  const { data, error } = await context.supabase.rpc("stop_publication", { target_page_id: id });
   return error ? databaseErrorResponse(error, "게시를 중단하지 못했습니다.") : NextResponse.json(data ?? { is_active: false });
 }

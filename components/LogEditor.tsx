@@ -76,12 +76,12 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [importStatus, setImportStatus] = useState("");
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [publicationOpen, setPublicationOpen] = useState(false);
   const loadingMoreRef = useRef(false);
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
   const importFileInput = useRef<HTMLInputElement>(null);
@@ -261,15 +261,6 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     }
   }
 
-  async function togglePublish() {
-    setPending(true);
-    const response = await fetch(`/api/pages/${page.id}/publication`, { method: activePublication?.is_active ? "DELETE" : "POST" });
-    const result = await response.json();
-    setPending(false);
-    if (!response.ok) return window.alert(result.error ?? "게시 상태를 변경하지 못했습니다.");
-    setActivePublication(result as Publication);
-  }
-
   async function archivePage() {
     const owner = Boolean(page.is_original_owner);
     if (!owner && !page.can_self_remove) return;
@@ -292,27 +283,18 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     setOverflowOpen(false);
   }
 
-  const publicUrl = activePublication?.is_active ? `/p/${activePublication.token}` : null;
-
-  async function copyPublicUrl() {
-    if (!publicUrl) return;
-    await navigator.clipboard.writeText(`${window.location.origin}${publicUrl}`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
-
   return (
     <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={togglePublish} disabled={pending}>{pending ? "게시 중…" : activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<a href={`/api/pages/${page.id}/export`}><Download size={13} />TXT 내보내기</a><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<a href={`/api/pages/${page.id}/export`}><Download size={13} />TXT 내보내기</a><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
-        {activePublication?.is_active && <div className="publish-popover"><strong>이 로그만 게시 중입니다.</strong>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" onClick={copyPublicUrl}>{copied ? "복사됨" : "링크 복사"}</button></div>}<small>공개 화면에는 사이드바와 다른 페이지 링크가 나타나지 않습니다.</small></div>}
         {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">Roll20 백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 Roll20 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending} /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
         <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onDelete={removeEntry} />)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}
       {infoOpen && <LogInfoDialog pageId={page.id} totalCount={totalCount} summary={summary} isOwner={permissions.role === "owner"} canEdit={permissions.canEdit} onRestore={restoreEntry} onClose={() => setInfoOpen(false)} />}
+      {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
     </>
   );
 }
@@ -321,6 +303,20 @@ function LogInfoDialog({ pageId, totalCount, summary, isOwner, canEdit, onRestor
   const [info, setInfo] = useState<{ platform?: string; latestImportAt?: string | null } | null>(null);
   useEffect(() => { void fetch(`/api/pages/${pageId}/info`).then((response) => response.json()).then(setInfo).catch(() => setInfo({})); }, [pageId]);
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card log-info-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>로그 정보</h2><dl className="log-info-grid"><dt>현재 총 메시지 수</dt><dd>{totalCount.toLocaleString()}</dd><dt>Platform</dt><dd>{info?.platform ?? summary?.provider ?? "불러오는 중…"}</dd><dt>최신 import 날짜</dt><dd>{info?.latestImportAt ? new Date(info.latestImportAt).toLocaleString("ko-KR") : "없음"}</dd><dt>원본 source message count</dt><dd>{summary?.sourceMessageCount ?? 0}</dd><dt>logical/imported count</dt><dd>{summary?.logicalMessageCount ?? summary?.importedMessageCount ?? 0}</dd><dt>structural duplicate count</dt><dd>{summary?.structuralDuplicateCount ?? 0}</dd><dt>error duplicate count</dt><dd>{summary?.errorDuplicateCount ?? summary?.duplicateMessageCount ?? 0}</dd><dt>hidden removed</dt><dd>{summary?.hiddenRemovedCount ?? summary?.hiddenMessageCount ?? 0}</dd><dt>warning count</dt><dd>{summary?.warningCount ?? 0}</dd></dl><div className="log-info-actions">{isOwner && <ImportHistoryPanel pageId={pageId} />}{canEdit && <TrashPanel pageId={pageId} onRestore={onRestore} />}</div></section></div>;
+}
+
+function PublicationDialog({ pageId, publication, onChange, onClose }: { pageId: string; publication: Publication | null; onChange: (publication: Publication | null) => void; onClose: () => void }) {
+  const [current, setCurrent] = useState<Publication | null>(publication);
+  const [visibility, setVisibility] = useState<"public" | "password">(publication?.visibility ?? "public");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { void fetch(`/api/pages/${pageId}/publication`).then(async (response) => ({ response, result: await response.json() })).then(({ response, result }) => { if (!response.ok || !result?.id) return; const normalized: Publication = { id: result.id, page_id: result.pageId, token: result.token, is_active: result.isActive, visibility: result.visibility, password_version: result.passwordVersion, published_at: result.publishedAt, updated_at: result.updatedAt }; setCurrent(normalized); setVisibility(normalized.visibility ?? "public"); onChange(normalized); }); }, [onChange, pageId]);
+  async function save(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const response = await fetch(`/api/pages/${pageId}/publication`, { method: current?.is_active ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility, password, passwordConfirm }) }); const result = await response.json(); setPending(false); if (!response.ok) return setError(result.error ?? "게시 설정을 저장하지 못했습니다."); setCurrent(result); onChange(result); setPassword(""); setPasswordConfirm(""); }
+  async function stop() { if (!window.confirm("게시를 중단할까요? 기존 비밀번호 세션도 모두 종료됩니다.")) return; setPending(true); const response = await fetch(`/api/pages/${pageId}/publication`, { method: "DELETE" }); const result = await response.json(); setPending(false); if (!response.ok) return setError(result.error ?? "게시를 중단하지 못했습니다."); setCurrent(result); onChange(result); }
+  const publicUrl = current?.is_active ? `/p/${current.token}` : null;
+  return <div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card publication-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} disabled={pending}><X size={17} /></button><h2>{current?.is_active ? "게시 설정" : "게시하기"}</h2>{publicUrl && <div className="publish-link-row"><a className="publish-url" href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a><button className="button" type="button" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${publicUrl}`)}>링크 복사</button></div>}<form onSubmit={save}><fieldset disabled={pending}><legend>공개 범위</legend><label className="checkbox-row"><input type="radio" name="visibility" checked={visibility === "public"} onChange={() => setVisibility("public")} /> 전체 공개</label><label className="checkbox-row"><input type="radio" name="visibility" checked={visibility === "password"} onChange={() => setVisibility("password")} /> 비밀글</label>{visibility === "password" && <><label className="field">비밀번호<input type="password" minLength={4} maxLength={200} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label className="field">비밀번호 확인<input type="password" minLength={4} maxLength={200} value={passwordConfirm} onChange={(event) => setPasswordConfirm(event.target.value)} required /></label></>}</fieldset>{error && <p className="error">{error}</p>}<div className="modal-actions">{current?.is_active && <button className="button button-danger" type="button" onClick={stop} disabled={pending}>게시 중단</button>}<button className="button button-primary" disabled={pending}>{pending ? "게시 중…" : current?.is_active ? "게시 설정 저장" : "게시 시작"}</button></div></form></section></div>;
 }
 
 function ImportHistoryPanel({ pageId }: { pageId: string }) {

@@ -119,6 +119,8 @@ export type Publication = {
   page_id: string;
   token: string;
   is_active: boolean;
+  visibility?: "public" | "password";
+  password_version?: number;
   published_at: string;
   updated_at: string;
 };
