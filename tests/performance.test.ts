@@ -16,6 +16,7 @@ const stagingPolicyMigration = readFileSync(new URL("../supabase/migrations/2026
 const resourceRolesMigration = readFileSync(new URL("../supabase/migrations/202608280009_resource_roles.sql", import.meta.url), "utf8");
 const registeredSharingMigration = readFileSync(new URL("../supabase/migrations/202608280010_registered_resource_sharing.sql", import.meta.url), "utf8");
 const guestSharingMigration = readFileSync(new URL("../supabase/migrations/202608280011_guest_page_sharing.sql", import.meta.url), "utf8");
+const restoreMigration = readFileSync(new URL("../supabase/migrations/202608280012_log_restore_original.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -117,6 +118,7 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const resourceRolesMarker = "-- 202608280009_resource_roles.sql";
   const registeredSharingMarker = "-- 202608280010_registered_resource_sharing.sql";
   const guestSharingMarker = "-- 202608280011_guest_page_sharing.sql";
+  const restoreMarker = "-- 202608280012_log_restore_original.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
@@ -128,7 +130,8 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(stagingPolicyMarker) + stagingPolicyMarker.length, schema.indexOf(resourceRolesMarker))), normalizedSql(stagingPolicyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(resourceRolesMarker) + resourceRolesMarker.length, schema.indexOf(registeredSharingMarker))), normalizedSql(resourceRolesMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(registeredSharingMarker) + registeredSharingMarker.length, schema.indexOf(guestSharingMarker))), normalizedSql(registeredSharingMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(guestSharingMarker) + guestSharingMarker.length)), normalizedSql(guestSharingMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(guestSharingMarker) + guestSharingMarker.length, schema.indexOf(restoreMarker))), normalizedSql(guestSharingMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(restoreMarker) + restoreMarker.length)), normalizedSql(restoreMigration));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {
