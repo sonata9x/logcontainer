@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSiteAdminApiContext } from "@/lib/admin-auth";
+import { databaseErrorResponse } from "@/lib/api-error";
 
 const STATUSES = new Set(["pending", "approved", "rejected", "disabled"]);
 
@@ -11,5 +12,5 @@ export async function GET(request: Request) {
   const { data, error } = await context.admin.from("profiles")
     .select("id, username, display_name, account_status, is_site_admin, approved_at, approved_by, created_at, updated_at")
     .eq("account_status", status).order("created_at");
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ accounts: data ?? [] });
+  return error ? databaseErrorResponse(error, "계정 목록을 불러오지 못했습니다.") : NextResponse.json({ accounts: data ?? [] });
 }

@@ -10,6 +10,7 @@ export function SetPasswordForm() {
     setPending(true);
     setError("");
     const data = new FormData(event.currentTarget);
+    const currentPassword = String(data.get("currentPassword") ?? "");
     const password = String(data.get("password") ?? "");
     const confirm = String(data.get("confirm") ?? "");
     if (password.length < 4 || password !== confirm) {
@@ -17,7 +18,7 @@ export function SetPasswordForm() {
       setPending(false);
       return;
     }
-    const response = await fetch("/api/account/password", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+    const response = await fetch("/api/account/password", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ currentPassword, password }) });
     if (!response.ok) {
       setError("비밀번호를 변경하지 못했습니다.");
       setPending(false);
@@ -25,5 +26,5 @@ export function SetPasswordForm() {
     }
     window.location.assign("/workspace");
   }
-  return <form onSubmit={submit}><label className="field">새 비밀번호<input name="password" type="password" minLength={4} required /></label><label className="field">비밀번호 확인<input name="confirm" type="password" minLength={4} required /></label>{error && <p className="error">{error}</p>}<button className="button button-primary" disabled={pending}>{pending ? "설정 중…" : "비밀번호 설정"}</button></form>;
+  return <form onSubmit={submit}><label className="field">현재 비밀번호<input name="currentPassword" type="password" minLength={4} autoComplete="current-password" required /></label><label className="field">새 비밀번호<input name="password" type="password" minLength={4} autoComplete="new-password" required /></label><label className="field">비밀번호 확인<input name="confirm" type="password" minLength={4} autoComplete="new-password" required /></label>{error && <p className="error">{error}</p>}<button className="button button-primary" disabled={pending}>{pending ? "변경 중…" : "비밀번호 변경"}</button></form>;
 }

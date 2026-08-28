@@ -1,23 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
 import { gzipArchive, LOG_GENERATION_BUCKET, removePrivateArchives, ROLL20_SOURCE_BUCKET, uploadPrivateArchive } from "@/lib/logs/archive";
 import { importRoll20HtmlV2 } from "@/lib/logs/roll20/import-v2";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toLogEntryDto } from "@/lib/logs/dto";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { databaseErrorResponse, internalErrorResponse } from "@/lib/api-error";
 
-const MAX_SOURCE_SIZE = 25 * 1024 * 1024;
+const MAX_SOURCE_SIZE = 4 * 1024 * 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const startedAt = performance.now();
   const { id } = await params;
   const context = await getApiPageContext(id);
   if (!context || context.page.page_type !== "log") return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
+  const limited = await enforceRateLimit(request, { scope: "log-import", identity: context.user.id, maxRequests: 6, windowSeconds: 600, blockSeconds: 900 });
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const source = typeof body.source === "string" ? body.source : "";
   if (!source.trim()) return NextResponse.json({ error: "가져올 HTML이 없습니다." }, { status: 400 });
-  if (Buffer.byteLength(source, "utf8") > MAX_SOURCE_SIZE) return NextResponse.json({ error: "HTML은 최대 25MB까지 가져올 수 있습니다." }, { status: 413 });
+  if (Buffer.byteLength(source, "utf8") > MAX_SOURCE_SIZE) return NextResponse.json({ error: "HTML은 최대 4MB까지 가져올 수 있습니다." }, { status: 413 });
 
   let imported;
   try {
@@ -61,7 +64,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   } catch (error) {
     await removePrivateArchives(uploaded);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "원본 archive 저장에 실패했습니다." }, { status: 500 });
+    return internalErrorResponse(error, "원본 archive 저장에 실패했습니다.");
   }
   const archivedAt = performance.now();
 
@@ -80,11 +83,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
   if (error) {
     await removePrivateArchives(uploaded);
-    return NextResponse.json({ error: error.code === "40001" ? "가져오기 중 로그가 변경됐습니다. 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 });
+    return error.code === "40001"
+      ? NextResponse.json({ error: "가져오기 중 로그가 변경됐습니다. 다시 시도해주세요." }, { status: 409 })
+      : databaseErrorResponse(error, "로그를 저장하지 못했습니다.");
   }
   const { data: pageData } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: null, batch_size: 200 });
   const completedAt = performance.now();
-  revalidateTag("published-logs");
   return NextResponse.json({ ...(data as object), report: imported.report, entries: ((pageData?.entries ?? []) as Record<string, unknown>[]).map(toLogEntryDto) }, {
     headers: { "Server-Timing": `parse;dur=${(parsedAt - startedAt).toFixed(1)}, archive;dur=${(archivedAt - parsedAt).toFixed(1)}, db;dur=${(completedAt - archivedAt).toFixed(1)}` }
   });

@@ -35,7 +35,7 @@ function RichNodeView({ node, editor }: { node: RichNode; editor?: TextEditor })
   if (node.type === "text") return <EditableText id={node.id} text={node.text} editor={editor} />;
   if (node.type === "break") return <br />;
   if (node.type === "image") {
-    const image = <img className="r20-rich-image" src={node.src} alt={node.alt ?? ""} style={styleObject(node.style)} loading="lazy" />;
+    const image = <img className="r20-rich-image" src={node.src} alt={node.alt ?? ""} style={styleObject(node.style)} loading="lazy" referrerPolicy="no-referrer" />;
     return node.href ? <a href={node.href} target="_blank" rel="noopener noreferrer">{image}</a> : image;
   }
   if (node.type === "inline-roll") return <Roll20InlineRoll roll={node.roll} />;
@@ -78,7 +78,7 @@ function BlockView({ block, editor }: { block: LogBlock; editor?: TextEditor }) 
   if (block.type === "inline-roll") return <Roll20InlineRoll roll={block} />;
   if (block.type === "image") {
     const style: CSSProperties = { width: block.display?.width ?? undefined, height: block.display?.height ?? undefined, minWidth: block.display?.minWidth ?? undefined, maxWidth: block.display?.maxWidth ?? undefined };
-    const image = <img className="r20-image" src={block.src} alt={block.alt ?? ""} style={style} loading="lazy" />;
+    const image = <img className="r20-image" src={block.src} alt={block.alt ?? ""} style={style} loading="lazy" referrerPolicy="no-referrer" />;
     return <figure className={`r20-image-block r20-image-block--${block.display?.align ?? "default"}`}>{block.href ? <a href={block.href} target="_blank" rel="noopener noreferrer">{image}</a> : image}{block.caption && <figcaption>{block.caption}</figcaption>}</figure>;
   }
   if (block.type === "rich") return <RichBlockView block={block} editor={editor} />;
@@ -107,7 +107,7 @@ export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryD
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
   return (
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
-      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" />}</div>}
+      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</div>}
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
         <div className="r20-message__content-flow">

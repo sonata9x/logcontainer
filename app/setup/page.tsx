@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
+  if (!process.env.SETUP_SECRET) redirect("/login");
   const admin = createSupabaseAdminClient();
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
   if (data?.users.length) redirect("/login");

@@ -17,7 +17,7 @@ test("rendered Roll20 HTML removes only repeated data-messageid values", () => {
   assert.equal(result.report.duplicateMessageCount, 1);
   assert.deepEqual(result.report.duplicateMessageIds, ["m-1"]);
   assert.equal(result.entries[0].content, "Hello");
-  assert.equal(result.entries[1].metadata.roll20MessageId, "m-2");
+  assert.equal(result.entries[1].metadata?.roll20MessageId, "m-2");
 });
 
 test("rendered Roll20 HTML removes hidden-message before deduplication", () => {

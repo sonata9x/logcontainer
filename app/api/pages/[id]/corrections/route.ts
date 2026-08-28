@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
+import { databaseErrorResponse } from "@/lib/api-error";
 
 const booleanKeys = ["remove_html_tags", "normalize_ellipsis", "normalize_quotes", "speaker_tab_format", "clean_blank_lines", "mark_handout_position"] as const;
 const textKeys = ["custom_quote_open", "custom_quote_close", "custom_ellipsis", "custom_handout_icon"] as const;
@@ -15,7 +16,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   const log = await findLog(context, id);
   const { data, error } = await context.supabase.from("correction_settings").select("remove_html_tags, normalize_ellipsis, normalize_quotes, speaker_tab_format, clean_blank_lines, mark_handout_position, custom_quote_open, custom_quote_close, custom_ellipsis, custom_handout_icon").eq("log_id", log!.id).maybeSingle();
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ settings: data });
+  return error ? databaseErrorResponse(error, "교정 설정을 불러오지 못했습니다.") : NextResponse.json({ settings: data });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,5 +29,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   textKeys.forEach((key) => { if (typeof body[key] === "string") updates[key] = body[key].slice(0, 8); });
   const log = await findLog(context, id);
   const { data, error } = await context.supabase.from("correction_settings").update(updates).eq("log_id", log!.id).select("remove_html_tags, normalize_ellipsis, normalize_quotes, speaker_tab_format, clean_blank_lines, mark_handout_position, custom_quote_open, custom_quote_close, custom_ellipsis, custom_handout_icon").single();
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json(data);
+  return error ? databaseErrorResponse(error, "교정 설정을 저장하지 못했습니다.") : NextResponse.json(data);
 }

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createInternalAuthEmail, deriveAuthPassword, isValidUsername, normalizeUsername } from "@/lib/auth-identity";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { databaseErrorResponse } from "@/lib/api-error";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  const limited = await enforceRateLimit(request, { scope: "auth-signup", maxRequests: 5, windowSeconds: 3600, blockSeconds: 3600 });
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const username = normalizeUsername(body.username);
   const password = typeof body.password === "string" ? body.password : "";
@@ -12,7 +16,7 @@ export async function POST(request: Request) {
   }
   const admin = createSupabaseAdminClient();
   const { data: users, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
-  if (usersError) return NextResponse.json({ error: usersError.message }, { status: 400 });
+  if (usersError) return databaseErrorResponse(usersError, "가입 상태를 확인하지 못했습니다.");
   if (!users.users.length) return NextResponse.json({ error: "먼저 /setup에서 최초 관리자 계정을 만들어주세요." }, { status: 409 });
   const { data: existing } = await admin.from("profiles").select("id").eq("username", username).maybeSingle();
   if (existing) return NextResponse.json({ error: "이미 사용 중인 아이디입니다." }, { status: 409 });
@@ -22,6 +26,6 @@ export async function POST(request: Request) {
     email_confirm: true,
     user_metadata: { username, display_name: displayName }
   });
-  if (error || !data.user) return NextResponse.json({ error: error?.message ?? "가입 신청을 만들지 못했습니다." }, { status: 400 });
+  if (error || !data.user) return databaseErrorResponse(error, "가입 신청을 만들지 못했습니다.");
   return NextResponse.json({ created: true, status: "pending" }, { status: 201 });
 }

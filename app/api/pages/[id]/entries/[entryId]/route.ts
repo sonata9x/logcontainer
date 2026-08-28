@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
 import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
@@ -7,6 +6,7 @@ import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, 
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { toLogEntryDto } from "@/lib/logs/dto";
+import { databaseErrorResponse } from "@/lib/api-error";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const { id, entryId } = await params;
@@ -75,8 +75,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       revision_action: revisionAction,
       expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
     });
-    if (!error) revalidateTag("published-logs");
-    return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings });
+    if (error?.code === "40001") return NextResponse.json({ error: "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." }, { status: 409 });
+    return error ? databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings });
   }
   if (typeof body.content !== "string") return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });
 
@@ -88,8 +88,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     revision_action: body.revisionAction === "revert" ? "revert" : "edit",
     expected_updated_at: typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null
   });
-  if (!error) revalidateTag("published-logs");
-  return error ? NextResponse.json({ error: error.code === "40001" ? "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." : error.message }, { status: error.code === "40001" ? 409 : 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
+  if (error?.code === "40001") return NextResponse.json({ error: "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." }, { status: 409 });
+  return error ? databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
@@ -98,12 +98,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   if (new URL(request.url).searchParams.get("view") === "entry") {
     const { data, error } = await context.supabase.rpc("get_log_entry_dto", { target_page_id: id, target_entry_id: entryId });
-    return error ? NextResponse.json({ error: error.message }, { status: 400 }) : data ? NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }) : NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
+    return error ? databaseErrorResponse(error, "로그 블록을 불러오지 못했습니다.") : data ? NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }) : NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
   }
   const { data, error } = await context.supabase.from("log_entry_revisions")
     .select("id, entry_id, action, editor_id, previous_content, next_content, created_at, revision_schema_version")
     .eq("entry_id", entryId).order("created_at", { ascending: false }).limit(50);
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ revisions: data ?? [] });
+  return error ? databaseErrorResponse(error, "수정 이력을 불러오지 못했습니다.") : NextResponse.json({ revisions: data ?? [] });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
@@ -111,6 +111,5 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const context = await getApiPageContext(id);
   if (!context) return NextResponse.json({ error: "페이지를 찾을 수 없습니다." }, { status: 404 });
   const { data, error } = await context.supabase.rpc("set_log_entry_deleted_v3", { target_page_id: id, target_entry_id: entryId, should_delete: true });
-  if (!error) revalidateTag("published-logs");
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
+  return error ? databaseErrorResponse(error, "로그 블록을 삭제하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }

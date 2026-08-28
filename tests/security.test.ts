@@ -5,6 +5,7 @@ import test from "node:test";
 const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/202608270002_personal_resources.sql", import.meta.url), "utf8");
 const hardeningMigration = readFileSync(new URL("../supabase/migrations/202608270003_personal_resources_hardening.sql", import.meta.url), "utf8");
+const securityMigration = readFileSync(new URL("../supabase/migrations/202608280001_security_hardening.sql", import.meta.url), "utf8");
 const loginRoute = readFileSync(new URL("../app/api/login/route.ts", import.meta.url), "utf8");
 const signupRoute = readFileSync(new URL("../app/api/signup/route.ts", import.meta.url), "utf8");
 const adminHelper = readFileSync(new URL("../lib/admin-auth.ts", import.meta.url), "utf8");
@@ -15,6 +16,10 @@ const publicationRoute = readFileSync(new URL("../app/api/pages/[id]/publication
 const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
 const serverAuth = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
 const setPasswordPage = readFileSync(new URL("../app/set-password/page.tsx", import.meta.url), "utf8");
+const setupRoute = readFileSync(new URL("../app/api/setup/route.ts", import.meta.url), "utf8");
+const rateLimitHelper = readFileSync(new URL("../lib/rate-limit.ts", import.meta.url), "utf8");
+const proxy = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
+const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
 
 function functionSql(name: string) {
   const start = migration.indexOf(`create or replace function public.${name}`);
@@ -179,6 +184,35 @@ test("already-applied WIP databases receive an additive hardening migration", ()
   assert.match(hardeningMigration, /create or replace function public\.insert_folder_item/);
   assert.match(hardeningMigration, /grant execute on function public\.can_view_resource\(uuid, uuid\) to authenticated/);
   assert.doesNotMatch(hardeningMigration, /create table if not exists public\.(workspace_items|folder_items|resource_shares)/);
+});
+
+test("authentication abuse protection keeps four-character compatibility without reversible storage", () => {
+  assert.match(loginRoute, /enforceRateLimit/);
+  assert.match(signupRoute, /enforceRateLimit/);
+  assert.match(passwordRoute, /currentPassword/);
+  assert.match(passwordRoute, /signInWithPassword/);
+  assert.match(setupRoute, /SETUP_SECRET/);
+  assert.match(setupRoute, /timingSafeEqual/);
+  assert.match(rateLimitHelper, /createHmac\("sha256"/);
+  assert.doesNotMatch(rateLimitHelper, /createCipher|decrypt|encrypt/);
+});
+
+test("rate limit state is service-role only and stores no raw address", () => {
+  assert.match(securityMigration, /create table if not exists public\.security_rate_limits/);
+  assert.match(securityMigration, /revoke all on table public\.security_rate_limits from public, anon, authenticated/);
+  assert.match(securityMigration, /auth\.role\(\).*service_role/);
+  assert.match(securityMigration, /pg_advisory_xact_lock/);
+  assert.match(securityMigration, /key_hash ~ '\^\[a-f0-9\]\{64\}\$'/);
+  assert.doesNotMatch(securityMigration, /ip_address|user_agent/);
+  assert.match(schema, /-- 202608280001_security_hardening\.sql[\s\S]*create table if not exists public\.security_rate_limits/);
+});
+
+test("browser security boundaries reject cross-site writes and emit hardened headers", () => {
+  assert.match(proxy, /sec-fetch-site/);
+  assert.match(proxy, /origin !== request\.nextUrl\.origin/);
+  for (const header of ["Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy", "Strict-Transport-Security"]) {
+    assert.match(nextConfig, new RegExp(header));
+  }
 });
 
 test("drag movement preserves private placement and shared-folder hierarchy boundaries", () => {

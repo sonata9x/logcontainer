@@ -4,7 +4,7 @@ import { applyCorrections, normalizeEllipsis, normalizeQuotes, stripHtml } from 
 import type { LogEntry } from "../lib/types";
 
 function entry(overrides: Partial<LogEntry>): LogEntry {
-  return { id: crypto.randomUUID(), log_id: "log", order_index: 0, entry_type: "dialogue", speaker_name: null, speaker_color: null, content: "", original_content: "", raw_html: null, metadata: {}, is_deleted: false, deleted_at: null, is_added: false, updated_by: null, created_at: "", updated_at: "", ...overrides };
+  return { id: crypto.randomUUID(), log_id: "log", order_index: 0, sort_key: 0, entry_type: "dialogue", speaker_name: null, speaker_color: null, content: "", original_content: "", raw_html: null, metadata: {}, is_deleted: false, deleted_at: null, is_added: false, updated_by: null, created_at: "", updated_at: "", ...overrides };
 }
 
 test("correction helpers normalize markup, ellipsis, and quotes", () => {
@@ -15,10 +15,10 @@ test("correction helpers normalize markup, ellipsis, and quotes", () => {
 
 test("TXT export sorts entries and formats separate speaker names with tabs", () => {
   const result = applyCorrections([
-    entry({ order_index: 1, content: '"응..."' }),
-    entry({ order_index: 0, speaker_name: "민수", content: "<b>안녕</b>" }),
-    entry({ order_index: 2, entry_type: "image", content: "지도" }),
-    entry({ order_index: 3, content: "삭제됨", is_deleted: true })
+    entry({ order_index: 1, sort_key: 1, content: '"응..."' }),
+    entry({ order_index: 0, sort_key: 0, speaker_name: "민수", content: "<b>안녕</b>" }),
+    entry({ order_index: 2, sort_key: 2, entry_type: "image", content: "지도" }),
+    entry({ order_index: 3, sort_key: 3, content: "삭제됨", is_deleted: true })
   ]);
   assert.equal(result, "민수\t안녕\n\n“응…”\n\n★ 이미지/핸드아웃 [지도]\n");
 });

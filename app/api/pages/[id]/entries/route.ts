@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { getApiPageContext } from "@/lib/api-auth";
 import { createManualLogEntryDocument } from "@/lib/logs/model/factory";
 import { projectDocumentText } from "@/lib/logs/model/projection";
 import { toLogEntryDto } from "@/lib/logs/dto";
+import { databaseErrorResponse } from "@/lib/api-error";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const value = new URL(request.url).searchParams.get("after");
   const after = value && /^\d+$/.test(value) ? Number(value) : null;
   const { data, error } = await context.supabase.rpc("get_log_entries_page", { target_page_id: id, after_sort_key: after, batch_size: 200 });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) return databaseErrorResponse(error, "로그를 불러오지 못했습니다.");
   const result = data as { entries?: Record<string, unknown>[]; totalCount?: number; batchSize?: number } | null;
   return NextResponse.json({ ...result, entries: (result?.entries ?? []).map(toLogEntryDto) });
 }
@@ -35,6 +35,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     new_document: document,
     new_content: projectDocumentText(document)
   });
-  if (!error) revalidateTag("published-logs");
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }, { status: 201 });
+  return error ? databaseErrorResponse(error, "로그 블록을 만들지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }, { status: 201 });
 }

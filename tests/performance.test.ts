@@ -9,7 +9,7 @@ const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts"
 const entryRoute = readFileSync(new URL("../app/api/pages/[id]/entries/[entryId]/route.ts", import.meta.url), "utf8");
 const logPage = readFileSync(new URL("../app/workspace/pages/[id]/page.tsx", import.meta.url), "utf8");
 const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
-const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
+const proxy = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
 
 test("raw Roll20 source gzip round-trip is byte-for-byte lossless", () => {
@@ -58,13 +58,17 @@ test("entry collaboration uses lightweight events and local patches", () => {
 });
 
 test("public routes bypass auth refresh and stored documents use lightweight reads", () => {
-  assert.match(middleware, /matcher: \["\/workspace\/:path\*", "\/p\/:path\*"\]/);
-  const publicBranch = middleware.slice(middleware.indexOf('startsWith("/p/")'));
+  assert.match(proxy, /matcher: \["\/workspace\/:path\*", "\/p\/:path\*", "\/api\/:path\*"\]/);
+  const publicBranch = proxy.slice(proxy.indexOf('startsWith("/p/")'));
   assert.doesNotMatch(publicBranch, /auth\.getUser/);
   assert.match(logPage, /toLogEntryDto/);
   assert.match(schema, /202608270004_log_performance\.sql/);
   const marker = "-- 202608270004_log_performance.sql";
-  assert.equal(schema.slice(schema.indexOf(marker) + marker.length).trim(), migration.trim());
+  const nextMarker = "-- 202608280001_security_hardening.sql";
+  assert.equal(
+    schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker)).replace(/\r\n/g, "\n").trim(),
+    migration.replace(/\r\n/g, "\n").trim()
+  );
 });
 
 test("large Roll20 fixtures keep 1,000 and 3,000 messages in source order", () => {
