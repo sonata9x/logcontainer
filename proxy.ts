@@ -22,7 +22,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/p/")) {
+  if (pathname.startsWith("/p/") || pathname.startsWith("/share/")) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
     response.headers.set("Referrer-Policy", "no-referrer");
     return response;
@@ -58,5 +58,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/workspace/:path*", "/p/:path*", "/api/:path*"]
+  matcher: ["/workspace/:path*", "/p/:path*", "/share/:path*", "/api/:path*"]
 };

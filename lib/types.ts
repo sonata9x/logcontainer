@@ -104,6 +104,7 @@ export type LogEntryRevision = {
   id: string;
   entry_id: string;
   editor_id: string | null;
+  guest_participant_id?: string | null;
   action: "edit" | "delete" | "restore" | "revert";
   previous_content: string;
   next_content: string;
