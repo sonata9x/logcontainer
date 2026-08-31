@@ -91,6 +91,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
   const importFileInput = useRef<HTMLInputElement>(null);
   const dragOriginRef = useRef<LogEntry[] | null>(null);
+  const dragOrderRef = useRef<LogEntry[] | null>(null);
   const dropCommittedRef = useRef(false);
   const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
   const [reorderPending, setReorderPending] = useState(false);
@@ -296,6 +297,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   function beginEntryDrag(event: React.DragEvent<HTMLButtonElement>, entryId: string) {
     if (!permissions.canEdit || reorderPending) { event.preventDefault(); return; }
     dragOriginRef.current = liveEntries.map((entry) => ({ ...entry }));
+    dragOrderRef.current = liveEntries;
     dropCommittedRef.current = false;
     setDraggingEntryId(entryId);
     event.dataTransfer.effectAllowed = "move";
@@ -311,6 +313,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       const next = [...current];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
+      dragOrderRef.current = next;
       return next;
     });
   }
@@ -318,11 +321,12 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   async function commitEntryOrder() {
     const before = dragOriginRef.current;
     if (!before || !draggingEntryId) return;
+    const ordered = dragOrderRef.current ?? liveEntries;
     dropCommittedRef.current = true;
     setDraggingEntryId(null);
-    if (before.every((entry, index) => entry.id === liveEntries[index]?.id)) { dragOriginRef.current = null; return; }
+    if (before.every((entry, index) => entry.id === ordered[index]?.id)) { dragOriginRef.current = null; dragOrderRef.current = null; return; }
     const slots = before.map((entry) => entry.sort_key).sort((left, right) => left - right);
-    const optimistic = liveEntries.map((entry, index) => ({ ...entry, sort_key: slots[index] }));
+    const optimistic = ordered.map((entry, index) => ({ ...entry, sort_key: slots[index] }));
     setLiveEntries(optimistic);
     setReorderPending(true);
     const response = await fetch(`/api/pages/${page.id}/entries/reorder`, {
@@ -336,6 +340,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     const result = await response.json().catch(() => ({}));
     setReorderPending(false);
     dragOriginRef.current = null;
+    dragOrderRef.current = null;
     if (!response.ok) {
       setLiveEntries(before);
       window.alert(result.error ?? "메시지 순서를 저장하지 못했습니다.");
@@ -345,6 +350,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   function endEntryDrag() {
     if (!dropCommittedRef.current && dragOriginRef.current) setLiveEntries(dragOriginRef.current);
     dragOriginRef.current = null;
+    dragOrderRef.current = null;
     setDraggingEntryId(null);
   }
 

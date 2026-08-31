@@ -286,7 +286,7 @@ a { color: inherit; text-decoration: none; }
   .sidebar-create-actions .sidebar-action { justify-content: center; background: #fff; border: 1px solid var(--line); color: var(--text); }
   .sidebar-action, .page-link { min-height: 42px; padding-top: 9px; padding-bottom: 9px; }
   .page-tree { padding-right: 2px; overscroll-behavior: contain; }
-  .tree-toggle, .tree-add, .tree-more { width: 30px; height: 30px; }
+  .tree-toggle, .tree-add, .tree-more, .tree-drag-handle { width: 30px; height: 30px; }
   .tree-more { opacity: 1; pointer-events: auto; }
   .tree-title { font-size: 14px; }
   .sidebar-footer { padding-top: 9px; }

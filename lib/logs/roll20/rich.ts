@@ -22,6 +22,13 @@ function safeHttpsUrl(value: string | undefined) {
   try { const url = new URL(value); return url.protocol === "https:" ? url.href : null; } catch { return null; }
 }
 
+function safeImageUrl(value: string | undefined) {
+  const https = safeHttpsUrl(value);
+  if (https) return https;
+  if (!value || value.length > 5_000_000) return null;
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\r\n]+$/i.test(value) ? value : null;
+}
+
 export function parseRichHtml(html: string, seed: string): RichParseResult {
   const $ = cheerio.load(html, null, false);
   const warnings: ParserWarning[] = [];
@@ -55,9 +62,9 @@ export function parseRichHtml(html: string, seed: string): RichParseResult {
     droppedStyleCount += styleResult.droppedCount;
     warnings.push(...styleResult.warnings.map((detail) => ({ code: "sanitized-style", message: "Rich content 스타일을 정리했습니다.", path, detail })));
     if (tagName === "img") {
-      const src = safeHttpsUrl(wrapped.attr("src"));
+      const src = safeImageUrl(wrapped.attr("src"));
       if (!src) {
-        warnings.push({ code: "dropped-rich-image", message: "HTTPS가 아닌 Rich content 이미지를 제거했습니다.", path, detail: wrapped.attr("src") ?? null });
+        warnings.push({ code: "dropped-rich-image", message: "안전하지 않은 Rich content 이미지를 제거했습니다.", path, detail: wrapped.attr("src") ?? null });
         return [];
       }
       const parentHref = element.parent?.type === "tag" && (element.parent as Element).name === "a" ? safeHttpsUrl($(element.parent).attr("href")) : null;

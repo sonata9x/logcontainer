@@ -10,6 +10,13 @@ function safeHttpsUrl(value: unknown, nullable = true): string | null {
   try { const url = new URL(value); return url.protocol === "https:" ? url.href : null; } catch { return null; }
 }
 
+function safeImageUrl(value: unknown): string | null {
+  const https = safeHttpsUrl(value, false);
+  if (https) return https;
+  if (typeof value !== "string" || value.length > 5_000_000) return null;
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\r\n]+$/i.test(value) ? value : null;
+}
+
 function sanitizeRichNode(node: unknown, warnings: ParserWarning[], path: string): RichNode | null {
   if (!node || typeof node !== "object") { warnings.push({ code: "invalid-document-node", message: "유효하지 않은 RichNode입니다.", path }); return null; }
   const value = node as Record<string, unknown>;
@@ -18,7 +25,7 @@ function sanitizeRichNode(node: unknown, warnings: ParserWarning[], path: string
   if (value.type === "text") return typeof value.text === "string" ? { id, type: "text", text: value.text } : null;
   if (value.type === "break") return { id, type: "break" };
   if (value.type === "image") {
-    const src = safeHttpsUrl(value.src, false);
+    const src = safeImageUrl(value.src);
     if (!src) { warnings.push({ code: "dropped-rich-image", message: "안전하지 않은 Rich 이미지 URL을 제거했습니다.", path }); return null; }
     const styleResult = sanitizeRichStyleDeclarations(value.style);
     warnings.push(...styleResult.warnings.map((detail) => ({ code: "sanitized-style", message: "Rich 이미지 스타일을 정리했습니다.", path, detail })));
@@ -50,7 +57,7 @@ function sanitizeBlock(block: unknown, warnings: ParserWarning[], path: string):
     tooltip: typeof value.tooltip === "string" ? value.tooltip : null, rawFormula: typeof value.rawFormula === "string" ? value.rawFormula : null
   };
   if (value.type === "image") {
-    const src = safeHttpsUrl(value.src, false);
+    const src = safeImageUrl(value.src);
     if (!src) { warnings.push({ code: "dropped-image", message: "안전하지 않은 이미지 URL을 제거했습니다.", path }); return null; }
     const display = value.display && typeof value.display === "object" ? value.display as Record<string, unknown> : {};
     return { id, type: "image", src, href: safeHttpsUrl(value.href), alt: typeof value.alt === "string" ? value.alt : null, caption: typeof value.caption === "string" ? value.caption : null, display: {
