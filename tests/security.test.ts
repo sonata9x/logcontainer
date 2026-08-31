@@ -151,6 +151,9 @@ test("resource tree supports portal overlays, range selection and atomic drag mo
   assert.match(sidebar, /event\.ctrlKey.*event\.metaKey.*event\.shiftKey/);
   assert.match(sidebar, /querySelectorAll<HTMLElement>\("#workspace-navigation \[data-resource-id\]"\)/);
   assert.match(sidebar, /draggable/);
+  assert.match(sidebar, /className="tree-drag-handle" draggable/);
+  assert.doesNotMatch(sidebar, /data-resource-id=\{page\.id\} draggable/);
+  assert.match(sidebar, /setSelectedIds\(new Set\(\[resourceId\]\)\)/);
   assert.match(sidebar, /RESOURCE_DRAG_TYPE/);
   assert.match(sidebar, /fetch\("\/api\/resources\/move"/);
   assert.match(sidebar, /workspace-root-drop/);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { normalizeHexColor } from "../lib/color";
 
 const migration = readFileSync(new URL("../supabase/migrations/202608280014_user_preferences.sql", import.meta.url), "utf8");
 const settingsRoute = readFileSync(new URL("../app/api/account/settings/route.ts", import.meta.url), "utf8");
@@ -15,8 +16,14 @@ test("personal preferences validate accent and remain user-scoped", () => {
   assert.match(migration, /accent_color ~ '\^#\[0-9A-Fa-f\]\{6\}\$'/);
   assert.match(migration, /user_id = auth\.uid\(\)/);
   assert.match(migration, /update_user_preferences/);
-  assert.match(settingsRoute, /\^#\[0-9A-F\]\{6\}\$/);
+  assert.match(settingsRoute, /normalizeHexColor/);
   assert.match(settingsRoute, /parseCorrectionSettings/);
+});
+
+test("accent color accepts short and full HEX and normalizes to uppercase six digits", () => {
+  assert.equal(normalizeHexColor("#abc"), "#AABBCC");
+  assert.equal(normalizeHexColor(" #4f6bed "), "#4F6BED");
+  assert.equal(normalizeHexColor("#12xz89"), null);
 });
 
 test("shared workspace pages use the current viewer accent", () => {

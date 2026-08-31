@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApprovedApiContext, getAuthenticatedApiContext } from "@/lib/api-auth";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { defaultCorrectionSettings, parseCorrectionSettings } from "@/lib/logs/corrections";
+import { normalizeHexColor } from "@/lib/color";
 
 export async function GET() {
   const context = await getApprovedApiContext();
@@ -27,9 +28,9 @@ export async function PATCH(request: Request) {
   if (!nickname || nickname.length > 80) {
     return NextResponse.json({ error: "닉네임은 1~80자로 입력해주세요." }, { status: 400 });
   }
-  const accentColor = typeof body.accentColor === "string" ? body.accentColor.toUpperCase() : "";
+  const accentColor = normalizeHexColor(body.accentColor);
   const correctionSettings = parseCorrectionSettings(body.correctionSettings);
-  if (!/^#[0-9A-F]{6}$/.test(accentColor)) return NextResponse.json({ error: "포인트 색상은 #RRGGBB 형식이어야 합니다." }, { status: 400 });
+  if (!accentColor) return NextResponse.json({ error: "포인트 색상은 #RGB 또는 #RRGGBB 형식이어야 합니다." }, { status: 400 });
   if (!correctionSettings) return NextResponse.json({ error: "TXT 교정 기본값이 올바르지 않습니다." }, { status: 400 });
 
   const { data, error } = await context.supabase.rpc("update_personal_settings", {
