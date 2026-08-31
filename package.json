@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "test": "tsx --test tests/**/*.test.ts",
     "benchmark:roll20-import": "node --expose-gc ./node_modules/tsx/dist/cli.mjs scripts/benchmark-roll20-import.ts",
+    "benchmark:takoyaki-import": "tsx scripts/benchmark-takoyaki-import.ts",
+    "check:roll20-import": "tsx scripts/check-roll20-import.ts",
     "backfill:log-storage": "tsx scripts/backfill-log-storage.ts"
   },
   "dependencies": {

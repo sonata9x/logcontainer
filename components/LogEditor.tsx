@@ -90,6 +90,10 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const loadingMoreRef = useRef(false);
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
   const importFileInput = useRef<HTMLInputElement>(null);
+  const dragOriginRef = useRef<LogEntry[] | null>(null);
+  const dropCommittedRef = useRef(false);
+  const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
+  const [reorderPending, setReorderPending] = useState(false);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
 
@@ -289,13 +293,68 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     setOverflowOpen(false);
   }
 
+  function beginEntryDrag(event: React.DragEvent<HTMLButtonElement>, entryId: string) {
+    if (!permissions.canEdit || reorderPending) { event.preventDefault(); return; }
+    dragOriginRef.current = liveEntries.map((entry) => ({ ...entry }));
+    dropCommittedRef.current = false;
+    setDraggingEntryId(entryId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", entryId);
+  }
+
+  function moveDraggedEntry(targetId: string) {
+    if (!draggingEntryId || draggingEntryId === targetId) return;
+    setLiveEntries((current) => {
+      const from = current.findIndex((entry) => entry.id === draggingEntryId);
+      const to = current.findIndex((entry) => entry.id === targetId);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
+  async function commitEntryOrder() {
+    const before = dragOriginRef.current;
+    if (!before || !draggingEntryId) return;
+    dropCommittedRef.current = true;
+    setDraggingEntryId(null);
+    if (before.every((entry, index) => entry.id === liveEntries[index]?.id)) { dragOriginRef.current = null; return; }
+    const slots = before.map((entry) => entry.sort_key).sort((left, right) => left - right);
+    const optimistic = liveEntries.map((entry, index) => ({ ...entry, sort_key: slots[index] }));
+    setLiveEntries(optimistic);
+    setReorderPending(true);
+    const response = await fetch(`/api/pages/${page.id}/entries/reorder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        orderedIds: optimistic.map((entry) => entry.id),
+        expected: before.map((entry) => ({ id: entry.id, sortKey: entry.sort_key }))
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    setReorderPending(false);
+    dragOriginRef.current = null;
+    if (!response.ok) {
+      setLiveEntries(before);
+      window.alert(result.error ?? "메시지 순서를 저장하지 못했습니다.");
+    }
+  }
+
+  function endEntryDrag() {
+    if (!dropCommittedRef.current && dragOriginRef.current) setLiveEntries(dragOriginRef.current);
+    dragOriginRef.current = null;
+    setDraggingEntryId(null);
+  }
+
   return (
     <>
       <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as ImportPlatformSelection)} disabled={pending}><option value="auto">자동 감지</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{(importPlatform === "auto" || importPlatform === "roll20") && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>Roll20 사담(casual)은 항상 제외되며 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
-        <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onDelete={removeEntry} />)}</section>
+        <section>{liveEntries.map((entry) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} key={entry.id} onDragEnter={(event) => { event.preventDefault(); moveDraggedEntry(entry.id); }} onDragOver={(event) => { if (draggingEntryId) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); void commitEntryOrder(); }}><button className="log-entry-drag-handle" type="button" draggable={Boolean(page.can_edit) && !reorderPending} aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onDragStart={(event) => beginEntryDrag(event, entry.id)} onDragEnd={endEntryDrag}>⋮⋮</button><EditableEntry pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onDelete={removeEntry} /></div>)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}
