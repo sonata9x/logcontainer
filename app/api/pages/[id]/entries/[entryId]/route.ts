@@ -39,12 +39,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       nextDocument = applyEditableTextChanges(current.document, changes);
     } else if (Array.isArray(body.styleEdits)) {
       const original = validateLogEntryDocument(entry.original_document ?? entry.document);
-      if (!original.ok || original.document.source.platform !== "roll20") return NextResponse.json({ error: "Roll20 원본 CSS snapshot이 없습니다." }, { status: 400 });
-      const allowed = new Set(styledContentTargets(original.document).map((target) => target.id));
+      const targetDocument = original.ok && original.document.source.platform === "roll20" ? original.document : current.document;
+      const allowed = new Set(styledContentTargets(targetDocument).map((target) => target.id));
       const changes = [];
       for (const value of body.styleEdits) {
         if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.css !== "string" || !allowed.has(value.id)) {
-          return NextResponse.json({ error: "Roll20 원본 Content CSS만 수정할 수 있습니다." }, { status: 400 });
+          return NextResponse.json({ error: "현재 블록의 CSS 영역만 수정할 수 있습니다." }, { status: 400 });
         }
         if (value.css.length > 20_000) return NextResponse.json({ error: "CSS가 너무 깁니다." }, { status: 400 });
         const sanitized = sanitizeRichStyle(value.css);

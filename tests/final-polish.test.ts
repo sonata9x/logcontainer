@@ -11,11 +11,19 @@ const loading = readFileSync(new URL("../app/workspace/pages/[id]/loading.tsx", 
 const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
 const modalHook = readFileSync(new URL("../lib/use-escape-close.ts", import.meta.url), "utf8");
 const purgeRoute = readFileSync(new URL("../app/api/internal/purge/route.ts", import.meta.url), "utf8");
+const logEditor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
 
 test("HTML reimport is owner-only in UI API and database RPC", () => {
   assert.match(importRoute, /context\.canReimport/);
   assert.match(migration, /replace_log_entries_v3[\s\S]*can_reimport_resource\(target_page_id, auth\.uid\(\)\)/);
   assert.doesNotMatch(migration.slice(migration.indexOf("replace_log_entries_v3")), /can_edit_resource\(target_page_id/);
+});
+
+test("log import requires an explicit platform selection", () => {
+  assert.match(logEditor, /플랫폼을 선택해주세요/);
+  assert.doesNotMatch(logEditor, /<option value="auto">자동 감지<\/option>/);
+  assert.match(importRoute, /업로드할 로그의 플랫폼을 선택해주세요/);
+  assert.doesNotMatch(importRoute, /body\.platform : "auto"/);
 });
 
 test("full restore preserves canonical text and emits a lightweight refresh", () => {

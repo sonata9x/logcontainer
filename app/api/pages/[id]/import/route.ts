@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
 import { gzipArchive, LOG_GENERATION_BUCKET, removePrivateArchives, ROLL20_SOURCE_BUCKET, uploadPrivateArchive } from "@/lib/logs/archive";
 import { importLogHtml } from "@/lib/logs/import/registry";
-import { ImportPlatformError, type ImportPlatformSelection } from "@/lib/logs/import/types";
+import { ImportPlatformError, type SupportedImportPlatform } from "@/lib/logs/import/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -22,8 +22,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const limited = await enforceRateLimit(request, { scope: "log-import", identity: context.user.id, maxRequests: 6, windowSeconds: 600, blockSeconds: 900 });
   if (limited) return limited;
   const body = await request.json().catch(() => ({}));
-  const requestedPlatform: ImportPlatformSelection = ["auto", "roll20", "takoyaki-box", "ccfolia"].includes(body.platform) ? body.platform : "auto";
-  if (requestedPlatform === "ccfolia") return NextResponse.json({ error: "CCFOLIA 가져오기는 아직 지원하지 않습니다." }, { status: 400 });
+  if (body.platform === "ccfolia") return NextResponse.json({ error: "CCFOLIA 가져오기는 아직 지원하지 않습니다." }, { status: 400 });
+  if (!(["roll20", "takoyaki-box"] as unknown[]).includes(body.platform)) {
+    return NextResponse.json({ error: "업로드할 로그의 플랫폼을 선택해주세요." }, { status: 400 });
+  }
+  const requestedPlatform = body.platform as SupportedImportPlatform;
   const { data: log } = await context.supabase.from("logs").select("id, content_version, visible_entry_count").eq("page_id", id).maybeSingle();
   if (!log) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
 

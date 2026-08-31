@@ -11,9 +11,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { data: entry } = await context.supabase.rpc("get_log_entry_edit_source", { target_page_id: id, target_entry_id: entryId });
   if (!entry || entry.document_version !== 2 || !isStoredLogEntryDocumentV2(entry.document)) return NextResponse.json({ error: "블록을 찾을 수 없습니다." }, { status: 404 });
   const original = isStoredLogEntryDocumentV2(entry.original_document) ? entry.original_document : entry.document;
-  if (original.source.platform !== "roll20") return NextResponse.json({ styles: [] });
+  const targetDocument = original.source.platform === "roll20" ? original : entry.document;
   const currentStyles = contentStyleMap(entry.document);
-  const styles = styledContentTargets(original).map((target) => ({
+  const styles = styledContentTargets(targetDocument).map((target) => ({
     id: target.id,
     label: target.label,
     css: styleToEditorText(currentStyles.get(target.id) ?? target.style)

@@ -148,12 +148,13 @@ test("personal settings update only the approved account and its one owned works
   assert.match(globalCss, /\.modal-backdrop \{[^}]*z-index: 100/);
 });
 
-test("resource tree supports portal overlays, range selection and atomic drag moves", () => {
+test("resource tree supports portal overlays, range selection and atomic pointer moves", () => {
   assert.match(sidebar, /createPortal\(children, document\.body\)/);
   assert.match(sidebar, /event\.ctrlKey.*event\.metaKey.*event\.shiftKey/);
   assert.match(sidebar, /querySelectorAll<HTMLElement>\("#workspace-navigation \[data-resource-id\]"\)/);
-  assert.match(sidebar, /draggable/);
-  assert.match(sidebar, /className="tree-drag-handle" draggable=\{true\}/);
+  assert.match(sidebar, /className="tree-drag-handle"/);
+  assert.match(sidebar, /startPointerDrag/);
+  assert.match(sidebar, /elementFromPoint/);
   assert.doesNotMatch(sidebar, /data-resource-id=\{page\.id\} draggable/);
   assert.doesNotMatch(sidebar, /setSelectedIds\(new Set\(\[resourceId\]\)\)/);
   assert.match(sidebar, /RESOURCE_DRAG_TYPE/);
@@ -301,7 +302,7 @@ test("large import staging is private, size-limited and service-role only", () =
 });
 
 test("drag movement preserves private placement and shared-folder hierarchy boundaries", () => {
-  assert.match(sidebar, /draggable/);
+  assert.match(sidebar, /startPointerDrag/);
   assert.match(sidebar, /TreeInteractionContext/);
   assert.match(sidebar, /\/api\/resources\/move/);
   assert.match(dragFixMigration, /source_folder_id/);

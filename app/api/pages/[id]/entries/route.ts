@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedApiContext } from "@/lib/api-auth";
-import { createManualLogEntryDocument } from "@/lib/logs/model/factory";
+import { createManualLogEntryDocument, createManualStyledLogEntryDocument } from "@/lib/logs/model/factory";
 import { projectDocumentText } from "@/lib/logs/model/projection";
+import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
 
@@ -29,14 +30,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const speakerName = typeof body.speakerName === "string" ? body.speakerName.trim().slice(0, 100) : "";
   const entryType = body.entryType === "system" ? "description" : "dialogue";
   const afterEntryId = typeof body.afterEntryId === "string" ? body.afterEntryId : null;
-  if (!content) return NextResponse.json({ error: "내용을 입력해주세요." }, { status: 400 });
+  const rawSegments: unknown[] = Array.isArray(body.segments) ? body.segments : [];
+  if (rawSegments.length > 20) return NextResponse.json({ error: "한 블록에는 CSS 구간을 최대 20개까지 추가할 수 있습니다." }, { status: 400 });
+  const styleWarnings: string[] = [];
+  const segments = rawSegments.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    const text = typeof item.text === "string" ? item.text : "";
+    const css = typeof item.css === "string" ? item.css : "";
+    if (text.length > 200_000 || css.length > 20_000) return [];
+    const sanitized = sanitizeRichStyle(css);
+    styleWarnings.push(...sanitized.warnings);
+    return text ? [{ text, style: sanitized.style }] : [];
+  });
+  if (!content && !segments.length) return NextResponse.json({ error: "내용을 입력해주세요." }, { status: 400 });
 
-  const document = createManualLogEntryDocument(entryType, speakerName || null, content);
+  const document = segments.length
+    ? createManualStyledLogEntryDocument(entryType, speakerName || null, segments)
+    : createManualLogEntryDocument(entryType, speakerName || null, content);
   const { data, error } = await context.supabase.rpc("create_log_entry_v3", {
     target_page_id: id,
     after_entry_id: afterEntryId,
     new_document: document,
     new_content: projectDocumentText(document)
   });
-  return error ? databaseErrorResponse(error, "로그 블록을 만들지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) }, { status: 201 });
+  return error ? databaseErrorResponse(error, "로그 블록을 만들지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings }, { status: 201 });
 }

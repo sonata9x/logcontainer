@@ -7,6 +7,7 @@ import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, 
 import { sanitizeRichStyle } from "../lib/logs/rich/style";
 import { validateLogEntryDocument } from "../lib/logs/model/validate";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
+import { createManualStyledLogEntryDocument } from "../lib/logs/model/factory";
 
 const fixture = readFileSync(new URL("./fixtures/roll20/real-msgdata-anonymized.html", import.meta.url), "utf8");
 const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topology-v2.html", import.meta.url), "utf8");
@@ -77,22 +78,35 @@ test("Content CSS accepts Roll20-style strings and changes only an existing styl
   assert.deepEqual(edited.blocks.map((block) => block.type), original.blocks.map((block) => block.type));
 });
 
-test("v2 user UI exposes only inline text editing and context-menu actions", () => {
+test("v2 user UI exposes inline editing and the restored block action menu", () => {
   assert.match(editorSource, /<InlineContentEditor/);
   assert.match(editorSource, /<EntryContextMenu/);
-  assert.doesNotMatch(editorSource, /V2LogEntryEditor|v2-add-block|블록 추가|화자 색|아바타 URL|결과 상태/);
+  assert.doesNotMatch(editorSource, /V2LogEntryEditor|v2-add-block|화자 색|아바타 URL|결과 상태/);
+  assert.match(editorSource, /className="entry-more"/);
+  assert.match(editorSource, /<InlineAddForm/);
   assert.match(inlineEditorSource, /r20-editable-text/);
+  assert.match(contextMenuSource, /아래에 로그 블록 추가/);
   assert.match(contextMenuSource, /CSS 수정/);
   assert.match(contextMenuSource, /수정 이력/);
   assert.match(contextMenuSource, /원본 상태로 복원/);
   assert.match(contextMenuSource, /삭제/);
   assert.match(updateRoute, /contentEdits/);
   assert.match(updateRoute, /styleEdits/);
-  assert.match(updateRoute, /styledContentTargets\(original\.document\)/);
+  assert.match(updateRoute, /styledContentTargets\(targetDocument\)/);
   assert.match(updateRoute, /restoreOriginal/);
   assert.match(updateRoute, /entry\.original_document/);
   assert.match(updateRoute, /revisionAction = "restore"/);
   assert.match(updateRoute, /revisionId/);
   assert.match(updateRoute, /entry\.original_document \?\? entry\.document/);
   assert.match(updateRoute, /update_log_entry_document_v3/);
+});
+
+test("manual blocks can contain multiple independently styled inline segments", () => {
+  const document = createManualStyledLogEntryDocument("dialogue", "테스터", [
+    { text: "빨강", style: [{ property: "color", value: "#c2200e" }] },
+    { text: "굵게", style: [{ property: "font-weight", value: "700" }] }
+  ]);
+  assert.equal(projectDocumentText(document), "빨강굵게");
+  assert.deepEqual(styledContentTargets(document).map((target) => target.label), ["빨강", "굵게"]);
+  assert.equal(document.blocks[0].type, "rich");
 });

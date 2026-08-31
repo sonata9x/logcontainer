@@ -6,10 +6,13 @@ const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.u
 const route = readFileSync(new URL("../app/api/pages/[id]/entries/reorder/route.ts", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/202608310002_log_entry_reordering.sql", import.meta.url), "utf8");
 
-test("message drag starts only from a dedicated handle and saves one batch", () => {
+test("message pointer drag starts only from a dedicated handle and saves one batch", () => {
   assert.match(editor, /className="log-entry-drag-handle"/);
   assert.match(editor, />⋮⋮<\/button>/);
   assert.doesNotMatch(editor, /<article[^>]+draggable/);
+  assert.match(editor, /onPointerDown/);
+  assert.match(editor, /setPointerCapture/);
+  assert.match(editor, /elementFromPoint/);
   assert.match(editor, /orderedIds: optimistic\.map/);
   assert.match(editor, /expected: before\.map/);
   assert.match(editor, /\/entries\/reorder/);

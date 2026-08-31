@@ -3,7 +3,7 @@
 import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, Menu, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { PageType, ResourceRole, WorkspacePage } from "@/lib/types";
@@ -23,6 +23,10 @@ type TreeInteraction = {
   dropTargetId: string | null;
   select: (event: ReactMouseEvent, resourceId: string) => void;
   startDrag: (event: ReactDragEvent, resourceId: string) => void;
+  startPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => void;
+  movePointerDrag: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  finishPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  cancelPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   endDrag: () => void;
   setDropTargetId: (resourceId: string | null) => void;
   drop: (event: ReactDragEvent, targetFolderId: string | null) => void;
@@ -63,6 +67,8 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const draggingIdsRef = useRef<string[]>([]);
+  const dropTargetIdRef = useRef<string | null>(null);
+  const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const selectionAnchor = useRef<string | null>(null);
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
   useEffect(() => setCurrentNickname(nickname), [nickname]);
@@ -122,21 +128,31 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     }
   }, []);
 
-  const startResourceDrag = useCallback((event: ReactDragEvent, resourceId: string) => {
+  const prepareResourceDrag = useCallback((resourceId: string) => {
     const selectedForDrag = selectedIds.has(resourceId) ? [...selectedIds] : [resourceId];
     const resourceIds = topLevelSelection(selectedForDrag, livePages);
     draggingIdsRef.current = resourceIds;
     setDraggingIds(resourceIds);
+    return resourceIds;
+  }, [livePages, selectedIds]);
+
+  const startResourceDrag = useCallback((event: ReactDragEvent, resourceId: string) => {
+    const resourceIds = prepareResourceDrag(resourceId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(RESOURCE_DRAG_TYPE, JSON.stringify(resourceIds));
     event.dataTransfer.setData("text/plain", resourceIds.join(","));
-  }, [livePages, selectedIds]);
+  }, [prepareResourceDrag]);
+
+  const setResourceDropTarget = useCallback((resourceId: string | null) => {
+    dropTargetIdRef.current = resourceId;
+    setDropTargetId(resourceId);
+  }, []);
 
   const endResourceDrag = useCallback(() => {
     draggingIdsRef.current = [];
     setDraggingIds([]);
-    setDropTargetId(null);
-  }, []);
+    setResourceDropTarget(null);
+  }, [setResourceDropTarget]);
 
   const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null) => {
     const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId }) });
@@ -162,7 +178,45 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     if (resourceIds.length) void moveResources(resourceIds, targetFolderId);
   }, [draggingIds, endResourceDrag, moveResources]);
 
-  const treeInteraction = useMemo<TreeInteraction>(() => ({ selectedIds, draggingIds, dropTargetId, select: selectResource, startDrag: startResourceDrag, endDrag: endResourceDrag, setDropTargetId, drop: dropResources }), [selectedIds, draggingIds, dropTargetId, selectResource, startResourceDrag, endResourceDrag, dropResources]);
+  const startResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    prepareResourceDrag(resourceId);
+    pointerDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [prepareResourceDrag]);
+
+  const moveResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const pointer = pointerDragRef.current;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 4) return;
+    pointer.moved = true;
+    event.preventDefault();
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    if (hit?.closest(".workspace-root-drop")) return setResourceDropTarget("root");
+    const row = hit?.closest<HTMLElement>("[data-resource-id]");
+    const target = row?.dataset.resourceId ? livePages.find((page) => page.id === row.dataset.resourceId) : null;
+    setResourceDropTarget(target?.page_type === "folder" && !draggingIdsRef.current.includes(target.id) ? target.id : null);
+  }, [livePages, setResourceDropTarget]);
+
+  const finishResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const pointer = pointerDragRef.current;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    pointerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const resourceIds = [...draggingIdsRef.current];
+    const target = dropTargetIdRef.current;
+    endResourceDrag();
+    if (pointer.moved && target && resourceIds.length) void moveResources(resourceIds, target === "root" ? null : target);
+  }, [endResourceDrag, moveResources]);
+
+  const cancelResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pointerDragRef.current?.pointerId !== event.pointerId) return;
+    pointerDragRef.current = null;
+    endResourceDrag();
+  }, [endResourceDrag]);
+
+  const treeInteraction = useMemo<TreeInteraction>(() => ({ selectedIds, draggingIds, dropTargetId, select: selectResource, startDrag: startResourceDrag, startPointerDrag: startResourcePointerDrag, movePointerDrag: moveResourcePointerDrag, finishPointerDrag: finishResourcePointerDrag, cancelPointerDrag: cancelResourcePointerDrag, endDrag: endResourceDrag, setDropTargetId: setResourceDropTarget, drop: dropResources }), [selectedIds, draggingIds, dropTargetId, selectResource, startResourceDrag, startResourcePointerDrag, moveResourcePointerDrag, finishResourcePointerDrag, cancelResourcePointerDrag, endResourceDrag, setResourceDropTarget, dropResources]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -256,7 +310,7 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id;
   const dragging = Boolean(treeInteraction?.draggingIds.includes(page.id));
   const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""} ${dropTarget ? "drop-target" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
-    <button type="button" className="tree-drag-handle" draggable={true} aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onDragStart={(event) => treeInteraction?.startDrag(event, page.id)} onDragEnd={() => treeInteraction?.endDrag()}>⋮⋮</button>
+    <button type="button" className="tree-drag-handle" aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => treeInteraction?.startPointerDrag(event, page.id)} onPointerMove={(event) => treeInteraction?.movePointerDrag(event)} onPointerUp={(event) => treeInteraction?.finishPointerDrag(event)} onPointerCancel={(event) => treeInteraction?.cancelPointerDrag(event)}>⋮⋮</button>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && page.can_edit && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
