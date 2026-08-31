@@ -66,6 +66,7 @@ function enrichMsgdataRecords(msgdata: Roll20SourceRecord[], rendered: Roll20Sou
       ,renderedMetadata: candidate.renderedMetadata
       ,semanticPayload: candidate.semanticPayload
       ,headerScore: candidate.headerScore
+      ,streamId: record.streamId || candidate.streamId
     };
   });
   if (unused.size) warnings.push({ code: "rendered-enrichment-unmatched", message: `rendered DOM ${unused.size}개를 msgdata와 안전하게 연결하지 못해 msgdata 원문을 유지했습니다.` });
@@ -83,6 +84,7 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     : primaryNormalization.records;
   let hiddenRemovedCount = 0;
   const visible = normalizedRecords.filter((record) => {
+    if (record.streamId === "casual") { hiddenRemovedCount += 1; return false; }
     const hidden = record.type === "hidden" || record.type === "hidden-message";
     if (options.removeHiddenMessages && hidden) { hiddenRemovedCount += 1; return false; }
     return true;
@@ -111,7 +113,11 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     const document: LogEntryDocument = {
       version: 2,
       kind: documentKind,
-      source: { platform: "roll20", messageId: record.messageId, sourceKey: record.sourceKey, sourceOrder: record.sourceOrder },
+      source: {
+        platform: "roll20", messageId: record.messageId, sourceKey: record.sourceKey, sourceOrder: record.sourceOrder,
+        stream: record.streamId ? { id: record.streamId, name: record.streamId === "main" ? "메인" : record.streamId } : null,
+        messageType: record.type
+      },
       speaker,
       timestamp: { raw: metadata.timestampRaw, iso: metadata.timestampIso },
       presentation: {

@@ -86,7 +86,17 @@ export function validateLogEntryDocument(input: unknown) {
   const blocks = value.blocks.map((block, index) => sanitizeBlock(block, warnings, `blocks[${index}]`)).filter((block): block is LogBlock => Boolean(block));
   const document: LogEntryDocument = {
     version: 2, kind: value.kind as LogEntryDocument["kind"],
-    source: { platform: source.platform === "manual" ? "manual" : "roll20", messageId: typeof source.messageId === "string" ? source.messageId : null, sourceKey: typeof source.sourceKey === "string" ? source.sourceKey : null, sourceOrder: typeof source.sourceOrder === "number" ? source.sourceOrder : null },
+    source: {
+      platform: source.platform === "manual" ? "manual" : source.platform === "takoyaki-box" ? "takoyaki-box" : "roll20",
+      messageId: typeof source.messageId === "string" ? source.messageId : null,
+      sourceKey: typeof source.sourceKey === "string" ? source.sourceKey : null,
+      sourceOrder: typeof source.sourceOrder === "number" ? source.sourceOrder : null,
+      stream: source.stream && typeof source.stream === "object" && typeof (source.stream as Record<string, unknown>).id === "string" ? {
+        id: (source.stream as Record<string, unknown>).id as string,
+        name: typeof (source.stream as Record<string, unknown>).name === "string" ? (source.stream as Record<string, unknown>).name as string : null
+      } : null,
+      messageType: typeof source.messageType === "string" ? source.messageType : null
+    },
     speaker: speakerValue ? { name: typeof speakerValue.name === "string" ? speakerValue.name.replace(/[:：]\s*$/, "").slice(0, 200) : null, color: typeof speakerValue.color === "string" ? speakerValue.color : null, avatarUrl: safeHttpsUrl(speakerValue.avatarUrl) } : null,
     timestamp: { raw: typeof timestamp.raw === "string" ? timestamp.raw : null, iso: typeof timestamp.iso === "string" && !Number.isNaN(Date.parse(timestamp.iso)) ? new Date(timestamp.iso).toISOString() : null },
     presentation: presentation ? {
@@ -94,7 +104,8 @@ export function validateLogEntryDocument(input: unknown) {
       avatarExplicit: presentation.avatarExplicit === true,
       timestampExplicit: presentation.timestampExplicit === true,
       continuation: presentation.continuation === true,
-      ...(typeof presentation.selfMessage === "boolean" ? { selfMessage: presentation.selfMessage } : {})
+      ...(typeof presentation.selfMessage === "boolean" ? { selfMessage: presentation.selfMessage } : {}),
+      ...(typeof presentation.private === "boolean" ? { private: presentation.private } : {})
     } : {
       speakerExplicit: Boolean(speakerValue && typeof speakerValue.name === "string" && speakerValue.name),
       avatarExplicit: Boolean(speakerValue && typeof speakerValue.avatarUrl === "string" && speakerValue.avatarUrl),
@@ -128,7 +139,7 @@ export function isStoredLogEntryDocumentV2(input: unknown): input is LogEntryDoc
   if (!input || typeof input !== "object") return false;
   const value = input as Partial<LogEntryDocument>;
   if (value.version !== 2 || !KINDS.has(String(value.kind)) || !Array.isArray(value.blocks)) return false;
-  if (!value.source || typeof value.source !== "object" || !["roll20", "manual"].includes(String(value.source.platform))) return false;
+  if (!value.source || typeof value.source !== "object" || !["roll20", "takoyaki-box", "manual"].includes(String(value.source.platform))) return false;
   if (!value.timestamp || typeof value.timestamp !== "object" || !value.presentation || typeof value.presentation !== "object") return false;
   return value.blocks.every((block) => Boolean(block && typeof block === "object" && typeof block.id === "string" && BLOCK_TYPES.has(String(block.type))));
 }

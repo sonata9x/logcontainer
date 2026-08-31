@@ -16,6 +16,7 @@ import { MAX_STAGED_ROLL20_SOURCE_SIZE, SUPABASE_TUS_CHUNK_SIZE } from "@/lib/lo
 import { ShareDialog } from "@/components/WorkspaceSidebar";
 import { ExportDialog } from "@/components/ExportDialog";
 import { useEscapeClose } from "@/lib/use-escape-close";
+import type { ImportPlatformSelection } from "@/lib/logs/import/types";
 
 export type ImportSummary = {
   provider?: string;
@@ -78,6 +79,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [importStatus, setImportStatus] = useState("");
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
+  const [importPlatform, setImportPlatform] = useState<ImportPlatformSelection>("auto");
   const [liveConnected, setLiveConnected] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -204,15 +206,16 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   async function importLog(event: FormEvent) {
     event.preventDefault();
     if (!page.is_original_owner || (!sourceFile && !source.trim())) return;
+    if (importPlatform === "ccfolia") return window.alert("CCFOLIA 가져오기는 아직 지원하지 않습니다.");
     if (sourceFile && (sourceFile.size < 1 || sourceFile.size > MAX_STAGED_ROLL20_SOURCE_SIZE)) {
-      return window.alert("Roll20 HTML 파일은 최대 12MB까지 업로드할 수 있습니다.");
+      return window.alert("로그 HTML 파일은 최대 12MB까지 업로드할 수 있습니다.");
     }
-    if (totalCount && !window.confirm("현재 편집 블록을 새 Roll20 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
+    if (totalCount && !window.confirm("현재 편집 블록을 새 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
     setPending(true);
     let uploadId: string | null = null;
     let completed = false;
     try {
-      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean } = { source, removeHiddenMessages };
+      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean; platform: ImportPlatformSelection } = { source, removeHiddenMessages, platform: importPlatform };
       if (sourceFile) {
         setImportStatus("안전한 업로드 주소를 준비하는 중…");
         const targetResponse = await fetch(`/api/pages/${page.id}/import/upload`, {
@@ -229,7 +232,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         setImportStatus("파일 업로드 중… 0%");
         await uploadRoll20File(sourceFile, target, session.access_token, (percentage) => setImportStatus(`파일 업로드 중… ${percentage}%`));
         setImportStatus("HTML 분석 및 저장 중…");
-        requestBody = { uploadId, removeHiddenMessages };
+        requestBody = { uploadId, removeHiddenMessages, platform: importPlatform };
       } else {
         setImportStatus("HTML 분석 및 저장 중…");
       }
@@ -291,7 +294,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions">{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
-        {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">Roll20 백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">Roll20 로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 Roll20 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending} /></label><div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
+        {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as ImportPlatformSelection)} disabled={pending}><option value="auto">자동 감지</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{(importPlatform === "auto" || importPlatform === "roll20") && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>Roll20 사담(casual)은 항상 제외되며 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
         <section>{liveEntries.map((entry) => <EditableEntry key={entry.id} pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onDelete={removeEntry} />)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>

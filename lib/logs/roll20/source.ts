@@ -31,6 +31,7 @@ export type Roll20SourceRecord = {
   renderedMetadata: RenderedRecordMetadata | null;
   semanticPayload: string | null;
   headerScore: number;
+  streamId: string | null;
 };
 
 function normalizeText(value: unknown) {
@@ -78,6 +79,7 @@ export function decodeRoll20MsgData(source: string): Roll20SourceRecord[] | null
         ,renderedMetadata: null
         ,semanticPayload: null
         ,headerScore: 0
+        ,streamId: normalizeText(value["data-tab-id"] ?? value.dataTabId ?? value.tabId) || null
       };
       return [record];
     });
@@ -140,6 +142,7 @@ export function extractRenderedRoll20(source: string): Roll20SourceRecord[] {
       ,renderedMetadata: metadata
       ,semanticPayload
       ,headerScore: Number(Boolean(speaker)) * 4 + Number(Boolean(avatarValue)) * 2 + Number(Boolean(timestampRaw))
+      ,streamId: normalizeText(node.attr("data-tab-id")) || null
     };
   });
 }

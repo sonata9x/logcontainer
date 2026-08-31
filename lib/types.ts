@@ -3,7 +3,7 @@ import type { LogEntryDocument } from "@/lib/logs/model/types";
 export type WorkspaceRole = "owner" | "editor";
 export type ResourceRole = "viewer" | "editor" | "admin" | "owner";
 export type PageType = "folder" | "log";
-export type LogPlatform = "manual" | "roll20" | "ccfolia" | "other";
+export type LogPlatform = "manual" | "roll20" | "takoyaki-box" | "ccfolia" | "other";
 export type AccountStatus = "pending" | "approved" | "rejected" | "disabled";
 
 export type Profile = {

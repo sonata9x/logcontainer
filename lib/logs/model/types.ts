@@ -108,10 +108,12 @@ export type LogEntryDocument = {
   version: 2;
   kind: "dialogue" | "description" | "system";
   source: {
-    platform: "roll20" | "manual";
+    platform: "roll20" | "takoyaki-box" | "manual";
     messageId: string | null;
     sourceKey: string | null;
     sourceOrder: number | null;
+    stream?: { id: string; name: string | null } | null;
+    messageType?: string | null;
   };
   speaker: {
     name: string | null;
@@ -128,8 +130,21 @@ export type LogEntryDocument = {
     timestampExplicit: boolean;
     continuation: boolean;
     selfMessage?: boolean;
+    private?: boolean;
   };
   blocks: LogBlock[];
+  warnings: ParserWarning[];
+};
+
+export type TakoyakiBoxImportReportV1 = {
+  provider: "takoyaki-box";
+  parserVersion: 1;
+  sourceFormat: "exported_html";
+  importedAt: string;
+  sourceMessageCount: number;
+  logicalMessageCount: number;
+  streamCount: number;
+  warningCount: number;
   warnings: ParserWarning[];
 };
 
