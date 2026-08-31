@@ -92,6 +92,8 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(contextMenuSource, /원본 상태로 복원/);
   assert.match(contextMenuSource, /삭제/);
   assert.match(contextMenuSource, /createPortal\(menu, document\.body\)/);
+  assert.match(editorSource, /createPortal\(children, document\.body\)/);
+  assert.match(editorSource, /entryType === "dialogue"/);
   assert.match(updateRoute, /contentEdits/);
   assert.match(updateRoute, /styleEdits/);
   assert.match(updateRoute, /styledContentTargets\(targetDocument\)/);

@@ -53,6 +53,16 @@ test("Takoyaki CoC cards use the same canonical Roll20 template renderer data", 
   });
 });
 
+test("Takoyaki luck-spend success hints are omitted from dice details", () => {
+  const html = '<div class="tkbx-log"><div class="tkbx-panes"><div class="log"><div class="msg" data-id="luck-1"><div class="body"><div class="dcard-tkt" data-level="fail"><div class="tkt-word">실패</div><div class="tkt-meta"><b class="tkt-name">관찰력</b><b>실패</b> 72 / 65</div><div class="tkt-roll">72</div><div class="dluck">운 7 소비 시 성공</div></div></div></div></div></div></div>';
+  const result = importLogHtml(html, "takoyaki-box");
+  const block = result.documents[0].blocks[0];
+  assert.equal(block.type, "roll-template");
+  if (block.type !== "roll-template") return;
+  assert.doesNotMatch(JSON.stringify(block), /운 7 소비 시 성공/);
+  assert.doesNotMatch(projectDocumentText(result.documents[0]), /운 7 소비 시 성공/);
+});
+
 test("Takoyaki unopposed totals become Roll20 inline rolls", () => {
   const html = '<div class="tkbx-log"><div class="tkbx-panes"><div class="log"><div class="msg" data-id="roll-1"><div class="body"><div class="who"><span>GM</span></div><div class="dcard dcard-tkt" data-level="sum"><div class="tkt-word">68</div><div class="tkt-meta"><b class="tkt-name">1d100</b></div></div></div></div></div></div></div>';
   const result = importLogHtml(html, "takoyaki-box");

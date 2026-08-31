@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { Archive, Download, EllipsisVertical, History, Info, MoreHorizontal, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
@@ -614,17 +615,22 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onCh
     {entryBody}
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}
-    {showCss && <div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div>}
-    {showHistory && <div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div>}
+    {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}
+    {showHistory && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div></ModalPortal>}
   </div>;
 });
 
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  return typeof document === "undefined" ? null : createPortal(children, document.body);
+}
+
 function InlineAddForm({ onSubmit, onCancel }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const [segments, setSegments] = useState([{ key: 1 }]);
+  const [entryType, setEntryType] = useState<"dialogue" | "system">("dialogue");
   return <form className="inline-add-form" onSubmit={onSubmit}>
     <div className="inline-add-row">
-      <label className="field">형식<select name="entryType" defaultValue="dialogue"><option value="dialogue">대화</option><option value="system">지문</option></select></label>
-      <label className="field">화자명 (선택)<input name="speakerName" maxLength={100} /></label>
+      <label className="field">형식<select name="entryType" value={entryType} onChange={(event) => setEntryType(event.target.value as "dialogue" | "system")}><option value="dialogue">대화</option><option value="system">지문</option></select></label>
+      {entryType === "dialogue" && <label className="field">화자명 (선택)<input name="speakerName" maxLength={100} /></label>}
     </div>
     <div className="styled-segment-list">
       {segments.map((segment, index) => <div className="styled-segment" key={segment.key}>

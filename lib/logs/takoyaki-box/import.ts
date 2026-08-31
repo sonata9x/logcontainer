@@ -112,14 +112,13 @@ function takoyakiDiceBlock($: cheerio.CheerioAPI, card: cheerio.Cheerio<AnyNode>
   if (resultLabel) fields.push(textField(seed, fields.length, "result", "판정결과", resultLabel));
 
   const sanity = normalizeText(card.find(".tkt-san").first().text()).replace(/^·\s*/, "");
-  const luck = normalizeText(card.find(".dluck").first().text());
   const bonus = card.find(".dbonus").first();
   const bonusRolls = bonus.find("b").map((_index, item) => normalizeText($(item).text())).get().filter(Boolean);
   const bonusLabel = normalizeText(bonus.clone().find("b").remove().end().text()).replace(/[·\s]+$/, "");
-  for (const detail of [sanity, luck, bonus.length ? [bonusLabel, bonusRolls.join(" / ")].filter(Boolean).join(" · ") : ""].filter(Boolean)) {
+  for (const detail of [sanity, bonus.length ? [bonusLabel, bonusRolls.join(" / ")].filter(Boolean).join(" · ") : ""].filter(Boolean)) {
     fields.push(textField(seed, fields.length, `detail-${fields.length}`, "추가 정보", detail));
   }
-  const fallbackText = [title, resultLabel, rolled && target ? `${rolled} / ${target}` : rolled, sanity, luck].filter(Boolean).join(" / ");
+  const fallbackText = [title, resultLabel, rolled && target ? `${rolled} / ${target}` : rolled, sanity].filter(Boolean).join(" / ");
   return {
     id: stableRoll20Id("template", seed, title, rolled, target, resultLabel),
     type: "roll-template",
