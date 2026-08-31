@@ -33,6 +33,8 @@ test("shared workspace pages use the current viewer accent", () => {
   assert.doesNotMatch(layout, /page\.original_owner_id/);
   assert.match(css, /color-mix\(in srgb, var\(--accent\)/);
   assert.doesNotMatch(css, /#e9e3f3|#e2efe6|#ebe6f4/);
+  assert.match(layout, /export async function generateMetadata/);
+  assert.match(layout, /session\.workspace\.name\?\.trim\(\) \|\| "TRPG Workspace"/);
 });
 
 test("registered TXT export uses personal defaults and one-time POST options", () => {

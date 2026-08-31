@@ -22,6 +22,7 @@ const preferencesMigration = readFileSync(new URL("../supabase/migrations/202608
 const finalPolishMigration = readFileSync(new URL("../supabase/migrations/202608280015_privacy_security_polish.sql", import.meta.url), "utf8");
 const takoyakiPlatformMigration = readFileSync(new URL("../supabase/migrations/202608310001_takoyaki_box_platform.sql", import.meta.url), "utf8");
 const logReorderMigration = readFileSync(new URL("../supabase/migrations/202608310002_log_entry_reordering.sql", import.meta.url), "utf8");
+const publicationPasswordMigration = readFileSync(new URL("../supabase/migrations/202608310003_publication_password_management.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -129,6 +130,7 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const finalPolishMarker = "-- 202608280015_privacy_security_polish.sql";
   const takoyakiPlatformMarker = "-- 202608310001_takoyaki_box_platform.sql";
   const logReorderMarker = "-- 202608310002_log_entry_reordering.sql";
+  const publicationPasswordMarker = "-- 202608310003_publication_password_management.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
@@ -146,7 +148,8 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(preferencesMarker) + preferencesMarker.length, schema.indexOf(finalPolishMarker))), normalizedSql(preferencesMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(finalPolishMarker) + finalPolishMarker.length, schema.indexOf(takoyakiPlatformMarker))), normalizedSql(finalPolishMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(takoyakiPlatformMarker) + takoyakiPlatformMarker.length, schema.indexOf(logReorderMarker))), normalizedSql(takoyakiPlatformMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(logReorderMarker) + logReorderMarker.length)), normalizedSql(logReorderMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(logReorderMarker) + logReorderMarker.length, schema.indexOf(publicationPasswordMarker))), normalizedSql(logReorderMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(publicationPasswordMarker) + publicationPasswordMarker.length)), normalizedSql(publicationPasswordMigration));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

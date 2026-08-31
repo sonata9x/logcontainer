@@ -4501,3 +4501,8 @@ $$;
 
 revoke all on function public.reorder_log_entries_v1(uuid, uuid[], uuid[], bigint[]) from public, anon;
 grant execute on function public.reorder_log_entries_v1(uuid, uuid[], uuid[], bigint[]) to authenticated;
+
+-- 202608310003_publication_password_management.sql
+-- Publication hashes are server-only. Management UI uses security-definer RPCs,
+-- while current-password verification runs in the authenticated server route.
+revoke all on table public.publications from public, anon, authenticated;

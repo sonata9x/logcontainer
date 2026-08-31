@@ -7,13 +7,26 @@ const manageRoute = readFileSync(new URL("../app/api/pages/[id]/publication/rout
 const passwordRoute = readFileSync(new URL("../app/api/publications/[token]/password/route.ts", import.meta.url), "utf8");
 const entriesRoute = readFileSync(new URL("../app/api/publications/[token]/entries/route.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../app/p/[token]/page.tsx", import.meta.url), "utf8");
+const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
+const managementMigration = readFileSync(new URL("../supabase/migrations/202608310003_publication_password_management.sql", import.meta.url), "utf8");
 
 test("admin and owner can manage public or password publications", () => {
   assert.match(manageRoute, /context\?\.canPublish/);
   assert.match(manageRoute, /visibility === "password"/);
   assert.match(manageRoute, /hashPassword/);
+  assert.match(manageRoute, /verifyPassword\(currentPassword, existing\.password_hash/);
+  assert.match(manageRoute, /hasExistingPassword && !nextPassword/);
+  assert.match(editor, /현재 비밀번호/);
+  assert.match(editor, /새 비밀번호 \(변경하지 않으면 비워두기\)/);
+  assert.doesNotMatch(editor, /비밀번호 확인/);
   assert.match(migration, /can_publish_resource\(target_page_id, auth\.uid\(\)\)/);
   assert.match(migration, /visibility in \('public', 'password'\)/);
+});
+
+test("publication password hashes cannot be selected directly by authenticated clients", () => {
+  assert.match(managementMigration, /revoke all on table public\.publications from public, anon, authenticated/);
+  assert.match(manageRoute, /createSupabaseAdminClient/);
+  assert.doesNotMatch(manageRoute, /password_hash.*NextResponse\.json/);
 });
 
 test("password sessions are hashed versioned and invalidated on changes", () => {

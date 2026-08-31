@@ -3,6 +3,12 @@ import { requireWorkspaceSession } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { WorkspacePage } from "@/lib/types";
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await requireWorkspaceSession();
+  return { title: session.workspace.name?.trim() || "TRPG Workspace" };
+}
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const startedAt = performance.now();

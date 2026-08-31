@@ -35,6 +35,7 @@ test("share dialog uses role selectors and hides role-ineligible actions", () =>
   assert.match(sidebar, /name="accessLevel"/);
   assert.match(sidebar, /page\.can_manage_shares/);
   assert.match(sidebar, /protectedAdmin/);
+  assert.match(sidebar, /className="member-identity"/);
   assert.doesNotMatch(sidebar, /name="canInvite"/);
   assert.match(sidebar, /page\.can_edit && <button onClick=\{onRename\}/);
 });
