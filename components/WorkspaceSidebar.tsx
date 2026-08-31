@@ -66,6 +66,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ x: number; y: number; label: string; count: number } | null>(null);
   const draggingIdsRef = useRef<string[]>([]);
   const dropTargetIdRef = useRef<string | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
@@ -151,6 +152,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const endResourceDrag = useCallback(() => {
     draggingIdsRef.current = [];
     setDraggingIds([]);
+    setDragPreview(null);
     setResourceDropTarget(null);
   }, [setResourceDropTarget]);
 
@@ -181,10 +183,12 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const startResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => {
     if (event.button !== 0) return;
     event.preventDefault();
-    prepareResourceDrag(resourceId);
+    const resourceIds = prepareResourceDrag(resourceId);
+    const resource = livePages.find((page) => page.id === resourceId);
+    setDragPreview({ x: event.clientX, y: event.clientY, label: resource?.title ?? "리소스", count: resourceIds.length });
     pointerDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [prepareResourceDrag]);
+  }, [livePages, prepareResourceDrag]);
 
   const moveResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const pointer = pointerDragRef.current;
@@ -192,6 +196,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 4) return;
     pointer.moved = true;
     event.preventDefault();
+    setDragPreview((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current);
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     if (hit?.closest(".workspace-root-drop")) return setResourceDropTarget("root");
     const row = hit?.closest<HTMLElement>("[data-resource-id]");
@@ -255,6 +260,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
     {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
+    {dragPreview && <OverlayPortal><div className="pointer-drag-preview" style={{ left: dragPreview.x, top: dragPreview.y }}><span className="pointer-drag-preview__grip">⋮⋮</span><strong>{dragPreview.label}</strong>{dragPreview.count > 1 && <small>외 {dragPreview.count - 1}개</small>}</div></OverlayPortal>}
     </aside>
   </>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Archive, Download, History, Info, MoreHorizontal, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
+import { Archive, Download, EllipsisVertical, History, Info, MoreHorizontal, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
 import type { LogEntry, LogEntryRevision, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
@@ -94,10 +94,13 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const dragOrderRef = useRef<LogEntry[] | null>(null);
   const draggingEntryIdRef = useRef<string | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const pointerDragCleanupRef = useRef<(() => void) | null>(null);
   const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
+  const [entryDragPreview, setEntryDragPreview] = useState<{ x: number; y: number; label: string } | null>(null);
   const [reorderPending, setReorderPending] = useState(false);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
+  useEffect(() => () => pointerDragCleanupRef.current?.(), []);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -326,6 +329,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     const ordered = dragOrderRef.current ?? liveEntries;
     draggingEntryIdRef.current = null;
     setDraggingEntryId(null);
+    setEntryDragPreview(null);
     if (before.every((entry, index) => entry.id === ordered[index]?.id)) { dragOriginRef.current = null; dragOrderRef.current = null; return; }
     const slots = before.map((entry) => entry.sort_key).sort((left, right) => left - right);
     const optimistic = ordered.map((entry, index) => ({ ...entry, sort_key: slots[index] }));
@@ -355,12 +359,36 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     dragOrderRef.current = null;
     draggingEntryIdRef.current = null;
     setDraggingEntryId(null);
+    setEntryDragPreview(null);
   }
 
   function beginEntryPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, entryId: string) {
     if (event.button !== 0 || !prepareEntryDrag(entryId)) return;
     event.preventDefault();
+    const entry = liveEntries.find((item) => item.id === entryId);
+    setEntryDragPreview({ x: event.clientX, y: event.clientY, label: entry?.content.replace(/\s+/g, " ").slice(0, 70) || "로그 블록" });
     pointerDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    pointerDragCleanupRef.current?.();
+    const finishFromWindow = (pointerEvent: PointerEvent) => {
+      const pointer = pointerDragRef.current;
+      if (!pointer || pointer.pointerId !== pointerEvent.pointerId) return;
+      pointerDragRef.current = null;
+      pointerDragCleanupRef.current?.();
+      if (pointer.moved) void commitEntryOrder(); else endEntryDrag();
+    };
+    const cancelFromWindow = (pointerEvent: PointerEvent) => {
+      if (pointerDragRef.current?.pointerId !== pointerEvent.pointerId) return;
+      pointerDragRef.current = null;
+      pointerDragCleanupRef.current?.();
+      endEntryDrag();
+    };
+    pointerDragCleanupRef.current = () => {
+      window.removeEventListener("pointerup", finishFromWindow);
+      window.removeEventListener("pointercancel", cancelFromWindow);
+      pointerDragCleanupRef.current = null;
+    };
+    window.addEventListener("pointerup", finishFromWindow);
+    window.addEventListener("pointercancel", cancelFromWindow);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -370,6 +398,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 4) return;
     pointer.moved = true;
     event.preventDefault();
+    setEntryDragPreview((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current);
     const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-entry-id]");
     if (target?.dataset.entryId) moveDraggedEntry(target.dataset.entryId);
   }
@@ -378,6 +407,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     const pointer = pointerDragRef.current;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
     pointerDragRef.current = null;
+    pointerDragCleanupRef.current?.();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (pointer.moved) void commitEntryOrder(); else endEntryDrag();
   }
@@ -395,6 +425,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       {infoOpen && <LogInfoDialog pageId={page.id} totalCount={totalCount} summary={summary} isOwner={permissions.role === "owner"} canEdit={permissions.canEdit} onRestore={restoreEntry} onClose={() => setInfoOpen(false)} />}
       {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
       {exportOpen && <ExportDialog endpoint={`/api/pages/${page.id}/export`} title={title} usePersonalDefaults onClose={() => setExportOpen(false)} />}
+      {entryDragPreview && <div className="pointer-drag-preview pointer-drag-preview--log" style={{ left: entryDragPreview.x, top: entryDragPreview.y }}><span className="pointer-drag-preview__grip">⋮⋮</span><strong>{entryDragPreview.label}</strong></div>}
     </>
   );
 }
@@ -579,7 +610,7 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onCh
         {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
       </article>;
   return <div className="entry-wrap">
-    {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><MoreHorizontal size={16} /></button>}
+    {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
     {entryBody}
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}

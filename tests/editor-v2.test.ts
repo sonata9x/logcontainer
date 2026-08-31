@@ -83,6 +83,7 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(editorSource, /<EntryContextMenu/);
   assert.doesNotMatch(editorSource, /V2LogEntryEditor|v2-add-block|화자 색|아바타 URL|결과 상태/);
   assert.match(editorSource, /className="entry-more"/);
+  assert.match(editorSource, /<EllipsisVertical/);
   assert.match(editorSource, /<InlineAddForm/);
   assert.match(inlineEditorSource, /r20-editable-text/);
   assert.match(contextMenuSource, /아래에 로그 블록 추가/);
@@ -90,6 +91,7 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(contextMenuSource, /수정 이력/);
   assert.match(contextMenuSource, /원본 상태로 복원/);
   assert.match(contextMenuSource, /삭제/);
+  assert.match(contextMenuSource, /createPortal\(menu, document\.body\)/);
   assert.match(updateRoute, /contentEdits/);
   assert.match(updateRoute, /styleEdits/);
   assert.match(updateRoute, /styledContentTargets\(targetDocument\)/);

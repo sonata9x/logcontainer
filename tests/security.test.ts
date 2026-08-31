@@ -160,12 +160,19 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(sidebar, /RESOURCE_DRAG_TYPE/);
   assert.match(sidebar, /fetch\("\/api\/resources\/move"/);
   assert.match(sidebar, /workspace-root-drop/);
+  assert.match(sidebar, /pointer-drag-preview/);
   assert.match(globalCss, /\.tree-row\.selected/);
   assert.doesNotMatch(globalCss.match(/\.tree-row\.selected \{[^}]+\}/)?.[0] ?? "", /box-shadow/);
   assert.match(globalCss, /\.tree-row\.drop-target/);
+  assert.match(globalCss, /\.workspace-root-drop \{[^}]*visibility: hidden/);
+  assert.match(globalCss, /\.pointer-drag-preview \{[^}]*pointer-events: none/);
 
   assert.match(bulkMoveRoute, /getAuthenticatedApiContext/);
   assert.match(bulkMoveRoute, /move_resources_bulk/);
+  assert.match(bulkMoveRoute, /PGRST202/);
+  assert.match(bulkMoveRoute, /move_workspace_item/);
+  assert.match(bulkMoveRoute, /insert_folder_item/);
+  assert.match(bulkMoveRoute, /remove_folder_item/);
   assert.match(bulkMoveRoute, /resourceIds\.length > 100/);
   assert.match(bulkMoveMigration, /is_account_approved\(actor_id\)/);
   assert.match(bulkMoveMigration, /public\.insert_folder_item\(target_folder_id, resource_id, next_order\)/);

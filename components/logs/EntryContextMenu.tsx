@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   x: number;
@@ -34,7 +35,7 @@ export function EntryContextMenu({ x, y, canEditCss, canRestoreOriginal, onAdd, 
   const run = (action: () => void) => { onClose(); action(); };
   const left = typeof window === "undefined" ? x : Math.min(x, window.innerWidth - 190);
   const top = typeof window === "undefined" ? y : Math.min(y, window.innerHeight - 210);
-  return <div className="entry-context-menu" role="menu" style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+  const menu = <div className="entry-context-menu" role="menu" style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <button type="button" role="menuitem" onClick={() => run(onAdd)}>아래에 로그 블록 추가</button>
     {canEditCss && <button type="button" role="menuitem" onClick={() => run(onEditCss)}>CSS 수정</button>}
     <button type="button" role="menuitem" onClick={() => run(onHistory)}>수정 이력</button>
@@ -42,4 +43,5 @@ export function EntryContextMenu({ x, y, canEditCss, canRestoreOriginal, onAdd, 
     <hr />
     <button type="button" role="menuitem" className="danger" onClick={() => run(onDelete)}>삭제</button>
   </div>;
+  return typeof document === "undefined" ? null : createPortal(menu, document.body);
 }
