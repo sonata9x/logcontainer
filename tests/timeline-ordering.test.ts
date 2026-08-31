@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { changedReorderRange } from "../lib/logs/reorder";
 
 const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/pages/[id]/entries/reorder/route.ts", import.meta.url), "utf8");
@@ -13,9 +14,19 @@ test("message pointer drag starts only from a dedicated handle and saves one bat
   assert.match(editor, /onPointerDown/);
   assert.match(editor, /setPointerCapture/);
   assert.match(editor, /elementFromPoint/);
-  assert.match(editor, /orderedIds: optimistic\.map/);
-  assert.match(editor, /expected: before\.map/);
+  assert.match(editor, /orderedIds: changed\.ordered\.map/);
+  assert.match(editor, /expected: changed\.before\.map/);
   assert.match(editor, /\/entries\/reorder/);
+});
+
+test("timeline reorder sends only the contiguous range that actually changed", () => {
+  const before = Array.from({ length: 700 }, (_value, index) => ({ id: `entry-${index}` }));
+  const ordered = [...before];
+  const [moved] = ordered.splice(350, 1);
+  ordered.splice(351, 0, moved);
+  const changed = changedReorderRange(before, ordered);
+  assert.deepEqual(changed.before.map((entry) => entry.id), ["entry-350", "entry-351"]);
+  assert.deepEqual(changed.ordered.map((entry) => entry.id), ["entry-351", "entry-350"]);
 });
 
 test("timeline reorder is atomic optimistic-concurrency checked and leaves sourceOrder untouched", () => {

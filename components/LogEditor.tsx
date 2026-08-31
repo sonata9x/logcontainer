@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Archive, Download, EllipsisVertical, History, Info, MoreHorizontal, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
+import { changedReorderRange } from "@/lib/logs/reorder";
 import type { LogEntry, LogEntryRevision, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
@@ -331,17 +332,26 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     draggingEntryIdRef.current = null;
     setDraggingEntryId(null);
     setEntryDragPreview(null);
-    if (before.every((entry, index) => entry.id === ordered[index]?.id)) { dragOriginRef.current = null; dragOrderRef.current = null; return; }
-    const slots = before.map((entry) => entry.sort_key).sort((left, right) => left - right);
-    const optimistic = ordered.map((entry, index) => ({ ...entry, sort_key: slots[index] }));
+    const changed = changedReorderRange(before, ordered);
+    if (!changed.ordered.length) { dragOriginRef.current = null; dragOrderRef.current = null; return; }
+    if (changed.ordered.length > 500) {
+      setLiveEntries(before);
+      dragOriginRef.current = null;
+      dragOrderRef.current = null;
+      window.alert("한 번에 500개가 넘는 범위는 이동할 수 없습니다. 중간 위치로 나누어 이동해주세요.");
+      return;
+    }
+    const slots = changed.before.map((entry) => entry.sort_key).sort((left, right) => left - right);
+    const changedSortKeys = new Map(changed.ordered.map((entry, index) => [entry.id, slots[index]]));
+    const optimistic = ordered.map((entry) => ({ ...entry, sort_key: changedSortKeys.get(entry.id) ?? entry.sort_key }));
     setLiveEntries(optimistic);
     setReorderPending(true);
     const response = await fetch(`/api/pages/${page.id}/entries/reorder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        orderedIds: optimistic.map((entry) => entry.id),
-        expected: before.map((entry) => ({ id: entry.id, sortKey: entry.sort_key }))
+        orderedIds: changed.ordered.map((entry) => entry.id),
+        expected: changed.before.map((entry) => ({ id: entry.id, sortKey: entry.sort_key }))
       })
     });
     const result = await response.json().catch(() => ({}));
