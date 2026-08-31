@@ -20,6 +20,17 @@ test("v2 renderer emits only service-owned Roll20 classes and structured content
   assert.doesNotMatch(html, /<script|javascript:|position:fixed|position:sticky/i);
 });
 
+test("Roll20 speaker names ignore imported colors and render through the black service theme", () => {
+  const result = importRoll20HtmlV2(topologyFixture);
+  const document = result.documents.find((item) => item.kind === "dialogue" && item.speaker?.name)!;
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, {
+    document: { ...document, speaker: { ...document.speaker!, color: "#c2200e" } }
+  }));
+  assert.match(html, /class="r20-message__speaker">/);
+  assert.doesNotMatch(html, /class="r20-message__speaker" style=/);
+  assert.match(themeCss, /\.r20-message__speaker \{[^}]*color: #000;/);
+});
+
 test("renderer keeps continuation headers hidden and presents CoC labels without internal identifiers", () => {
   const result = importRoll20HtmlV2(topologyFixture);
   const html = result.documents.map((document) => renderToStaticMarkup(createElement(Roll20V2Renderer, { document }))).join("");

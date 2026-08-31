@@ -1,10 +1,11 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { projectDocumentText } from "@/lib/logs/model/projection";
-import type { LogEntryDocument, ParserWarning, TakoyakiBoxImportReportV1 } from "@/lib/logs/model/types";
+import type { InlineRollBlock, LogBlock, LogEntryDocument, ParserWarning, RollTemplateBlock, RollTemplateField, TakoyakiBoxImportReportV1 } from "@/lib/logs/model/types";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { parseRichHtml } from "@/lib/logs/roll20/rich";
 import { stableRoll20Id } from "@/lib/logs/roll20/id";
+import { localizedResultLabel, resultLevelFromLabel } from "@/lib/logs/roll20/roll-template";
 import type { CanonicalImportResult } from "@/lib/logs/import/types";
 import { safeImageUrl } from "@/lib/logs/model/url";
 
@@ -60,6 +61,78 @@ function streamName(id: string, displayed: string) {
   return id || "메인";
 }
 
+function textField(seed: string, index: number, key: string, label: string, value: string): RollTemplateField {
+  return {
+    id: stableRoll20Id("field", seed, index, key),
+    key,
+    label,
+    value,
+    content: value ? [{ id: stableRoll20Id("text", seed, index, key, value), type: "text", text: value }] : []
+  };
+}
+
+function takoyakiDiceBlock($: cheerio.CheerioAPI, card: cheerio.Cheerio<AnyNode>, seed: string): LogBlock {
+  const level = normalizeText(card.attr("data-level") ?? "").toLowerCase();
+  const displayed = normalizeText(card.find(".tkt-word").first().text());
+  const expression = normalizeText(card.find(".tkt-name").first().text()) || null;
+  if (level === "sum") {
+    const state: InlineRollBlock["state"] = displayed === "1" ? "critical" : displayed === "100" ? "fumble" : "normal";
+    return {
+      id: stableRoll20Id("inline-roll", seed, displayed, expression),
+      type: "inline-roll",
+      value: displayed,
+      expression,
+      state,
+      tooltip: expression,
+      rawFormula: expression
+    };
+  }
+
+  const meta = card.find(".tkt-meta").first();
+  const metaText = normalizeText(meta.text());
+  const title = expression || normalizeText(metaText.split("·")[0] ?? "") || null;
+  const rolled = normalizeText(card.find(".tkt-roll").first().text()) || metaText.match(/(-?\d+(?:\.\d+)?)\s*\//)?.[1] || "";
+  const target = metaText.match(/\/\s*(-?\d+(?:\.\d+)?)/)?.[1] || "";
+  const targetNumber = Number(target);
+  const labeledResult = normalizeText(meta.find("b").filter((_index, item) => !$(item).hasClass("tkt-name")).first().text());
+  const levelMap: Record<string, RollTemplateBlock["resultLevel"]> = {
+    critical: "critical", extreme: "extreme", hard: "hard", regular: "success", success: "success", fail: "failure", failure: "failure", fumble: "fumble"
+  };
+  const resultLevel = levelMap[level] ?? resultLevelFromLabel(labeledResult || displayed);
+  const resultLabel = labeledResult || localizedResultLabel(resultLevel) || displayed || null;
+  const fields: RollTemplateField[] = [];
+  if (target) {
+    fields.push(textField(seed, fields.length, "target", "기준치", target));
+    if (Number.isFinite(targetNumber)) {
+      fields.push(textField(seed, fields.length, "hard", "어려운 성공", String(Math.floor(targetNumber / 2))));
+      fields.push(textField(seed, fields.length, "extreme", "극단적 성공", String(Math.floor(targetNumber / 5))));
+    }
+  }
+  if (rolled) fields.push(textField(seed, fields.length, "rolled", "굴림", rolled));
+  if (resultLabel) fields.push(textField(seed, fields.length, "result", "판정결과", resultLabel));
+
+  const sanity = normalizeText(card.find(".tkt-san").first().text()).replace(/^·\s*/, "");
+  const luck = normalizeText(card.find(".dluck").first().text());
+  const bonus = card.find(".dbonus").first();
+  const bonusRolls = bonus.find("b").map((_index, item) => normalizeText($(item).text())).get().filter(Boolean);
+  const bonusLabel = normalizeText(bonus.clone().find("b").remove().end().text()).replace(/[·\s]+$/, "");
+  for (const detail of [sanity, luck, bonus.length ? [bonusLabel, bonusRolls.join(" / ")].filter(Boolean).join(" · ") : ""].filter(Boolean)) {
+    fields.push(textField(seed, fields.length, `detail-${fields.length}`, "추가 정보", detail));
+  }
+  const fallbackText = [title, resultLabel, rolled && target ? `${rolled} / ${target}` : rolled, sanity, luck].filter(Boolean).join(" / ");
+  return {
+    id: stableRoll20Id("template", seed, title, rolled, target, resultLabel),
+    type: "roll-template",
+    template: "coc-1",
+    system: "coc7",
+    title,
+    fields,
+    resultLevel,
+    resultLabel,
+    fallbackText
+  };
+}
+
 export function importTakoyakiBoxHtml(source: string): CanonicalImportResult {
   const $ = cheerio.load(source);
   const panes = $(".tkbx-panes > .log").toArray();
@@ -84,9 +157,12 @@ export function importTakoyakiBoxHtml(source: string): CanonicalImportResult {
     const content = node.clone();
     content.find(".who, .pic, .msg-actions, .msg-edit, .msg-chan, .mk-script-lock").remove();
     const body = content.find(".body").first();
-    const contentHtml = body.length ? body.html() ?? "" : content.html() ?? "";
-    const parsed = parseRichHtml(contentHtml, `takoyaki:${sourceKey}:${sourceOrder}`);
-    const recordWarnings = parsed.warnings.map((warning) => ({ ...warning, sourceMessageId: sourceKey }));
+    const textContent = body.find(".txt").first();
+    const contentHtml = textContent.length ? textContent.html() ?? "" : body.length ? body.html() ?? "" : content.html() ?? "";
+    const seed = `takoyaki:${sourceKey}:${sourceOrder}`;
+    const diceBlocks = body.find(".dcard-tkt").toArray().map((card, index) => takoyakiDiceBlock($, $(card), `${seed}:dice:${index}`));
+    const parsed = diceBlocks.length ? null : parseRichHtml(contentHtml, seed);
+    const recordWarnings = (parsed?.warnings ?? []).map((warning) => ({ ...warning, sourceMessageId: sourceKey }));
     warnings.push(...recordWarnings);
     const document: LogEntryDocument = {
       version: 2,
@@ -101,7 +177,7 @@ export function importTakoyakiBoxHtml(source: string): CanonicalImportResult {
         speakerExplicit: Boolean(speakerName), avatarExplicit: Boolean(avatarUrl), timestampExplicit: Boolean(timestampRaw), continuation: false,
         ...(node.hasClass("priv") ? { private: true } : {})
       },
-      blocks: parsed.nodes.length ? [{ id: stableRoll20Id("rich", "takoyaki", sourceKey, sourceOrder), type: "rich", nodes: parsed.nodes }] : [{ id: stableRoll20Id("text", "takoyaki", sourceKey, sourceOrder), type: "text", text: normalizeText(node.text()) }],
+      blocks: diceBlocks.length ? diceBlocks : parsed!.nodes.length ? [{ id: stableRoll20Id("rich", "takoyaki", sourceKey, sourceOrder), type: "rich", nodes: parsed!.nodes }] : [{ id: stableRoll20Id("text", "takoyaki", sourceKey, sourceOrder), type: "text", text: normalizeText(node.text()) }],
       warnings: recordWarnings
     };
     const validated = validateLogEntryDocument(document);

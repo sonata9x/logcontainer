@@ -21,7 +21,7 @@ test("Takoyaki Box direct children remain one global DOM-ordered timeline", () =
   assert.deepEqual(result.documents.map((document) => document.source.stream?.id), ["main", "ho2", "main", "ho3", "ho2", "main", "ho2"]);
   assert.deepEqual(result.documents.map((document) => document.source.stream?.name), ["메인", "HO2", "메인", "HO3", "HO2", "메인", "HO2"]);
   assert.equal(result.documents[1].presentation?.private, true);
-  assert.match(projectDocumentText(result.documents[3]).replace(/\s+/g, " "), /성공.*관찰력/);
+  assert.match(projectDocumentText(result.documents[3]).replace(/\s+/g, " "), /관찰력.*성공/);
   assert.match(projectDocumentText(result.documents[4]).replace(/\s+/g, " "), /HP.*10 → 12/);
   assert.equal(result.entries[0].sort_key, 1_000_000);
   assert.match(JSON.stringify(result.documents[5].blocks), /data:image\/webp;base64/);
@@ -31,6 +31,40 @@ test("Takoyaki Box parser does not drop events hidden only by tab CSS", () => {
   const result = importLogHtml(fixture, "takoyaki-box");
   assert.equal(result.documents.length, 7);
   assert.equal(result.report.logicalMessageCount, 7);
+});
+
+test("Takoyaki dialogue imports the .txt contents without its block wrapper", () => {
+  const result = importLogHtml(fixture, "takoyaki-box");
+  assert.equal(result.documents[0].blocks[0].type, "rich");
+  assert.doesNotMatch(JSON.stringify(result.documents[0].blocks), /"tag":"div"/);
+  assert.equal(projectDocumentText(result.documents[0]), "첫 메시지");
+});
+
+test("Takoyaki CoC cards use the same canonical Roll20 template renderer data", () => {
+  const result = importLogHtml(fixture, "takoyaki-box");
+  const block = result.documents[3].blocks[0];
+  assert.equal(block.type, "roll-template");
+  if (block.type !== "roll-template") return;
+  assert.equal(block.system, "coc7");
+  assert.equal(block.title, "관찰력");
+  assert.equal(block.resultLevel, "success");
+  assert.deepEqual(Object.fromEntries(block.fields.map((field) => [field.key, field.value])), {
+    target: "65", hard: "32", extreme: "13", rolled: "42", result: "성공"
+  });
+});
+
+test("Takoyaki unopposed totals become Roll20 inline rolls", () => {
+  const html = '<div class="tkbx-log"><div class="tkbx-panes"><div class="log"><div class="msg" data-id="roll-1"><div class="body"><div class="who"><span>GM</span></div><div class="dcard dcard-tkt" data-level="sum"><div class="tkt-word">68</div><div class="tkt-meta"><b class="tkt-name">1d100</b></div></div></div></div></div></div></div>';
+  const result = importLogHtml(html, "takoyaki-box");
+  assert.deepEqual(result.documents[0].blocks[0], {
+    id: result.documents[0].blocks[0].id,
+    type: "inline-roll",
+    value: "68",
+    expression: "1d100",
+    state: "normal",
+    tooltip: "1d100",
+    rawFormula: "1d100"
+  });
 });
 
 test("Takoyaki CSS avatars, speaker color, script semantics, and private headers use canonical fields", () => {

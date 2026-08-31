@@ -111,7 +111,7 @@ export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryD
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
         <div className="r20-message__content-flow">
-          {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? undefined }}>{document.speaker!.name}:</strong>}
+          {showSpeaker && <strong className="r20-message__speaker">{document.speaker!.name}:</strong>}
           {document.blocks.map((block) => <BlockView key={block.id} block={block} editor={textEditor} />)}
         </div>
       </div>
