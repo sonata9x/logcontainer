@@ -53,7 +53,7 @@ a { color: inherit; text-decoration: none; }
 .sidebar-action:hover, .page-link:hover, .page-link.active { background: var(--hover); color: var(--text); }
 .page-tree { flex: 1; overflow-y: auto; }
 .tree-row { gap: 5px; user-select: none; }
-.tree-row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+.tree-row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--text); }
 .tree-row.drop-target { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--text); outline: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); outline-offset: -1px; }
 .tree-toggle, .tree-add, .tree-drag-handle { flex: 0 0 auto; display: grid; place-items: center; width: 20px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .tree-drag-handle { margin-left: -6px; font-size: 13px; letter-spacing: -4px; cursor: grab; opacity: .42; }
@@ -75,7 +75,8 @@ a { color: inherit; text-decoration: none; }
 .sidebar-empty { margin: 14px 10px; color: var(--muted); font-size: 12px; }
 .sidebar-selection-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 7px 7px; padding: 6px 8px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); font-size: 12px; }
 .sidebar-selection-status button { border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
-.workspace-root-drop { margin: 0 7px 7px; padding: 9px; border: 1px dashed #aaa7a0; border-radius: 6px; color: var(--muted); text-align: center; font-size: 12px; }
+.workspace-root-drop { display: none; margin: 0 7px 7px; padding: 9px; border: 1px dashed #aaa7a0; border-radius: 6px; color: var(--muted); text-align: center; font-size: 12px; }
+.workspace-root-drop.is-visible { display: block; }
 .workspace-root-drop.drop-target { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); }
 .sidebar-footer { border-top: 1px solid var(--line); padding-top: 8px; }
 .sidebar-popover-wrap { position: relative; }

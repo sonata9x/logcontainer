@@ -7,6 +7,7 @@ const migration = readFileSync(new URL("../supabase/migrations/202608270002_pers
 const hardeningMigration = readFileSync(new URL("../supabase/migrations/202608270003_personal_resources_hardening.sql", import.meta.url), "utf8");
 const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280003_workspace_settings.sql", import.meta.url), "utf8");
 const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
+const dragFixMigration = readFileSync(new URL("../supabase/migrations/202608310004_fix_sidebar_drag.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
@@ -151,13 +152,14 @@ test("resource tree supports portal overlays, range selection and atomic drag mo
   assert.match(sidebar, /event\.ctrlKey.*event\.metaKey.*event\.shiftKey/);
   assert.match(sidebar, /querySelectorAll<HTMLElement>\("#workspace-navigation \[data-resource-id\]"\)/);
   assert.match(sidebar, /draggable/);
-  assert.match(sidebar, /className="tree-drag-handle" draggable/);
+  assert.match(sidebar, /className="tree-drag-handle" draggable=\{true\}/);
   assert.doesNotMatch(sidebar, /data-resource-id=\{page\.id\} draggable/);
-  assert.match(sidebar, /setSelectedIds\(new Set\(\[resourceId\]\)\)/);
+  assert.doesNotMatch(sidebar, /setSelectedIds\(new Set\(\[resourceId\]\)\)/);
   assert.match(sidebar, /RESOURCE_DRAG_TYPE/);
   assert.match(sidebar, /fetch\("\/api\/resources\/move"/);
   assert.match(sidebar, /workspace-root-drop/);
   assert.match(globalCss, /\.tree-row\.selected/);
+  assert.doesNotMatch(globalCss.match(/\.tree-row\.selected \{[^}]+\}/)?.[0] ?? "", /box-shadow/);
   assert.match(globalCss, /\.tree-row\.drop-target/);
 
   assert.match(bulkMoveRoute, /getAuthenticatedApiContext/);
@@ -168,6 +170,8 @@ test("resource tree supports portal overlays, range selection and atomic drag mo
   assert.match(bulkMoveMigration, /public\.remove_folder_item\(source_folder_id, resource_id\)/);
   assert.match(bulkMoveMigration, /public\.move_workspace_item\(resource_id, null, next_order\)/);
   assert.match(bulkMoveMigration, /grant execute on function public\.move_resources_bulk\(uuid\[\], uuid\) to authenticated/);
+  assert.match(dragFixMigration, /source_folder_id is null[\s\S]*move_workspace_item\(resource_id, target_folder_id, personal_next_order\)/);
+  assert.match(dragFixMigration, /else[\s\S]*insert_folder_item\(target_folder_id, resource_id, shared_next_order\)/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {
@@ -298,7 +302,7 @@ test("drag movement preserves private placement and shared-folder hierarchy boun
   assert.match(sidebar, /draggable/);
   assert.match(sidebar, /TreeInteractionContext/);
   assert.match(sidebar, /\/api\/resources\/move/);
-  assert.match(bulkMoveMigration, /source_folder_id/);
-  assert.match(bulkMoveMigration, /public\.remove_folder_item/);
-  assert.match(bulkMoveMigration, /public\.move_workspace_item/);
+  assert.match(dragFixMigration, /source_folder_id/);
+  assert.match(dragFixMigration, /public\.remove_folder_item/);
+  assert.match(dragFixMigration, /public\.move_workspace_item/);
 });

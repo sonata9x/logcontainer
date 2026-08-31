@@ -62,6 +62,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const draggingIdsRef = useRef<string[]>([]);
   const selectionAnchor = useRef<string | null>(null);
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
   useEffect(() => setCurrentNickname(nickname), [nickname]);
@@ -102,11 +103,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const selectResource = useCallback((event: ReactMouseEvent, resourceId: string) => {
     const target = event.target as HTMLElement;
     if (target.closest("button")) return;
-    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
-      setSelectedIds(new Set([resourceId]));
-      selectionAnchor.current = resourceId;
-      return;
-    }
+    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.shiftKey) {
@@ -128,10 +125,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const startResourceDrag = useCallback((event: ReactDragEvent, resourceId: string) => {
     const selectedForDrag = selectedIds.has(resourceId) ? [...selectedIds] : [resourceId];
     const resourceIds = topLevelSelection(selectedForDrag, livePages);
-    if (!selectedIds.has(resourceId)) {
-      setSelectedIds(new Set([resourceId]));
-      selectionAnchor.current = resourceId;
-    }
+    draggingIdsRef.current = resourceIds;
     setDraggingIds(resourceIds);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(RESOURCE_DRAG_TYPE, JSON.stringify(resourceIds));
@@ -139,6 +133,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   }, [livePages, selectedIds]);
 
   const endResourceDrag = useCallback(() => {
+    draggingIdsRef.current = [];
     setDraggingIds([]);
     setDropTargetId(null);
   }, []);
@@ -155,12 +150,13 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const dropResources = useCallback((event: ReactDragEvent, targetFolderId: string | null) => {
     event.preventDefault();
     event.stopPropagation();
-    let resourceIds = draggingIds;
+    let resourceIds = draggingIdsRef.current.length ? draggingIdsRef.current : draggingIds;
     try {
       const parsed = JSON.parse(event.dataTransfer.getData(RESOURCE_DRAG_TYPE));
       if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) resourceIds = parsed;
     } catch {
-      // Keep the in-memory drag selection for browsers that omit custom drag data.
+      const plainText = event.dataTransfer.getData("text/plain");
+      if (plainText) resourceIds = plainText.split(",").map((value) => value.trim()).filter(Boolean);
     }
     endResourceDrag();
     if (resourceIds.length) void moveResources(resourceIds, targetFolderId);
@@ -201,7 +197,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
     {selectedIds.size > 0 && <div className="sidebar-selection-status"><span>{selectedIds.size}개 선택됨</span><button onClick={() => setSelectedIds(new Set())}>선택 해제</button></div>}
-    {draggingIds.length > 0 && <div className={`workspace-root-drop ${dropTargetId === "root" ? "drop-target" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDropTargetId("root"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId("root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>}
+    <div className={`workspace-root-drop ${draggingIds.length ? "is-visible" : ""} ${dropTargetId === "root" ? "drop-target" : ""}`} aria-hidden={!draggingIds.length} onDragEnter={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); setDropTargetId("root"); }} onDragOver={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId("root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
     {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
@@ -258,8 +254,9 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
   const selected = Boolean(treeInteraction?.selectedIds.has(page.id));
   const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id;
-  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
-    <button className="tree-drag-handle" draggable aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onDragStart={(event) => { event.stopPropagation(); treeInteraction?.startDrag(event, page.id); }} onDragEnd={() => treeInteraction?.endDrag()}>⋮⋮</button>
+  const dragging = Boolean(treeInteraction?.draggingIds.includes(page.id));
+  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""} ${dropTarget ? "drop-target" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
+    <button type="button" className="tree-drag-handle" draggable={true} aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onDragStart={(event) => treeInteraction?.startDrag(event, page.id)} onDragEnd={() => treeInteraction?.endDrag()}>⋮⋮</button>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && page.can_edit && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
