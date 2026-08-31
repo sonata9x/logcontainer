@@ -1,21 +1,9 @@
 import { sanitizeRichStyleDeclarations } from "@/lib/logs/rich/style";
+import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import type { LogBlock, LogEntryDocument, ParserWarning, RichNode } from "./types";
 
 const KINDS = new Set(["dialogue", "description", "system"]);
 const BLOCK_TYPES = new Set(["text", "rich", "image", "inline-roll", "roll-template"]);
-
-function safeHttpsUrl(value: unknown, nullable = true): string | null {
-  if (value == null && nullable) return null;
-  if (typeof value !== "string") return null;
-  try { const url = new URL(value); return url.protocol === "https:" ? url.href : null; } catch { return null; }
-}
-
-function safeImageUrl(value: unknown): string | null {
-  const https = safeHttpsUrl(value, false);
-  if (https) return https;
-  if (typeof value !== "string" || value.length > 5_000_000) return null;
-  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\r\n]+$/i.test(value) ? value : null;
-}
 
 function sanitizeRichNode(node: unknown, warnings: ParserWarning[], path: string): RichNode | null {
   if (!node || typeof node !== "object") { warnings.push({ code: "invalid-document-node", message: "유효하지 않은 RichNode입니다.", path }); return null; }
@@ -104,7 +92,7 @@ export function validateLogEntryDocument(input: unknown) {
       } : null,
       messageType: typeof source.messageType === "string" ? source.messageType : null
     },
-    speaker: speakerValue ? { name: typeof speakerValue.name === "string" ? speakerValue.name.replace(/[:：]\s*$/, "").slice(0, 200) : null, color: typeof speakerValue.color === "string" ? speakerValue.color : null, avatarUrl: safeHttpsUrl(speakerValue.avatarUrl) } : null,
+    speaker: speakerValue ? { name: typeof speakerValue.name === "string" ? speakerValue.name.replace(/[:：]\s*$/, "").slice(0, 200) : null, color: typeof speakerValue.color === "string" ? speakerValue.color : null, avatarUrl: safeImageUrl(speakerValue.avatarUrl) } : null,
     timestamp: { raw: typeof timestamp.raw === "string" ? timestamp.raw : null, iso: typeof timestamp.iso === "string" && !Number.isNaN(Date.parse(timestamp.iso)) ? new Date(timestamp.iso).toISOString() : null },
     presentation: presentation ? {
       speakerExplicit: presentation.speakerExplicit === true,

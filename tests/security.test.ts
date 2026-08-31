@@ -8,6 +8,7 @@ const hardeningMigration = readFileSync(new URL("../supabase/migrations/20260827
 const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280003_workspace_settings.sql", import.meta.url), "utf8");
 const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const dragFixMigration = readFileSync(new URL("../supabase/migrations/202608310004_fix_sidebar_drag.sql", import.meta.url), "utf8");
+const takoyakiAvatarMigration = readFileSync(new URL("../supabase/migrations/202608310005_takoyaki_avatar_assets.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
@@ -172,6 +173,7 @@ test("resource tree supports portal overlays, range selection and atomic drag mo
   assert.match(bulkMoveMigration, /grant execute on function public\.move_resources_bulk\(uuid\[\], uuid\) to authenticated/);
   assert.match(dragFixMigration, /source_folder_id is null[\s\S]*move_workspace_item\(resource_id, target_folder_id, personal_next_order\)/);
   assert.match(dragFixMigration, /else[\s\S]*insert_folder_item\(target_folder_id, resource_id, shared_next_order\)/);
+  assert.match(takoyakiAvatarMigration, /log-avatar-assets[\s\S]*true[\s\S]*image\/webp/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {

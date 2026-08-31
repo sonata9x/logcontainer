@@ -10,6 +10,7 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 import { databaseErrorResponse, internalErrorResponse } from "@/lib/api-error";
 import { consumeImportUpload, isImportUploadId } from "@/lib/logs/import-upload";
 import { MAX_DIRECT_ROLL20_SOURCE_SIZE, MAX_STAGED_ROLL20_SOURCE_SIZE } from "@/lib/logs/import-limits";
+import { persistTakoyakiAvatarAssets } from "@/lib/logs/takoyaki-box/assets";
 
 export const maxDuration = 60;
 
@@ -64,6 +65,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let previousGenerationPath: string | null = null;
 
   try {
+    uploaded.push(...await persistTakoyakiAvatarAssets(imported, log.id, importId));
     await uploadPrivateArchive(ROLL20_SOURCE_BUCKET, sourcePath, sourceArchive.compressed, "application/gzip");
     uploaded.push({ bucket: ROLL20_SOURCE_BUCKET, path: sourcePath });
     if ((log.visible_entry_count ?? 0) > 0) {

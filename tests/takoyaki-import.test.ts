@@ -17,9 +17,9 @@ test("Takoyaki Box export is detected from multiple structural signals", () => {
 test("Takoyaki Box direct children remain one global DOM-ordered timeline", () => {
   const result = importLogHtml(fixture, "auto");
   assert.equal(result.platform, "takoyaki-box");
-  assert.deepEqual(result.documents.map((document) => document.source.sourceOrder), [0, 1, 2, 3, 4, 5]);
-  assert.deepEqual(result.documents.map((document) => document.source.stream?.id), ["main", "ho2", "main", "ho3", "ho2", "main"]);
-  assert.deepEqual(result.documents.map((document) => document.source.stream?.name), ["메인", "HO2", "메인", "HO3", "HO2", "메인"]);
+  assert.deepEqual(result.documents.map((document) => document.source.sourceOrder), [0, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(result.documents.map((document) => document.source.stream?.id), ["main", "ho2", "main", "ho3", "ho2", "main", "ho2"]);
+  assert.deepEqual(result.documents.map((document) => document.source.stream?.name), ["메인", "HO2", "메인", "HO3", "HO2", "메인", "HO2"]);
   assert.equal(result.documents[1].presentation?.private, true);
   assert.match(projectDocumentText(result.documents[3]).replace(/\s+/g, " "), /성공.*관찰력/);
   assert.match(projectDocumentText(result.documents[4]).replace(/\s+/g, " "), /HP.*10 → 12/);
@@ -29,8 +29,20 @@ test("Takoyaki Box direct children remain one global DOM-ordered timeline", () =
 
 test("Takoyaki Box parser does not drop events hidden only by tab CSS", () => {
   const result = importLogHtml(fixture, "takoyaki-box");
-  assert.equal(result.documents.length, 6);
-  assert.equal(result.report.logicalMessageCount, 6);
+  assert.equal(result.documents.length, 7);
+  assert.equal(result.report.logicalMessageCount, 7);
+});
+
+test("Takoyaki CSS avatars, speaker color, script semantics, and private headers use canonical fields", () => {
+  const result = importLogHtml(fixture, "takoyaki-box");
+  assert.match(result.documents[0].speaker?.avatarUrl ?? "", /^data:image\/png;base64,/);
+  assert.equal(result.documents[0].speaker?.color, "rgb(10, 20, 30)");
+  assert.equal(result.documents[0].timestamp.raw, "2026-08-31 12:00");
+  assert.equal(result.documents[1].kind, "description");
+  assert.equal(result.documents[1].speaker, null);
+  assert.equal(result.documents[6].presentation?.private, true);
+  assert.equal(result.documents[6].timestamp.raw, null);
+  assert.equal(result.documents[6].speaker?.name, "가람");
 });
 
 test("embedded raster data images are preserved while SVG data images are rejected", () => {

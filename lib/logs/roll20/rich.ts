@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
+import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import type { ParserWarning, RichNode } from "@/lib/logs/model/types";
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { stableRoll20Id } from "./id";
@@ -16,18 +17,6 @@ export type RichParseResult = {
   droppedStyleCount: number;
   unknownFallbackCount: number;
 };
-
-function safeHttpsUrl(value: string | undefined) {
-  if (!value) return null;
-  try { const url = new URL(value); return url.protocol === "https:" ? url.href : null; } catch { return null; }
-}
-
-function safeImageUrl(value: string | undefined) {
-  const https = safeHttpsUrl(value);
-  if (https) return https;
-  if (!value || value.length > 5_000_000) return null;
-  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\r\n]+$/i.test(value) ? value : null;
-}
 
 export function parseRichHtml(html: string, seed: string): RichParseResult {
   const $ = cheerio.load(html, null, false);
