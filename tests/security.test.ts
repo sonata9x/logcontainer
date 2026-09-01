@@ -9,6 +9,7 @@ const settingsMigration = readFileSync(new URL("../supabase/migrations/202608280
 const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280004_bulk_resource_move.sql", import.meta.url), "utf8");
 const dragFixMigration = readFileSync(new URL("../supabase/migrations/202608310004_fix_sidebar_drag.sql", import.meta.url), "utf8");
 const takoyakiAvatarMigration = readFileSync(new URL("../supabase/migrations/202608310005_takoyaki_avatar_assets.sql", import.meta.url), "utf8");
+const sidebarReorderMigration = readFileSync(new URL("../supabase/migrations/202609010001_sidebar_reordering.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
@@ -21,6 +22,7 @@ const passwordRoute = readFileSync(new URL("../app/api/account/password/route.ts
 const settingsRoute = readFileSync(new URL("../app/api/account/settings/route.ts", import.meta.url), "utf8");
 const childrenRoute = readFileSync(new URL("../app/api/resources/[id]/children/route.ts", import.meta.url), "utf8");
 const bulkMoveRoute = readFileSync(new URL("../app/api/resources/move/route.ts", import.meta.url), "utf8");
+const resourceReorderRoute = readFileSync(new URL("../app/api/resources/reorder/route.ts", import.meta.url), "utf8");
 const publicationRoute = readFileSync(new URL("../app/api/pages/[id]/publication/route.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -161,9 +163,13 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(sidebar, /fetch\("\/api\/resources\/move"/);
   assert.match(sidebar, /workspace-root-drop/);
   assert.match(sidebar, /pointer-drag-preview/);
+  assert.match(sidebar, /previewSiblingResourceReorder/);
+  assert.match(sidebar, /dropPosition/);
+  assert.match(sidebar, /\/api\/resources\/reorder/);
   assert.match(globalCss, /\.tree-row\.selected/);
   assert.doesNotMatch(globalCss.match(/\.tree-row\.selected \{[^}]+\}/)?.[0] ?? "", /box-shadow/);
   assert.match(globalCss, /\.tree-row\.drop-target/);
+  assert.match(globalCss, /\.tree-row\.drop-before::before/);
   assert.match(globalCss, /\.workspace-root-drop \{[^}]*visibility: hidden/);
   assert.match(globalCss, /\.pointer-drag-preview \{[^}]*pointer-events: none/);
 
@@ -174,6 +180,15 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(bulkMoveRoute, /insert_folder_item/);
   assert.match(bulkMoveRoute, /remove_folder_item/);
   assert.match(bulkMoveRoute, /resourceIds\.length > 100/);
+  assert.match(resourceReorderRoute, /reorder_resources_v1/);
+  assert.match(resourceReorderRoute, /error\?\.code === "40001"/);
+  assert.match(resourceReorderRoute, /PGRST202/);
+  assert.match(resourceReorderRoute, /move_workspace_item/);
+  assert.match(resourceReorderRoute, /insert_folder_item/);
+  assert.match(sidebarReorderMigration, /target_relation = 'workspace'/);
+  assert.match(sidebarReorderMigration, /target_relation = 'folder'/);
+  assert.match(sidebarReorderMigration, /public\.can_edit_resource\(target_parent_id, actor_id\)/);
+  assert.match(sidebarReorderMigration, /item\.parent_local_resource_id is not distinct from target_parent_id/);
   assert.match(bulkMoveMigration, /is_account_approved\(actor_id\)/);
   assert.match(bulkMoveMigration, /public\.insert_folder_item\(target_folder_id, resource_id, next_order\)/);
   assert.match(bulkMoveMigration, /public\.remove_folder_item\(source_folder_id, resource_id\)/);

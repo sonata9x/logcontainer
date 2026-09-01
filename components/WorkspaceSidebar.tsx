@@ -10,6 +10,7 @@ import type { PageType, ResourceRole, WorkspacePage } from "@/lib/types";
 import { defaultCorrectionSettings, type CorrectionSettings } from "@/lib/logs/corrections";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import { normalizeHexColor } from "@/lib/color";
+import { previewSiblingResourceReorder, type ResourceReorder } from "@/lib/resources/reorder";
 
 type CreatePage = (pageType: PageType, parentId?: string | null) => Promise<void>;
 type ShareRow = { share_id: string | null; user_id: string | null; username: string; display_name: string | null; access_level: ResourceRole; state: "active" | "pending"; is_owner: boolean };
@@ -17,10 +18,12 @@ type GuestParticipantRow = { id: string; nickname: string; accessLevel: "viewer"
 const ROLE_LABELS: Record<ResourceRole, string> = { viewer: "뷰어", editor: "편집자", admin: "관리자", owner: "소유자" };
 const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new Map());
 const RESOURCE_DRAG_TYPE = "application/x-logcontainer-resources";
+type ResourceDropPosition = "inside" | "before" | "after" | "root" | null;
 type TreeInteraction = {
   selectedIds: Set<string>;
   draggingIds: string[];
   dropTargetId: string | null;
+  dropPosition: ResourceDropPosition;
   select: (event: ReactMouseEvent, resourceId: string) => void;
   startDrag: (event: ReactDragEvent, resourceId: string) => void;
   startPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => void;
@@ -28,7 +31,7 @@ type TreeInteraction = {
   finishPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   cancelPointerDrag: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   endDrag: () => void;
-  setDropTargetId: (resourceId: string | null) => void;
+  setDropTargetId: (resourceId: string | null, position?: ResourceDropPosition) => void;
   drop: (event: ReactDragEvent, targetFolderId: string | null) => void;
 };
 const TreeInteractionContext = createContext<TreeInteraction | null>(null);
@@ -66,14 +69,21 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<ResourceDropPosition>(null);
   const [dragPreview, setDragPreview] = useState<{ x: number; y: number; label: string; count: number } | null>(null);
   const draggingIdsRef = useRef<string[]>([]);
   const dropTargetIdRef = useRef<string | null>(null);
+  const dropPositionRef = useRef<ResourceDropPosition>(null);
+  const dragOriginPagesRef = useRef<WorkspacePage[] | null>(null);
+  const dragReorderRef = useRef<ResourceReorder<WorkspacePage> | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const pointerDragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressTreeRefreshUntilRef = useRef(0);
   const selectionAnchor = useRef<string | null>(null);
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
   useEffect(() => setCurrentNickname(nickname), [nickname]);
   useEffect(() => setLivePages(pages), [pages]);
+  useEffect(() => () => pointerDragCleanupRef.current?.(), []);
   useEffect(() => { document.title = currentWorkspaceName; }, [currentWorkspaceName]);
   useEffect(() => setMobileSidebarOpen(false), [pathname]);
   useEffect(() => {
@@ -130,8 +140,10 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   }, []);
 
   const prepareResourceDrag = useCallback((resourceId: string) => {
-    const selectedForDrag = selectedIds.has(resourceId) ? [...selectedIds] : [resourceId];
+    const selectedForDrag = selectedIds.has(resourceId) ? livePages.filter((page) => selectedIds.has(page.id)).map((page) => page.id) : [resourceId];
     const resourceIds = topLevelSelection(selectedForDrag, livePages);
+    dragOriginPagesRef.current = livePages.map((page) => ({ ...page }));
+    dragReorderRef.current = null;
     draggingIdsRef.current = resourceIds;
     setDraggingIds(resourceIds);
     return resourceIds;
@@ -144,22 +156,30 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     event.dataTransfer.setData("text/plain", resourceIds.join(","));
   }, [prepareResourceDrag]);
 
-  const setResourceDropTarget = useCallback((resourceId: string | null) => {
+  const setResourceDropTarget = useCallback((resourceId: string | null, position: ResourceDropPosition = resourceId ? "inside" : null) => {
     dropTargetIdRef.current = resourceId;
+    dropPositionRef.current = position;
     setDropTargetId(resourceId);
+    setDropPosition(position);
   }, []);
 
   const endResourceDrag = useCallback(() => {
     draggingIdsRef.current = [];
+    dragOriginPagesRef.current = null;
+    dragReorderRef.current = null;
     setDraggingIds([]);
     setDragPreview(null);
     setResourceDropTarget(null);
   }, [setResourceDropTarget]);
 
   const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null) => {
+    suppressTreeRefreshUntilRef.current = Date.now() + 5_000;
     const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId }) });
     const result = await response.json();
-    if (!response.ok) return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+    if (!response.ok) {
+      suppressTreeRefreshUntilRef.current = 0;
+      return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+    }
     setSelectedIds(new Set());
     selectionAnchor.current = null;
     await reloadTree();
@@ -180,6 +200,70 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     if (resourceIds.length) void moveResources(resourceIds, targetFolderId);
   }, [draggingIds, endResourceDrag, moveResources]);
 
+  const commitResourceReorder = useCallback(async (reorder: ResourceReorder<WorkspacePage>, origin: WorkspacePage[]) => {
+    if (reorder.ordered.length < 2) return;
+    if (reorder.ordered.length > 500) {
+      setLivePages(origin);
+      window.alert("형제 항목이 500개를 넘는 목록은 한 번에 순서를 바꿀 수 없습니다.");
+      return;
+    }
+    suppressTreeRefreshUntilRef.current = Date.now() + 5_000;
+    const response = await fetch("/api/resources/reorder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        relation: reorder.relation,
+        parentId: reorder.parentId,
+        orderedIds: reorder.ordered.map((page) => page.id),
+        expected: reorder.before.map((page) => ({ id: page.id, orderIndex: page.order_index }))
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      suppressTreeRefreshUntilRef.current = 0;
+      setLivePages(origin);
+      return window.alert(result.error ?? "사이드바 순서를 저장하지 못했습니다.");
+    }
+    setSelectedIds(new Set());
+    selectionAnchor.current = null;
+  }, []);
+
+  const previewResourceReorder = useCallback((targetId: string, position: "before" | "after") => {
+    const origin = dragOriginPagesRef.current;
+    if (!origin) return false;
+    const reorder = previewSiblingResourceReorder(origin, draggingIdsRef.current, targetId, position);
+    if (!reorder?.ordered.length) return false;
+    dragReorderRef.current = reorder;
+    setLivePages(reorder.pages);
+    setResourceDropTarget(targetId, position);
+    return true;
+  }, [setResourceDropTarget]);
+
+  function completeResourcePointerDrag(pointerId: number, cancelled = false) {
+    const pointer = pointerDragRef.current;
+    if (!pointer || pointer.pointerId !== pointerId) return;
+    pointerDragRef.current = null;
+    pointerDragCleanupRef.current?.();
+    const resourceIds = [...draggingIdsRef.current];
+    const target = dropTargetIdRef.current;
+    const position = dropPositionRef.current;
+    const origin = dragOriginPagesRef.current;
+    const reorder = dragReorderRef.current;
+    endResourceDrag();
+    if (cancelled || !pointer.moved) {
+      if (origin) setLivePages(origin);
+      return;
+    }
+    if (reorder && (position === "before" || position === "after") && origin) {
+      void commitResourceReorder(reorder, origin);
+      return;
+    }
+    if (origin) setLivePages(origin);
+    if (target && resourceIds.length && (position === "inside" || position === "root")) {
+      void moveResources(resourceIds, position === "root" ? null : target);
+    }
+  }
+
   const startResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -187,8 +271,18 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     const resource = livePages.find((page) => page.id === resourceId);
     setDragPreview({ x: event.clientX, y: event.clientY, label: resource?.title ?? "리소스", count: resourceIds.length });
     pointerDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    pointerDragCleanupRef.current?.();
+    const finishFromWindow = (pointerEvent: PointerEvent) => completeResourcePointerDrag(pointerEvent.pointerId);
+    const cancelFromWindow = (pointerEvent: PointerEvent) => completeResourcePointerDrag(pointerEvent.pointerId, true);
+    pointerDragCleanupRef.current = () => {
+      window.removeEventListener("pointerup", finishFromWindow);
+      window.removeEventListener("pointercancel", cancelFromWindow);
+      pointerDragCleanupRef.current = null;
+    };
+    window.addEventListener("pointerup", finishFromWindow);
+    window.addEventListener("pointercancel", cancelFromWindow);
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [livePages, prepareResourceDrag]);
+  }, [livePages, prepareResourceDrag]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const pointer = pointerDragRef.current;
@@ -198,35 +292,44 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     event.preventDefault();
     setDragPreview((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current);
     const hit = document.elementFromPoint(event.clientX, event.clientY);
-    if (hit?.closest(".workspace-root-drop")) return setResourceDropTarget("root");
+    if (hit?.closest(".workspace-root-drop")) {
+      if (dragOriginPagesRef.current) setLivePages(dragOriginPagesRef.current);
+      dragReorderRef.current = null;
+      return setResourceDropTarget("root", "root");
+    }
     const row = hit?.closest<HTMLElement>("[data-resource-id]");
     const target = row?.dataset.resourceId ? livePages.find((page) => page.id === row.dataset.resourceId) : null;
-    setResourceDropTarget(target?.page_type === "folder" && !draggingIdsRef.current.includes(target.id) ? target.id : null);
-  }, [livePages, setResourceDropTarget]);
+    if (!row || !target || draggingIdsRef.current.includes(target.id)) return setResourceDropTarget(null);
+    const bounds = row.getBoundingClientRect();
+    const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
+    if (target.page_type === "folder" && ratio >= 0.3 && ratio <= 0.7) {
+      if (dragOriginPagesRef.current) setLivePages(dragOriginPagesRef.current);
+      dragReorderRef.current = null;
+      return setResourceDropTarget(target.id, "inside");
+    }
+    const position = ratio < 0.5 ? "before" : "after";
+    if (!previewResourceReorder(target.id, position)) setResourceDropTarget(null);
+  }, [livePages, previewResourceReorder, setResourceDropTarget]);
 
-  const finishResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const pointer = pointerDragRef.current;
-    if (!pointer || pointer.pointerId !== event.pointerId) return;
-    pointerDragRef.current = null;
+  function finishResourcePointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const resourceIds = [...draggingIdsRef.current];
-    const target = dropTargetIdRef.current;
-    endResourceDrag();
-    if (pointer.moved && target && resourceIds.length) void moveResources(resourceIds, target === "root" ? null : target);
-  }, [endResourceDrag, moveResources]);
+    completeResourcePointerDrag(event.pointerId);
+  }
 
-  const cancelResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (pointerDragRef.current?.pointerId !== event.pointerId) return;
-    pointerDragRef.current = null;
-    endResourceDrag();
-  }, [endResourceDrag]);
+  function cancelResourcePointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    completeResourcePointerDrag(event.pointerId, true);
+  }
 
-  const treeInteraction = useMemo<TreeInteraction>(() => ({ selectedIds, draggingIds, dropTargetId, select: selectResource, startDrag: startResourceDrag, startPointerDrag: startResourcePointerDrag, movePointerDrag: moveResourcePointerDrag, finishPointerDrag: finishResourcePointerDrag, cancelPointerDrag: cancelResourcePointerDrag, endDrag: endResourceDrag, setDropTargetId: setResourceDropTarget, drop: dropResources }), [selectedIds, draggingIds, dropTargetId, selectResource, startResourceDrag, startResourcePointerDrag, moveResourcePointerDrag, finishResourcePointerDrag, cancelResourcePointerDrag, endResourceDrag, setResourceDropTarget, dropResources]);
+  const treeInteraction: TreeInteraction = { selectedIds, draggingIds, dropTargetId, dropPosition, select: selectResource, startDrag: startResourceDrag, startPointerDrag: startResourcePointerDrag, movePointerDrag: moveResourcePointerDrag, finishPointerDrag: finishResourcePointerDrag, cancelPointerDrag: cancelResourcePointerDrag, endDrag: endResourceDrag, setDropTargetId: setResourceDropTarget, drop: dropResources };
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => void reloadTree(), 250); };
+    const refresh = () => {
+      if (Date.now() < suppressTreeRefreshUntilRef.current) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void reloadTree(), 250);
+    };
     const channel = supabase.channel(`workspace-tree-${workspaceId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "pages" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "folder_items" }, refresh)
@@ -256,7 +359,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
       <button className="sidebar-action" onClick={() => createPage("folder")} disabled={creating}><FolderPlus size={15} />새 폴더</button>
     </div>
     {selectedIds.size > 0 && <div className="sidebar-selection-status"><span>{selectedIds.size}개 선택됨</span><button onClick={() => setSelectedIds(new Set())}>선택 해제</button></div>}
-    <div className={`workspace-root-drop ${draggingIds.length ? "is-visible" : ""} ${dropTargetId === "root" ? "drop-target" : ""}`} aria-hidden={!draggingIds.length} onDragEnter={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); setDropTargetId("root"); }} onDragOver={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTargetId("root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>
+    <div className={`workspace-root-drop ${draggingIds.length ? "is-visible" : ""} ${dropTargetId === "root" ? "drop-target" : ""}`} aria-hidden={!draggingIds.length} onDragEnter={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); setResourceDropTarget("root", "root"); }} onDragOver={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setResourceDropTarget("root", "root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setResourceDropTarget(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
     {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
@@ -313,9 +416,11 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); await reloadTree(); if (pathname === href) router.push("/workspace"); }
   async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
   const selected = Boolean(treeInteraction?.selectedIds.has(page.id));
-  const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id;
+  const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "inside";
+  const dropBefore = treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "before";
+  const dropAfter = treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "after";
   const dragging = Boolean(treeInteraction?.draggingIds.includes(page.id));
-  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""} ${dropTarget ? "drop-target" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
+  const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""} ${dropTarget ? "drop-target" : ""} ${dropBefore ? "drop-before" : ""} ${dropAfter ? "drop-after" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id, "inside"); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id, "inside"); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
     <button type="button" className="tree-drag-handle" aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => treeInteraction?.startPointerDrag(event, page.id)} onPointerMove={(event) => treeInteraction?.movePointerDrag(event)} onPointerUp={(event) => treeInteraction?.finishPointerDrag(event)} onPointerCancel={(event) => treeInteraction?.cancelPointerDrag(event)}>⋮⋮</button>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}

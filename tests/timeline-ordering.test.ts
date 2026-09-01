@@ -17,6 +17,8 @@ test("message pointer drag starts only from a dedicated handle and saves one bat
   assert.match(editor, /orderedIds: changed\.ordered\.map/);
   assert.match(editor, /expected: changed\.before\.map/);
   assert.match(editor, /\/entries\/reorder/);
+  assert.match(editor, /ignoreNextLocalReorderEventRef\.current/);
+  assert.match(editor, /if \(ignoreNextLocalReorderEventRef\.current\)[\s\S]*return;/);
 });
 
 test("timeline reorder sends only the contiguous range that actually changed", () => {

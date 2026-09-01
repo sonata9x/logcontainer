@@ -95,6 +95,8 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const dragOriginRef = useRef<LogEntry[] | null>(null);
   const dragOrderRef = useRef<LogEntry[] | null>(null);
   const draggingEntryIdRef = useRef<string | null>(null);
+  const ignoreNextLocalReorderEventRef = useRef(false);
+  const reorderEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const pointerDragCleanupRef = useRef<(() => void) | null>(null);
   const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
@@ -102,7 +104,10 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [reorderPending, setReorderPending] = useState(false);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
-  useEffect(() => () => pointerDragCleanupRef.current?.(), []);
+  useEffect(() => () => {
+    pointerDragCleanupRef.current?.();
+    if (reorderEventTimeoutRef.current) clearTimeout(reorderEventTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -116,7 +121,17 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     };
     const channel = supabase.channel(`log-${logId}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "log_change_events", filter: `log_id=eq.${logId}` }, async (payload) => {
       const change = payload.new as { entry_id?: string | null; event_type?: string };
-      if (change.event_type === "log_replaced") { visibilityEvents.current.clear(); await loadFirstPage(); return; }
+      if (change.event_type === "log_replaced") {
+        if (ignoreNextLocalReorderEventRef.current) {
+          ignoreNextLocalReorderEventRef.current = false;
+          if (reorderEventTimeoutRef.current) clearTimeout(reorderEventTimeoutRef.current);
+          reorderEventTimeoutRef.current = null;
+          return;
+        }
+        visibilityEvents.current.clear();
+        await loadFirstPage();
+        return;
+      }
       if (!change.entry_id) return;
       if (change.event_type === "deleted") {
         const key = `deleted:${change.entry_id}`;
@@ -346,6 +361,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     const optimistic = ordered.map((entry) => ({ ...entry, sort_key: changedSortKeys.get(entry.id) ?? entry.sort_key }));
     setLiveEntries(optimistic);
     setReorderPending(true);
+    ignoreNextLocalReorderEventRef.current = true;
     const response = await fetch(`/api/pages/${page.id}/entries/reorder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -359,8 +375,15 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     dragOriginRef.current = null;
     dragOrderRef.current = null;
     if (!response.ok) {
+      ignoreNextLocalReorderEventRef.current = false;
       setLiveEntries(before);
       window.alert(result.error ?? "메시지 순서를 저장하지 못했습니다.");
+    } else {
+      if (reorderEventTimeoutRef.current) clearTimeout(reorderEventTimeoutRef.current);
+      reorderEventTimeoutRef.current = setTimeout(() => {
+        ignoreNextLocalReorderEventRef.current = false;
+        reorderEventTimeoutRef.current = null;
+      }, 5_000);
     }
   }
 
