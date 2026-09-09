@@ -51,7 +51,7 @@ returns table(
       then root_mounts.parent_local_resource_id else null end as tree_parent_id,
       root_mounts.order_index as tree_order, 0 as depth,
       array[root_mounts.resource_id] as path, 'workspace'::text as relation
-    from root_mounts
+    from root_mounts cross join actor
     union all
     select fi.child_resource_id, fi.folder_id, fi.order_index, tree.depth + 1,
       tree.path || fi.child_resource_id, 'folder'::text
