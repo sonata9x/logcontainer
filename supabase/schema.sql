@@ -5083,10 +5083,10 @@ grant select, insert, update, delete on public.handout_images to authenticated;
 -- Repair ambiguous movement SQL and make sibling reordering tolerant of stale order snapshots.
 
 with ranked as (
-  select id, row_number() over (
+  select id, (row_number() over (
     partition by workspace_id, parent_local_resource_id
     order by order_index, updated_at, created_at, id
-  ) - 1 as next_order
+  ) - 1)::integer as next_order
   from public.workspace_items
 )
 update public.workspace_items item
@@ -5095,10 +5095,10 @@ from ranked
 where item.id = ranked.id and item.order_index <> ranked.next_order;
 
 with ranked as (
-  select id, row_number() over (
+  select id, (row_number() over (
     partition by folder_id
     order by order_index, updated_at, created_at, id
-  ) - 1 as next_order
+  ) - 1)::integer as next_order
   from public.folder_items
 )
 update public.folder_items item
