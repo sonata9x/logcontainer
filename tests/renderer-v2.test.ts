@@ -62,14 +62,13 @@ test("inline content mode keeps Rich presentation and exposes only text leaves",
   assert.doesNotMatch(html, /textarea|select|node id|RichNode|TextBlock/);
 });
 
-test("Roll20 theme uses the earlier card layout and leaves user CSS alignment neutral", () => {
-  assert.match(themeCss, /\.log-entry-v2 \{[\s\S]*?border: 1px solid #e6e3dc;[\s\S]*?border-radius: 4px;[\s\S]*?background: #fff;/);
-  assert.match(themeCss, /\.entry-wrap:nth-child\(even\) \.r20-message/);
-  assert.match(themeCss, /\.r20-message \{[\s\S]*?display: flex;[\s\S]*?padding: 6px 9px;/);
-  assert.match(themeCss, /\.r20-message__avatar \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?border: 1px solid/);
-  assert.match(themeCss, /\.log-rich-context \{[^}]*text-align: initial;/);
-  assert.doesNotMatch(themeCss, /\.r20-message--description \.r20-message__content-flow \{[^}]*text-align:/);
-  assert.match(themeCss, /\.r20-inline-roll \{[\s\S]*?border: 1px solid #c8ba64;[\s\S]*?border-radius: 2px;[\s\S]*?background: #fff9c7;/);
+test("Roll20 theme keeps current spacing while user CSS uses the pre-September positioning context", () => {
+  assert.match(themeCss, /\.log-entry-v2 \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff;/);
+  assert.doesNotMatch(themeCss, /\.entry-wrap:nth-child\(even\) \.r20-message/);
+  assert.match(themeCss, /\.r20-message--dialogue \{[\s\S]*?grid-template-columns: 32px minmax\(0, 1fr\)/);
+  assert.match(themeCss, /\.r20-message__avatar \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?aspect-ratio: 1 \/ 1;[\s\S]*?border: 0;[\s\S]*?border-radius: 0;/);
+  assert.match(themeCss, /\.r20-message--description \.r20-message__content-flow \{ text-align: center; \}/);
+  assert.match(themeCss, /\.r20-inline-roll \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff9c7;/);
   assert.match(themeCss, /\.r20-template__table caption \{[\s\S]*?background: #000;[\s\S]*?color: #fff;/);
   assert.doesNotMatch(themeCss, /\.r20-message__content-flow \{[^}]*position: relative/);
   assert.match(themeCss, /\.r20-rich-context--block \{ display: block; margin: 3px 0; \}/);
