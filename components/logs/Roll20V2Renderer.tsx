@@ -31,11 +31,7 @@ function EditableText({ id, text, editor }: { id: string; text: string; editor?:
   return <span className="r20-editable-text" contentEditable suppressContentEditableWarning onInput={(event) => editor.onChange(id, event.currentTarget.innerText)}>{text}</span>;
 }
 
-function hasCenteredText(style: RichStyle) {
-  return style.some((declaration) => declaration.property === "text-align" && declaration.value.toLowerCase() === "center");
-}
-
-function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?: TextEditor; root?: boolean }): ReactNode {
+function RichNodeView({ node, editor }: { node: RichNode; editor?: TextEditor }): ReactNode {
   if (node.type === "text") return <EditableText id={node.id} text={node.text} editor={editor} />;
   if (node.type === "break") return <br />;
   if (node.type === "image") {
@@ -44,7 +40,7 @@ function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?:
   }
   if (node.type === "inline-roll") return <Roll20InlineRoll roll={node.roll} />;
   const children = node.children.map((child) => <RichNodeView key={child.id} node={child} editor={editor} />);
-  const props = { className: root && hasCenteredText(node.style) ? "r20-rich-root--centered" : undefined, style: styleObject(node.style), title: node.title ?? undefined };
+  const props = { style: styleObject(node.style), title: node.title ?? undefined };
   if (!editor && node.tag === "a" && node.href) return <a {...props} href={node.href} target="_blank" rel="noopener noreferrer">{children}</a>;
   const Tag = node.tag === "a" ? "span" : node.tag;
   return <Tag {...props}>{children}</Tag>;
@@ -57,11 +53,7 @@ function richNeedsBlockFlow(nodes: RichNode[]): boolean {
 function RichBlockView({ block, editor }: { block: Extract<LogBlock, { type: "rich" }>; editor?: TextEditor }) {
   const blockFlow = richNeedsBlockFlow(block.nodes);
   const Tag = blockFlow ? "div" : "span";
-  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} root />)}</Tag>;
-}
-
-function hasCenteredRichScript(document: LogEntryDocument) {
-  return document.blocks.some((block) => block.type === "rich" && block.nodes.some((node) => node.type === "element" && hasCenteredText(node.style)));
+  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} />)}</Tag>;
 }
 
 function fieldValue(field: RollTemplateField) {
@@ -113,10 +105,9 @@ export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryD
   const showSpeaker = document.kind === "dialogue" && presentation.speakerExplicit && Boolean(document.speaker?.name);
   const showAvatar = document.kind === "dialogue" && presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
-  const fullWidthRichScript = document.kind === "dialogue" && !presentation.speakerExplicit && !presentation.avatarExplicit && hasCenteredRichScript(document);
   return (
-    <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}${fullWidthRichScript ? " r20-message--full-width-rich" : ""}`}>
-      {document.kind === "dialogue" && !fullWidthRichScript && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</div>}
+    <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
+      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</div>}
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
         <div className="r20-message__content-flow">

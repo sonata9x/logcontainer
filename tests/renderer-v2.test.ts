@@ -82,12 +82,3 @@ test("image alt remains alternative text and is not rendered as a caption", () =
   assert.match(html, /alt="인트로"/);
   assert.doesNotMatch(html, /<figcaption>인트로<\/figcaption>/);
 });
-
-test("top-level user CSS centers rich scripts across the full log width", () => {
-  const result = importRoll20HtmlV2('<div class="message general" data-messageid="centered"><span style="text-align:center">centered script</span></div>');
-  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
-  assert.match(html, /r20-message--full-width-rich/);
-  assert.match(html, /class="r20-rich-root--centered"/);
-  assert.doesNotMatch(html, /r20-message__avatar-slot/);
-  assert.match(themeCss, /\.r20-rich-root--centered \{ display: block; width: 100%; text-align: center; \}/);
-});

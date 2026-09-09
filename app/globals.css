@@ -187,8 +187,6 @@ a { color: inherit; text-decoration: none; }
 .log-rich-context *, .log-rich-context *::before, .log-rich-context *::after { box-sizing: border-box; }
 .r20-rich-context--inline { display: inline; }
 .r20-rich-context--block { display: block; margin: 0; }
-.r20-rich-root--centered { display: block; width: 100%; text-align: center; }
-.r20-message--dialogue.r20-message--full-width-rich { display: block; }
 .r20-rich-image { max-width: 100%; height: auto; }
 .r20-template { display: block; width: min(100%, 430px); margin: 7px 0; border: 0; border-radius: 0; background: transparent; color: #000; font-style: normal; box-shadow: none; }
 .r20-template__table { width: 100%; border: 1px solid #000; border-collapse: collapse; background: #fff; color: #000; }
