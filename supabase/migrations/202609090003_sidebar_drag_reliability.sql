@@ -34,6 +34,7 @@ create or replace function public.reorder_resources_v1(
 declare
   actor_id uuid := auth.uid();
   actor_workspace_id uuid;
+  slot_indices integer[];
   matched_count integer;
   assignment_count integer;
 begin
@@ -63,7 +64,8 @@ begin
       )
     ) then raise exception 'invalid local parent'; end if;
 
-    select count(*) into matched_count
+    select array_agg(item.order_index order by item.order_index), count(*)
+    into slot_indices, matched_count
     from unnest(expected_resource_ids) expected(resource_id)
     join public.workspace_items item on item.resource_id = expected.resource_id
       and item.workspace_id = actor_workspace_id
@@ -76,7 +78,7 @@ begin
       order_index = assignment.order_index,
       updated_at = now()
     from (
-      select resource_id, (ordinality - 1)::integer as order_index
+      select resource_id, slot_indices[ordinality] as order_index
       from unnest(ordered_resource_ids) with ordinality ordered(resource_id, ordinality)
     ) assignment
     where item.workspace_id = actor_workspace_id and item.resource_id = assignment.resource_id
@@ -91,7 +93,8 @@ begin
       )
     then raise exception 'folder permission denied'; end if;
 
-    select count(*) into matched_count
+    select array_agg(item.order_index order by item.order_index), count(*)
+    into slot_indices, matched_count
     from unnest(expected_resource_ids) expected(resource_id)
     join public.folder_items item on item.child_resource_id = expected.resource_id
       and item.folder_id = target_parent_id;
@@ -103,7 +106,7 @@ begin
       order_index = assignment.order_index,
       updated_at = now()
     from (
-      select resource_id, (ordinality - 1)::integer as order_index
+      select resource_id, slot_indices[ordinality] as order_index
       from unnest(ordered_resource_ids) with ordinality ordered(resource_id, ordinality)
     ) assignment
     where item.folder_id = target_parent_id and item.child_resource_id = assignment.resource_id;
@@ -119,7 +122,7 @@ begin
     'parentId', target_parent_id,
     'entries', (
       select jsonb_agg(
-        jsonb_build_object('id', resource_id, 'orderIndex', ordinality - 1)
+        jsonb_build_object('id', resource_id, 'orderIndex', slot_indices[ordinality])
         order by ordinality
       )
       from unnest(ordered_resource_ids) with ordinality ordered(resource_id, ordinality)
