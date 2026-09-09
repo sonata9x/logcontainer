@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, LogOut, Menu, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
+import { Archive, ChevronDown, ChevronRight, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, GripVertical, LogOut, Menu, MoreHorizontal, Pencil, Plus, Settings, Share2, ShieldCheck, Trash2, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
@@ -19,6 +19,8 @@ const ROLE_LABELS: Record<ResourceRole, string> = { viewer: "뷰어", editor: "�
 const PageTreeContext = createContext<Map<string | null, WorkspacePage[]>>(new Map());
 const RESOURCE_DRAG_TYPE = "application/x-logcontainer-resources";
 type ResourceDropPosition = "inside" | "before" | "after" | "root" | null;
+type MoveScope = "personal" | "shared";
+type PendingResourceMove = { resourceIds: string[]; targetFolderId: string | null; sourceShared: boolean; targetShared: boolean };
 type TreeInteraction = {
   selectedIds: Set<string>;
   draggingIds: string[];
@@ -71,6 +73,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<ResourceDropPosition>(null);
   const [dragPreview, setDragPreview] = useState<{ x: number; y: number; label: string; count: number } | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingResourceMove | null>(null);
   const draggingIdsRef = useRef<string[]>([]);
   const dropTargetIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<ResourceDropPosition>(null);
@@ -172,13 +175,18 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     setResourceDropTarget(null);
   }, [setResourceDropTarget]);
 
-  const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null) => {
+  const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null, scope?: MoveScope) => {
     suppressTreeRefreshUntilRef.current = Date.now() + 5_000;
-    const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId }) });
-    const result = await response.json();
+    const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId, scope }) });
+    const result = await response.json().catch(() => ({}));
     if (!response.ok) {
       suppressTreeRefreshUntilRef.current = 0;
       return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+    }
+    if (result.requiresScope) {
+      suppressTreeRefreshUntilRef.current = 0;
+      setPendingMove({ resourceIds, targetFolderId, sourceShared: Boolean(result.sourceShared), targetShared: Boolean(result.targetShared) });
+      return;
     }
     setSelectedIds(new Set());
     selectionAnchor.current = null;
@@ -363,7 +371,8 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
     {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
-    {dragPreview && <OverlayPortal><div className="pointer-drag-preview" style={{ left: dragPreview.x, top: dragPreview.y }}><span className="pointer-drag-preview__grip">⋮⋮</span><strong>{dragPreview.label}</strong>{dragPreview.count > 1 && <small>외 {dragPreview.count - 1}개</small>}</div></OverlayPortal>}
+    {pendingMove && <MoveScopeDialog sourceShared={pendingMove.sourceShared} targetShared={pendingMove.targetShared} onClose={() => setPendingMove(null)} onChoose={(scope) => { const request = pendingMove; setPendingMove(null); void moveResources(request.resourceIds, request.targetFolderId, scope); }} />}
+    {dragPreview && <OverlayPortal><div className="pointer-drag-preview" style={{ left: dragPreview.x, top: dragPreview.y }}><GripVertical className="pointer-drag-preview__grip" size={17} /><strong>{dragPreview.label}</strong>{dragPreview.count > 1 && <small>외 {dragPreview.count - 1}개</small>}</div></OverlayPortal>}
     </aside>
   </>;
 }
@@ -421,7 +430,7 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   const dropAfter = treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "after";
   const dragging = Boolean(treeInteraction?.draggingIds.includes(page.id));
   const row = <div className={`page-link tree-row ${href && pathname === href ? "active" : ""} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""} ${dropTarget ? "drop-target" : ""} ${dropBefore ? "drop-before" : ""} ${dropAfter ? "drop-after" : ""}`} style={{ paddingLeft }} data-resource-id={page.id} onClick={(event) => treeInteraction?.select(event, page.id)} onDragEnter={page.page_type === "folder" ? (event) => { event.preventDefault(); treeInteraction?.setDropTargetId(page.id, "inside"); } : undefined} onDragOver={page.page_type === "folder" ? (event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; treeInteraction?.setDropTargetId(page.id, "inside"); } : undefined} onDragLeave={page.page_type === "folder" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) treeInteraction?.setDropTargetId(null); } : undefined} onDrop={page.page_type === "folder" ? (event) => treeInteraction?.drop(event, page.id) : undefined}>
-    <button type="button" className="tree-drag-handle" aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => treeInteraction?.startPointerDrag(event, page.id)} onPointerMove={(event) => treeInteraction?.movePointerDrag(event)} onPointerUp={(event) => treeInteraction?.finishPointerDrag(event)} onPointerCancel={(event) => treeInteraction?.cancelPointerDrag(event)}>⋮⋮</button>
+    <button type="button" className="tree-drag-handle" aria-label={`${page.title} 이동`} title="끌어서 이동" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => treeInteraction?.startPointerDrag(event, page.id)} onPointerMove={(event) => treeInteraction?.movePointerDrag(event)} onPointerUp={(event) => treeInteraction?.finishPointerDrag(event)} onPointerCancel={(event) => treeInteraction?.cancelPointerDrag(event)}><GripVertical size={15} /></button>
     {page.page_type === "folder" ? <><button className="tree-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>{expanded ? <FolderOpen size={15} /> : <Folder size={15} />}</> : <span className="tree-file-spacer"><FileText size={15} /></span>}
     {href ? <Link href={href} prefetch={false} className="tree-title">{page.title}</Link> : <span className="tree-title">{page.title}</span>}
     {page.page_type === "folder" && page.can_edit && <><button className="tree-add" onClick={() => createPage("log", page.id)} title="이 폴더에 로그 추가"><FilePlus2 size={14} /></button><button className="tree-add tree-add-secondary" onClick={() => createPage("folder", page.id)} title="이 폴더에 하위 폴더 추가"><FolderPlus size={14} /></button></>}
@@ -432,16 +441,19 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
 
 function ResourceMenu({ x, y, page, onClose, onRename, onShare, onMove, onRemove, onRemoveFromFolder }: { x: number; y: number; page: WorkspacePage; onClose: () => void; onRename: () => void; onShare: () => void; onMove: () => void; onRemove?: () => void; onRemoveFromFolder?: () => void }) {
   useEffect(() => { const close = () => onClose(); window.addEventListener("pointerdown", close); return () => window.removeEventListener("pointerdown", close); }, [onClose]);
-  return <OverlayPortal><div className="entry-context-menu resource-context-menu" role="menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onPointerDown={(event) => event.stopPropagation()}>{page.can_edit && <button onClick={onRename}><Pencil size={13} />이름 변경</button>}{page.can_manage_shares && <button onClick={onShare}><Share2 size={13} />공유</button>}<button onClick={onMove}><Folder size={13} />내 위치 이동</button>{page.can_edit && onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}{onRemove && <><hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div></OverlayPortal>;
+  return <OverlayPortal><div className="entry-context-menu resource-context-menu" role="menu" style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 250) }} onPointerDown={(event) => event.stopPropagation()}>{page.can_edit && <button onClick={onRename}><Pencil size={13} />이름 변경</button>}{page.can_manage_shares && <button onClick={onShare}><Share2 size={13} />공유</button>}<button onClick={onMove}><FolderInput size={13} />이동</button>{page.can_edit && onRemoveFromFolder && <button onClick={onRemoveFromFolder}><UserMinus size={13} />공유 폴더에서 제거</button>}{onRemove && <><hr /><button className="danger" onClick={onRemove}><Trash2 size={13} />{page.is_original_owner ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div></OverlayPortal>;
+}
+
+function MoveScopeDialog({ sourceShared, targetShared, onChoose, onClose }: { sourceShared: boolean; targetShared: boolean; onChoose: (scope: MoveScope) => void; onClose: () => void }) {
+  useEscapeClose(onClose);
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card move-scope-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>이동 범위 선택</h2><p>{sourceShared && targetShared ? "현재 위치와 대상 폴더가 공유 구조에 포함되어 있습니다." : sourceShared ? "현재 위치가 공유 폴더 안입니다." : "대상 폴더가 다른 사용자와 공유되어 있습니다."}</p><div className="move-scope-options"><button className="button" onClick={() => onChoose("personal")}><strong>나만 위치 이동</strong><small>내 사이드바에서만 위치가 바뀝니다.</small></button><button className="button button-primary" onClick={() => onChoose("shared")}><strong>공유 구조 이동</strong><small>이 폴더를 보는 모든 사용자에게 반영됩니다.</small></button></div></section></div></OverlayPortal>;
 }
 
 function MoveDialog({ page, pages, reloadTree, onClose }: { page: WorkspacePage; pages: WorkspacePage[]; reloadTree: () => Promise<void>; onClose: () => void }) {
-  const [parentId, setParentId] = useState(""); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
+  const [parentId, setParentId] = useState(""); const [scopePrompt, setScopePrompt] = useState<{ sourceShared: boolean; targetShared: boolean } | null>(null); const [pending, setPending] = useState(false); const folders = pages.filter((candidate) => candidate.page_type === "folder" && candidate.id !== page.id);
   useEscapeClose(onClose);
-  async function finish(response: Response) { const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); await reloadTree(); onClose(); }
-  async function movePersonal() { await finish(await fetch(`/api/resources/${page.id}/placement`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ parentId: parentId || null }) })); }
-  async function moveShared() { if (!parentId) return window.alert("공유 구조의 대상 폴더를 선택해주세요."); await finish(await fetch(`/api/resources/${parentId}/children`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) })); }
-  return <OverlayPortal><div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>리소스 이동</h2><p>‘내 위치만 이동’은 나에게만 적용됩니다.{page.can_edit && " ‘공유 구조로 이동’은 Folder 내부 hierarchy를 바꾸므로 모든 공유자에게 반영되며, 서버가 재공유 권한을 검사합니다."}</p><label className="field">위치<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose}>취소</button><button className="button" onClick={movePersonal}>내 위치만 이동</button>{page.can_edit && <button className="button button-primary" onClick={moveShared} disabled={!parentId}>공유 구조로 이동</button>}</div></section></div></OverlayPortal>;
+  async function move(scope?: MoveScope) { setPending(true); const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds: [page.id], targetFolderId: parentId || null, scope }) }); const result = await response.json().catch(() => ({})); setPending(false); if (!response.ok) return window.alert(result.error ?? "이동하지 못했습니다."); if (result.requiresScope) { setScopePrompt({ sourceShared: Boolean(result.sourceShared), targetShared: Boolean(result.targetShared) }); return; } await reloadTree(); onClose(); }
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} disabled={pending}><X size={17} /></button><h2>리소스 이동</h2>{scopePrompt ? <><p>{scopePrompt.sourceShared && scopePrompt.targetShared ? "현재 위치와 대상 폴더가 공유 구조에 포함되어 있습니다." : scopePrompt.sourceShared ? "현재 위치가 공유 폴더 안입니다." : "대상 폴더가 다른 사용자와 공유되어 있습니다."}</p><div className="move-scope-options"><button className="button" onClick={() => void move("personal")} disabled={pending}><strong>나만 위치 이동</strong><small>내 사이드바에서만 위치가 바뀝니다.</small></button><button className="button button-primary" onClick={() => void move("shared")} disabled={pending}><strong>공유 구조 이동</strong><small>모든 공유자에게 반영됩니다.</small></button></div></> : <><p>이동할 위치를 선택하세요. 공유 범위 선택이 필요한 경우 다음 단계에서 확인합니다.</p><label className="field">위치<select value={parentId} onChange={(event) => { setParentId(event.target.value); setScopePrompt(null); }} disabled={pending}><option value="">최상위</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.title}</option>)}</select></label><div className="modal-actions"><button className="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" onClick={() => void move()} disabled={pending}>{pending ? "확인 중…" : "이동"}</button></div></>}</section></div></OverlayPortal>;
 }
 
 export function ShareDialog({ page, onClose }: { page: WorkspacePage; onClose: () => void }) {
