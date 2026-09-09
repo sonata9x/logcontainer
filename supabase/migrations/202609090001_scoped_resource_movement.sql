@@ -113,7 +113,7 @@ begin
   if coalesce(array_length(target_resource_ids, 1), 0) > 100 then raise exception 'too many resources'; end if;
   if move_scope is not null and move_scope not in ('personal', 'shared') then raise exception 'invalid move scope'; end if;
 
-  select array_agg(resource_id order by first_position)
+  select array_agg(selected.resource_id order by selected.first_position)
   into normalized_ids
   from (
     select item.resource_id, min(item.position) as first_position
@@ -208,6 +208,10 @@ begin
       moved_count := moved_count + 1;
     end loop;
   else
+    select coalesce(max(order_index) + 1, 0) into next_order
+    from public.workspace_items
+    where workspace_id = actor_workspace_id and parent_local_resource_id is null;
+
     if target_folder_id is not null then
       select coalesce(max(order_index) + 1, 0) into next_order
       from public.folder_items where folder_id = target_folder_id;
@@ -227,10 +231,11 @@ begin
           perform public.remove_folder_item(source_folder_id, resource_id);
         end if;
         if public.can_view_resource(resource_id, actor_id) then
-          perform public.move_workspace_item(resource_id, null, moved_count);
+          perform public.move_workspace_item(resource_id, null, next_order);
           update public.workspace_items item
           set location_override = false, updated_at = now()
           where item.workspace_id = actor_workspace_id and item.resource_id = resource_id;
+          next_order := next_order + 1;
         end if;
         moved_count := moved_count + 1;
       end loop;

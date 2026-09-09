@@ -81,6 +81,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const dragReorderRef = useRef<ResourceReorder<WorkspacePage> | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const pointerDragCleanupRef = useRef<(() => void) | null>(null);
+  const resourceMutationInFlightRef = useRef(false);
   const suppressTreeRefreshUntilRef = useRef(0);
   const selectionAnchor = useRef<string | null>(null);
   useEffect(() => setCurrentWorkspaceName(workspaceName), [workspaceName]);
@@ -153,6 +154,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   }, [livePages, selectedIds]);
 
   const startResourceDrag = useCallback((event: ReactDragEvent, resourceId: string) => {
+    if (resourceMutationInFlightRef.current) return event.preventDefault();
     const resourceIds = prepareResourceDrag(resourceId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(RESOURCE_DRAG_TYPE, JSON.stringify(resourceIds));
@@ -176,21 +178,30 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   }, [setResourceDropTarget]);
 
   const moveResources = useCallback(async (resourceIds: string[], targetFolderId: string | null, scope?: MoveScope) => {
+    if (resourceMutationInFlightRef.current) return;
+    resourceMutationInFlightRef.current = true;
     suppressTreeRefreshUntilRef.current = Date.now() + 5_000;
-    const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId, scope }) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/resources/move", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceIds, targetFolderId, scope }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        suppressTreeRefreshUntilRef.current = 0;
+        return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+      }
+      if (result.requiresScope) {
+        suppressTreeRefreshUntilRef.current = 0;
+        setPendingMove({ resourceIds, targetFolderId, sourceShared: Boolean(result.sourceShared), targetShared: Boolean(result.targetShared) });
+        return;
+      }
+      setSelectedIds(new Set());
+      selectionAnchor.current = null;
+      await reloadTree();
+    } catch {
       suppressTreeRefreshUntilRef.current = 0;
-      return window.alert(result.error ?? "리소스를 이동하지 못했습니다.");
+      window.alert("리소스를 이동하지 못했습니다.");
+    } finally {
+      resourceMutationInFlightRef.current = false;
     }
-    if (result.requiresScope) {
-      suppressTreeRefreshUntilRef.current = 0;
-      setPendingMove({ resourceIds, targetFolderId, sourceShared: Boolean(result.sourceShared), targetShared: Boolean(result.targetShared) });
-      return;
-    }
-    setSelectedIds(new Set());
-    selectionAnchor.current = null;
-    await reloadTree();
   }, [reloadTree]);
 
   const dropResources = useCallback((event: ReactDragEvent, targetFolderId: string | null) => {
@@ -210,31 +221,42 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
 
   const commitResourceReorder = useCallback(async (reorder: ResourceReorder<WorkspacePage>, origin: WorkspacePage[]) => {
     if (reorder.ordered.length < 2) return;
+    if (resourceMutationInFlightRef.current) { setLivePages(origin); return; }
     if (reorder.ordered.length > 500) {
       setLivePages(origin);
       window.alert("형제 항목이 500개를 넘는 목록은 한 번에 순서를 바꿀 수 없습니다.");
       return;
     }
+    resourceMutationInFlightRef.current = true;
     suppressTreeRefreshUntilRef.current = Date.now() + 5_000;
-    const response = await fetch("/api/resources/reorder", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        relation: reorder.relation,
-        parentId: reorder.parentId,
-        orderedIds: reorder.ordered.map((page) => page.id),
-        expected: reorder.before.map((page) => ({ id: page.id, orderIndex: page.order_index }))
-      })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/resources/reorder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          relation: reorder.relation,
+          parentId: reorder.parentId,
+          orderedIds: reorder.ordered.map((page) => page.id),
+          expected: reorder.before.map((page) => ({ id: page.id, orderIndex: page.order_index }))
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        suppressTreeRefreshUntilRef.current = 0;
+        setLivePages(origin);
+        return window.alert(result.error ?? "사이드바 순서를 저장하지 못했습니다.");
+      }
+      setSelectedIds(new Set());
+      selectionAnchor.current = null;
+      await reloadTree();
+    } catch {
       suppressTreeRefreshUntilRef.current = 0;
       setLivePages(origin);
-      return window.alert(result.error ?? "사이드바 순서를 저장하지 못했습니다.");
+      window.alert("사이드바 순서를 저장하지 못했습니다.");
+    } finally {
+      resourceMutationInFlightRef.current = false;
     }
-    setSelectedIds(new Set());
-    selectionAnchor.current = null;
-  }, []);
+  }, [reloadTree]);
 
   const previewResourceReorder = useCallback((targetId: string, position: "before" | "after") => {
     const origin = dragOriginPagesRef.current;
@@ -274,6 +296,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
 
   const startResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>, resourceId: string) => {
     if (event.button !== 0) return;
+    if (resourceMutationInFlightRef.current) return;
     event.preventDefault();
     const resourceIds = prepareResourceDrag(resourceId);
     const resource = livePages.find((page) => page.id === resourceId);
@@ -310,13 +333,26 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     if (!row || !target || draggingIdsRef.current.includes(target.id)) return setResourceDropTarget(null);
     const bounds = row.getBoundingClientRect();
     const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
-    if (target.page_type === "folder" && ratio >= 0.3 && ratio <= 0.7) {
+    if (target.page_type === "folder" && ratio >= 0.2 && ratio <= 0.8) {
       if (dragOriginPagesRef.current) setLivePages(dragOriginPagesRef.current);
       dragReorderRef.current = null;
       return setResourceDropTarget(target.id, "inside");
     }
     const position = ratio < 0.5 ? "before" : "after";
-    if (!previewResourceReorder(target.id, position)) setResourceDropTarget(null);
+    if (previewResourceReorder(target.id, position)) return;
+    const origin = dragOriginPagesRef.current;
+    const crossesContainer = origin && draggingIdsRef.current.some((resourceId) => {
+      const moving = origin.find((page) => page.id === resourceId);
+      return moving && ((moving.tree_parent_id ?? null) !== (target.tree_parent_id ?? null)
+        || (moving.tree_relation ?? "workspace") !== (target.tree_relation ?? "workspace"));
+    });
+    if (!crossesContainer) return setResourceDropTarget(null);
+    if (origin) setLivePages(origin);
+    dragReorderRef.current = null;
+    const targetParentId = target.tree_parent_id ?? null;
+    if (targetParentId && !draggingIdsRef.current.includes(targetParentId)) return setResourceDropTarget(targetParentId, "inside");
+    if (!targetParentId) return setResourceDropTarget("root", "root");
+    setResourceDropTarget(null);
   }, [livePages, previewResourceReorder, setResourceDropTarget]);
 
   function finishResourcePointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -420,12 +456,13 @@ function PageNode({ page, pages, depth, createPage, reloadTree }: { page: Worksp
   const treeInteraction = useContext(TreeInteractionContext);
   const children = childrenByParent.get(page.id) ?? [];
   const [expanded, setExpanded] = useState(true); const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); const [sharing, setSharing] = useState(false); const [moving, setMoving] = useState(false);
+  const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "inside";
+  useEffect(() => { if (dropTarget) setExpanded(true); }, [dropTarget]);
   const paddingLeft = 9 + depth * 15; const href = page.page_type === "log" ? `/workspace/pages/${page.id}` : null;
   async function rename() { setMenu(null); const title = window.prompt("새 이름", page.title)?.trim(); if (!title || title === page.title) return; const response = await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "이름을 바꾸지 못했습니다."); await reloadTree(); }
   async function remove() { setMenu(null); const owner = Boolean(page.is_original_owner); if (!owner && !page.can_self_remove) return; if (!window.confirm(owner ? "이 리소스를 30일 휴지통으로 이동할까요? 공유자에게도 즉시 숨겨집니다." : "내 워크스페이스에서 제거하고 내 직접 공유 권한을 종료할까요?")) return; const response = owner ? await fetch(`/api/pages/${page.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isArchived: true }) }) : await fetch(`/api/resources/${page.id}/remove`, { method: "POST" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "리소스를 제거하지 못했습니다."); await reloadTree(); if (pathname === href) router.push("/workspace"); }
   async function removeFromFolder() { setMenu(null); if (page.tree_relation !== "folder" || !page.tree_parent_id || !window.confirm("공유 폴더에서 이 항목을 제거할까요? 폴더를 보는 모든 사람에게 반영됩니다. 리소스 자체는 삭제되지 않습니다.")) return; const response = await fetch(`/api/resources/${page.tree_parent_id}/children`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ childId: page.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "폴더에서 제거하지 못했습니다."); await reloadTree(); }
   const selected = Boolean(treeInteraction?.selectedIds.has(page.id));
-  const dropTarget = page.page_type === "folder" && treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "inside";
   const dropBefore = treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "before";
   const dropAfter = treeInteraction?.dropTargetId === page.id && treeInteraction.dropPosition === "after";
   const dragging = Boolean(treeInteraction?.draggingIds.includes(page.id));

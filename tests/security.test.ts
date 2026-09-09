@@ -12,6 +12,7 @@ const takoyakiAvatarMigration = readFileSync(new URL("../supabase/migrations/202
 const sidebarReorderMigration = readFileSync(new URL("../supabase/migrations/202609010001_sidebar_reordering.sql", import.meta.url), "utf8");
 const scopedMoveMigration = readFileSync(new URL("../supabase/migrations/202609090001_scoped_resource_movement.sql", import.meta.url), "utf8");
 const handoutMigration = readFileSync(new URL("../supabase/migrations/202609090002_handout_library.sql", import.meta.url), "utf8");
+const sidebarReliabilityMigration = readFileSync(new URL("../supabase/migrations/202609090003_sidebar_drag_reliability.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
@@ -208,6 +209,9 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(handoutMigration, /alter table public\.handouts enable row level security/);
   assert.match(handoutMigration, /public\.can_view_resource\(page_id, auth\.uid\(\)\)/);
   assert.match(handoutMigration, /public\.can_edit_resource\(page_id, auth\.uid\(\)\)/);
+  assert.match(sidebarReliabilityMigration, /array_agg\(selected\.resource_id/);
+  assert.match(sidebarReliabilityMigration, /row_number\(\) over/);
+  assert.doesNotMatch(sidebarReliabilityMigration, /item\.order_index = expected\.order_index/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {
@@ -341,4 +345,6 @@ test("drag movement preserves private placement and shared-folder hierarchy boun
   assert.match(dragFixMigration, /source_folder_id/);
   assert.match(dragFixMigration, /public\.remove_folder_item/);
   assert.match(dragFixMigration, /public\.move_workspace_item/);
+  assert.match(sidebar, /crossesContainer/);
+  assert.match(sidebar, /await reloadTree\(\)/);
 });
