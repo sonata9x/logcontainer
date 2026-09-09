@@ -31,7 +31,11 @@ function EditableText({ id, text, editor }: { id: string; text: string; editor?:
   return <span className="r20-editable-text" contentEditable suppressContentEditableWarning onInput={(event) => editor.onChange(id, event.currentTarget.innerText)}>{text}</span>;
 }
 
-function RichNodeView({ node, editor }: { node: RichNode; editor?: TextEditor }): ReactNode {
+function isCentered(style: RichStyle) {
+  return style.some((declaration) => declaration.property === "text-align" && declaration.value.toLowerCase() === "center");
+}
+
+function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?: TextEditor; root?: boolean }): ReactNode {
   if (node.type === "text") return <EditableText id={node.id} text={node.text} editor={editor} />;
   if (node.type === "break") return <br />;
   if (node.type === "image") {
@@ -40,7 +44,7 @@ function RichNodeView({ node, editor }: { node: RichNode; editor?: TextEditor })
   }
   if (node.type === "inline-roll") return <Roll20InlineRoll roll={node.roll} />;
   const children = node.children.map((child) => <RichNodeView key={child.id} node={child} editor={editor} />);
-  const props = { style: styleObject(node.style), title: node.title ?? undefined };
+  const props = { className: root && isCentered(node.style) ? "r20-rich-root--centered" : undefined, style: styleObject(node.style), title: node.title ?? undefined };
   if (!editor && node.tag === "a" && node.href) return <a {...props} href={node.href} target="_blank" rel="noopener noreferrer">{children}</a>;
   const Tag = node.tag === "a" ? "span" : node.tag;
   return <Tag {...props}>{children}</Tag>;
@@ -53,7 +57,7 @@ function richNeedsBlockFlow(nodes: RichNode[]): boolean {
 function RichBlockView({ block, editor }: { block: Extract<LogBlock, { type: "rich" }>; editor?: TextEditor }) {
   const blockFlow = richNeedsBlockFlow(block.nodes);
   const Tag = blockFlow ? "div" : "span";
-  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} />)}</Tag>;
+  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} root />)}</Tag>;
 }
 
 function fieldValue(field: RollTemplateField) {

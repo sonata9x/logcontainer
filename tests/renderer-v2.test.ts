@@ -82,3 +82,12 @@ test("image alt remains alternative text and is not rendered as a caption", () =
   assert.match(html, /alt="인트로"/);
   assert.doesNotMatch(html, /<figcaption>인트로<\/figcaption>/);
 });
+
+test("a fixed-width centered user CSS root is centered without replacing its styles", () => {
+  const result = importRoll20HtmlV2('<div class="message desc" data-messageid="centered"><div style="width:430px;text-align:center;color:red">centered script</div></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, /class="r20-rich-root--centered" style="width:430px;text-align:center;color:red"/);
+  assert.match(themeCss, /\.r20-rich-context--block > \.r20-rich-root--centered \{ margin-right: auto; margin-left: auto; \}/);
+  assert.doesNotMatch(themeCss, /\.r20-rich-root--centered \{[^}]*display:/);
+  assert.doesNotMatch(themeCss, /\.r20-rich-root--centered \{[^}]*width:/);
+});
