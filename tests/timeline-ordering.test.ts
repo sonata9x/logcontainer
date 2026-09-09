@@ -9,7 +9,7 @@ const migration = readFileSync(new URL("../supabase/migrations/202608310002_log_
 
 test("message pointer drag starts only from a dedicated handle and saves one batch", () => {
   assert.match(editor, /className="log-entry-drag-handle"/);
-  assert.match(editor, />⋮⋮<\/button>/);
+  assert.match(editor, /<GripVertical size=\{17\}/);
   assert.doesNotMatch(editor, /<article[^>]+draggable/);
   assert.match(editor, /onPointerDown/);
   assert.match(editor, /setPointerCapture/);

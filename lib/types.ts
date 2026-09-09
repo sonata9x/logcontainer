@@ -52,6 +52,26 @@ export type WorkspacePage = {
   updated_at: string;
 };
 
+export type HandoutImage = {
+  id: string;
+  original_name: string;
+  mime_type: string;
+  byte_size: number;
+  order_index: number;
+  url: string;
+};
+
+export type Handout = {
+  id: string;
+  page_id: string;
+  title: string;
+  content: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+  images: HandoutImage[];
+};
+
 export type ResourcePermissions = {
   role: ResourceRole;
   canView: boolean;

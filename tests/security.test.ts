@@ -10,6 +10,8 @@ const bulkMoveMigration = readFileSync(new URL("../supabase/migrations/202608280
 const dragFixMigration = readFileSync(new URL("../supabase/migrations/202608310004_fix_sidebar_drag.sql", import.meta.url), "utf8");
 const takoyakiAvatarMigration = readFileSync(new URL("../supabase/migrations/202608310005_takoyaki_avatar_assets.sql", import.meta.url), "utf8");
 const sidebarReorderMigration = readFileSync(new URL("../supabase/migrations/202609010001_sidebar_reordering.sql", import.meta.url), "utf8");
+const scopedMoveMigration = readFileSync(new URL("../supabase/migrations/202609090001_scoped_resource_movement.sql", import.meta.url), "utf8");
+const handoutMigration = readFileSync(new URL("../supabase/migrations/202609090002_handout_library.sql", import.meta.url), "utf8");
 const securityMigration = readFileSync(new URL("../supabase/migrations/202608280005_security_hardening.sql", import.meta.url), "utf8");
 const securityFixMigration = readFileSync(new URL("../supabase/migrations/202608280006_fix_security_rate_limit_timestamp.sql", import.meta.url), "utf8");
 const largeImportMigration = readFileSync(new URL("../supabase/migrations/202608280007_roll20_large_import_uploads.sql", import.meta.url), "utf8");
@@ -174,11 +176,9 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(globalCss, /\.pointer-drag-preview \{[^}]*pointer-events: none/);
 
   assert.match(bulkMoveRoute, /getAuthenticatedApiContext/);
-  assert.match(bulkMoveRoute, /move_resources_bulk/);
+  assert.match(bulkMoveRoute, /move_resources_scoped_v1/);
   assert.match(bulkMoveRoute, /PGRST202/);
-  assert.match(bulkMoveRoute, /move_workspace_item/);
-  assert.match(bulkMoveRoute, /insert_folder_item/);
-  assert.match(bulkMoveRoute, /remove_folder_item/);
+  assert.match(bulkMoveRoute, /move_scope: scope/);
   assert.match(bulkMoveRoute, /resourceIds\.length > 100/);
   assert.match(resourceReorderRoute, /reorder_resources_v1/);
   assert.match(resourceReorderRoute, /error\?\.code === "40001"/);
@@ -197,6 +197,17 @@ test("resource tree supports portal overlays, range selection and atomic pointer
   assert.match(dragFixMigration, /source_folder_id is null[\s\S]*move_workspace_item\(resource_id, target_folder_id, personal_next_order\)/);
   assert.match(dragFixMigration, /else[\s\S]*insert_folder_item\(target_folder_id, resource_id, shared_next_order\)/);
   assert.match(takoyakiAvatarMigration, /log-avatar-assets[\s\S]*true[\s\S]*image\/webp/);
+  assert.match(scopedMoveMigration, /location_override boolean not null default false/);
+  assert.match(scopedMoveMigration, /'requiresScope', true/);
+  assert.match(scopedMoveMigration, /join public\.resource_shares share on share\.resource_id = source_scope\.folder_id/);
+  assert.match(scopedMoveMigration, /case when all_owned then 'shared' else 'personal' end/);
+  assert.match(scopedMoveMigration, /effective_scope = 'personal'/);
+  assert.match(scopedMoveMigration, /else[\s\S]*public\.insert_folder_item/);
+  assert.match(scopedMoveMigration, /public\.can_edit_resource|public\.insert_folder_item/);
+  assert.match(handoutMigration, /handout-images'[\s\S]*false[\s\S]*10000000/);
+  assert.match(handoutMigration, /alter table public\.handouts enable row level security/);
+  assert.match(handoutMigration, /public\.can_view_resource\(page_id, auth\.uid\(\)\)/);
+  assert.match(handoutMigration, /public\.can_edit_resource\(page_id, auth\.uid\(\)\)/);
 });
 
 test("personal workspace migration is idempotent and keeps one workspace per account", () => {
@@ -231,7 +242,7 @@ test("folder hierarchy and workspace placement remain separate and cycle-safe", 
   assert.match(functionSql("get_workspace_tree"), /'workspace'::text as relation/);
   assert.match(functionSql("get_workspace_tree"), /'folder'::text/);
   assert.match(sidebar, /tree_relation === "folder"/);
-  assert.match(sidebar, /공유 구조로 이동/);
+  assert.match(sidebar, /공유 구조 이동/);
 });
 
 test("owner trash hides resources without deleting shares and restore revives access", () => {

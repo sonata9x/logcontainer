@@ -70,6 +70,9 @@ test("Roll20 theme keeps messages frameless, descriptions centered, and dialogue
   assert.match(themeCss, /\.r20-message--description \.r20-message__content-flow \{ text-align: center; \}/);
   assert.match(themeCss, /\.r20-inline-roll \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff9c7;/);
   assert.match(themeCss, /\.r20-template__table caption \{[\s\S]*?background: #000;[\s\S]*?color: #fff;/);
+  assert.match(themeCss, /\.r20-message__content-flow \{ position: relative;/);
+  assert.match(themeCss, /\.r20-rich-context--block \{ display: block; margin: 0; \}/);
+  assert.doesNotMatch(themeCss, /\.log-rich-context \{[^}]*position: relative/);
 });
 
 test("image alt remains alternative text and is not rendered as a caption", () => {
