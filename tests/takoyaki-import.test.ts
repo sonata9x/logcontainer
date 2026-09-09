@@ -104,10 +104,18 @@ test("auto detection rejects unknown HTML", () => {
   assert.throws(() => importLogHtml("<html><p>plain</p></html>", "auto"), (error) => error instanceof ImportPlatformError && error.code === "undetected");
 });
 
-test("Roll20 casual stream is always removed by data-tab-id only", () => {
+test("Roll20 casual stream is removed by default using data-tab-id only", () => {
   const html = '<div class="message general" data-messageid="a" data-tab-id="main"><span class="by">GM:</span><span>keep</span></div><div class="message general" data-messageid="b" data-tab-id="casual"><span class="by">GM:</span><span>drop</span></div><div class="message general" data-messageid="c" style="display:none"><span class="by">GM:</span><span>still keep</span></div>';
   const result = importLogHtml(html, "roll20");
   assert.deepEqual(result.documents.map((document) => document.source.messageId), ["a", "c"]);
   assert.equal(result.report.hiddenRemovedCount, 1);
   assert.equal(result.documents[0].source.stream?.name, "메인");
+});
+
+test("Roll20 casual stream can be preserved as a separate tab", () => {
+  const html = '<div class="message general" data-messageid="a" data-tab-id="main"><span class="by">GM:</span><span>main</span></div><div class="message general" data-messageid="b" data-tab-id="casual"><span class="by">GM:</span><span>casual</span></div>';
+  const result = importLogHtml(html, "roll20", { separateCasual: true });
+  assert.deepEqual(result.documents.map((document) => document.source.stream?.id), ["main", "casual"]);
+  assert.equal(result.report.casualMessageCount, 1);
+  assert.equal(result.report.hiddenRemovedCount, 0);
 });

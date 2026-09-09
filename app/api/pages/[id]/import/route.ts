@@ -53,7 +53,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let imported;
   try {
-    imported = importLogHtml(source, requestedPlatform, { removeHiddenMessages: body.removeHiddenMessages === true });
+    imported = importLogHtml(source, requestedPlatform, {
+      removeHiddenMessages: body.removeHiddenMessages === true,
+      separateCasual: body.separateCasual === true
+    });
   } catch (error) {
     const message = error instanceof ImportPlatformError ? error.message : "선택한 플랫폼의 로그 구조를 HTML에서 찾지 못했습니다.";
     return NextResponse.json({ error: message }, { status: 400 });

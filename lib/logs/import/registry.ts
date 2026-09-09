@@ -3,7 +3,7 @@ import { importTakoyakiBoxHtml } from "@/lib/logs/takoyaki-box/import";
 import { detectImportPlatform } from "./detect";
 import { ImportPlatformError, type CanonicalImportResult, type ImportPlatformSelection } from "./types";
 
-export function importLogHtml(source: string, selection: ImportPlatformSelection, options: { removeHiddenMessages?: boolean } = {}): CanonicalImportResult {
+export function importLogHtml(source: string, selection: ImportPlatformSelection, options: { removeHiddenMessages?: boolean; separateCasual?: boolean } = {}): CanonicalImportResult {
   if (selection === "ccfolia") throw new ImportPlatformError("CCFOLIA 가져오기는 아직 지원하지 않습니다.", "unsupported");
   let platform = selection === "auto" ? null : selection;
   if (!platform) {

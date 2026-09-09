@@ -161,6 +161,7 @@ export type Roll20ImportReportV2 = {
   unknownFallbackCount: number;
   sanitizedStyleCount: number;
   droppedStyleCount: number;
+  casualMessageCount?: number;
   warningCount: number;
   warnings: ParserWarning[];
 };

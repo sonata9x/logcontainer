@@ -20,6 +20,7 @@ import { HandoutLibrary } from "@/components/HandoutLibrary";
 import { ExportDialog } from "@/components/ExportDialog";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import type { SupportedImportPlatform } from "@/lib/logs/import/types";
+import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
 
 export type ImportSummary = {
   provider?: string;
@@ -32,6 +33,7 @@ export type ImportSummary = {
   errorDuplicateCount?: number;
   hiddenRemovedCount?: number;
   warningCount?: number;
+  casualMessageCount?: number;
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
 
@@ -82,6 +84,8 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [importStatus, setImportStatus] = useState("");
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
   const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
+  const [separateCasual, setSeparateCasual] = useState(false);
+  const [activeStream, setActiveStream] = useState<LogStream>("main");
   const [importPlatform, setImportPlatform] = useState<SupportedImportPlatform | "ccfolia" | "">("");
   const [liveConnected, setLiveConnected] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -243,7 +247,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     let uploadId: string | null = null;
     let completed = false;
     try {
-      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean; platform: SupportedImportPlatform } = { source, removeHiddenMessages, platform: importPlatform };
+      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean; separateCasual: boolean; platform: SupportedImportPlatform } = { source, removeHiddenMessages, separateCasual, platform: importPlatform };
       if (sourceFile) {
         setImportStatus("안전한 업로드 주소를 준비하는 중…");
         const targetResponse = await fetch(`/api/pages/${page.id}/import/upload`, {
@@ -260,7 +264,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         setImportStatus("파일 업로드 중… 0%");
         await uploadRoll20File(sourceFile, target, session.access_token, (percentage) => setImportStatus(`파일 업로드 중… ${percentage}%`));
         setImportStatus("HTML 분석 및 저장 중…");
-        requestBody = { uploadId, removeHiddenMessages, platform: importPlatform };
+        requestBody = { uploadId, removeHiddenMessages, separateCasual, platform: importPlatform };
       } else {
         setImportStatus("HTML 분석 및 저장 중…");
       }
@@ -277,6 +281,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       setSourceFile(null);
       if (importFileInput.current) importFileInput.current.value = "";
       setSummary(result.report ?? null);
+      setActiveStream("main");
       setLiveEntries(result.entries ?? []);
       setTotalCount(result.count ?? result.entries?.length ?? 0);
       setShowImport(false);
@@ -452,8 +457,9 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} />{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content">
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
-        {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as SupportedImportPlatform | "ccfolia" | "")} disabled={pending} required><option value="" disabled>플랫폼을 선택해주세요</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{importPlatform === "roll20" && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><span>Roll20 사담(casual)은 항상 제외되며 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || !importPlatform || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
-        <section>{liveEntries.map((entry) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
+        {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as SupportedImportPlatform | "ccfolia" | "")} disabled={pending} required><option value="" disabled>플랫폼을 선택해주세요</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{importPlatform === "roll20" && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><label><input type="checkbox" checked={separateCasual} onChange={(event) => setSeparateCasual(event.target.checked)} disabled={pending} /> 사담 탭 분리</label><span>{separateCasual ? "사담(casual)을 같은 글의 별도 탭에 보관합니다." : "사담(casual)은 제외됩니다."} 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || !importPlatform || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
+        {((summary?.casualMessageCount ?? 0) > 0 || liveEntries.some(isCasualEntry)) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
+        <section>{visibleStreamEntries(liveEntries, activeStream).map((entry) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}

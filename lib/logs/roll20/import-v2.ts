@@ -7,7 +7,7 @@ import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
 
-export type Roll20ImportOptionsV2 = { removeHiddenMessages?: boolean };
+export type Roll20ImportOptionsV2 = { removeHiddenMessages?: boolean; separateCasual?: boolean };
 
 function kind(record: Roll20SourceRecord): LogEntryDocument["kind"] {
   if (["desc", "emote"].includes(record.type)) return "description";
@@ -84,7 +84,7 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     : primaryNormalization.records;
   let hiddenRemovedCount = 0;
   const visible = normalizedRecords.filter((record) => {
-    if (record.streamId === "casual") { hiddenRemovedCount += 1; return false; }
+    if (record.streamId === "casual" && !options.separateCasual) { hiddenRemovedCount += 1; return false; }
     const hidden = record.type === "hidden" || record.type === "hidden-message";
     if (options.removeHiddenMessages && hidden) { hiddenRemovedCount += 1; return false; }
     return true;
@@ -115,7 +115,7 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
       kind: documentKind,
       source: {
         platform: "roll20", messageId: record.messageId, sourceKey: record.sourceKey, sourceOrder: record.sourceOrder,
-        stream: record.streamId ? { id: record.streamId, name: record.streamId === "main" ? "메인" : record.streamId } : null,
+        stream: record.streamId ? { id: record.streamId, name: record.streamId === "main" ? "메인" : record.streamId === "casual" ? "사담" : record.streamId } : null,
         messageType: record.type
       },
       speaker,
@@ -145,7 +145,8 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     provider: "roll20", parserVersion: 2, sourceFormat: detected.format, importedAt: new Date().toISOString(), sourceMessageCount,
     logicalMessageCount: documents.length, structuralDuplicateCount: primaryNormalization.structuralDuplicateCount + (renderedNormalization?.structuralDuplicateCount ?? 0),
     errorDuplicateCount: duplicates.errorDuplicateCount, hiddenRemovedCount, unknownFallbackCount, sanitizedStyleCount,
-    droppedStyleCount, warningCount: warnings.length, warnings
+    droppedStyleCount, casualMessageCount: documents.filter((document) => document.source.stream?.id === "casual").length,
+    warningCount: warnings.length, warnings
   };
   return {
     platform: "roll20" as const,

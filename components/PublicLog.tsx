@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LogEntryBlock } from "@/components/LogEntryBlock";
 import { HandoutLibrary } from "@/components/HandoutLibrary";
 import type { LogEntry } from "@/lib/types";
+import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
 
 export function PublicLog({ token, title, initialEntries, totalCount }: { token: string; title: string; initialEntries: LogEntry[]; totalCount: number }) {
   const [entries, setEntries] = useState(initialEntries);
   const [loading, setLoading] = useState(false);
+  const [activeStream, setActiveStream] = useState<LogStream>("main");
   const loadingRef = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const loadMore = useCallback(async () => {
@@ -37,5 +39,5 @@ export function PublicLog({ token, title, initialEntries, totalCount }: { token:
     observer.observe(target);
     return () => observer.disconnect();
   }, [entries.length, loadMore, totalCount]);
-  return <main className="public-log"><header className="public-log-toolbar"><span>{title}</span><HandoutLibrary mode="public" token={token} /></header><h1>{title}</h1><section>{entries.map((entry) => <LogEntryBlock key={entry.id} entry={entry} />)}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
+  return <main className="public-log"><header className="public-log-toolbar"><span>{title}</span><HandoutLibrary mode="public" token={token} /></header><h1>{title}</h1>{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section>{visibleStreamEntries(entries, activeStream).map((entry) => <LogEntryBlock key={entry.id} entry={entry} />)}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
 }
