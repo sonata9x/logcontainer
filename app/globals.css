@@ -186,7 +186,7 @@ a { color: inherit; text-decoration: none; }
 .r20-message--description .r20-rich-context { text-align: inherit; }
 .log-rich-context *, .log-rich-context *::before, .log-rich-context *::after { box-sizing: border-box; }
 .r20-rich-context--inline { display: inline; }
-.r20-rich-context--block { display: block; margin: 3px 0; }
+.r20-rich-context--block { display: block; margin: 0; }
 .r20-rich-context--block > .r20-rich-root--centered { margin-right: auto; margin-left: auto; }
 .r20-rich-image { max-width: 100%; height: auto; }
 .r20-template { display: block; width: min(100%, 430px); margin: 7px 0; border: 0; border-radius: 0; background: transparent; color: #000; font-style: normal; box-shadow: none; }

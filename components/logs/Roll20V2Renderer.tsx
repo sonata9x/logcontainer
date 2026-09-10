@@ -35,6 +35,16 @@ function isCentered(style: RichStyle) {
   return style.some((declaration) => declaration.property === "text-align" && declaration.value.toLowerCase() === "center");
 }
 
+const BLOCK_FLOW_DISPLAYS = new Set(["block", "flex", "grid", "table", "table-row", "table-cell"]);
+
+function styleValue(style: RichStyle, property: string) {
+  return [...style].reverse().find((declaration) => declaration.property === property)?.value.trim().toLowerCase();
+}
+
+function styleNeedsBlockFlow(style: RichStyle) {
+  return BLOCK_FLOW_DISPLAYS.has(styleValue(style, "display") ?? "") || styleValue(style, "position") === "absolute";
+}
+
 function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?: TextEditor; root?: boolean }): ReactNode {
   if (node.type === "text") return <EditableText id={node.id} text={node.text} editor={editor} />;
   if (node.type === "break") return <br />;
@@ -51,7 +61,7 @@ function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?:
 }
 
 function richNeedsBlockFlow(nodes: RichNode[]): boolean {
-  return nodes.some((node) => node.type === "element" && (["div", "p", "blockquote", "pre"].includes(node.tag) || richNeedsBlockFlow(node.children)));
+  return nodes.some((node) => node.type === "element" && (["div", "p", "blockquote", "pre"].includes(node.tag) || styleNeedsBlockFlow(node.style) || richNeedsBlockFlow(node.children)));
 }
 
 function RichBlockView({ block, editor }: { block: Extract<LogBlock, { type: "rich" }>; editor?: TextEditor }) {

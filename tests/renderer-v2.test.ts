@@ -62,7 +62,7 @@ test("inline content mode keeps Rich presentation and exposes only text leaves",
   assert.doesNotMatch(html, /textarea|select|node id|RichNode|TextBlock/);
 });
 
-test("Roll20 theme keeps current spacing while user CSS uses the pre-September positioning context", () => {
+test("Roll20 theme keeps user CSS positioning in a block context without service-added vertical spacing", () => {
   assert.match(themeCss, /\.log-entry-v2 \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff;/);
   assert.doesNotMatch(themeCss, /\.entry-wrap:nth-child\(even\) \.r20-message/);
   assert.match(themeCss, /\.r20-message--dialogue \{[\s\S]*?grid-template-columns: 32px minmax\(0, 1fr\)/);
@@ -71,7 +71,7 @@ test("Roll20 theme keeps current spacing while user CSS uses the pre-September p
   assert.match(themeCss, /\.r20-inline-roll \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff9c7;/);
   assert.match(themeCss, /\.r20-template__table caption \{[\s\S]*?background: #000;[\s\S]*?color: #fff;/);
   assert.doesNotMatch(themeCss, /\.r20-message__content-flow \{[^}]*position: relative/);
-  assert.match(themeCss, /\.r20-rich-context--block \{ display: block; margin: 3px 0; \}/);
+  assert.match(themeCss, /\.r20-rich-context--block \{ display: block; margin: 0; \}/);
   assert.match(themeCss, /\.log-rich-context \{[^}]*position: relative/);
 });
 
@@ -90,4 +90,20 @@ test("a fixed-width centered user CSS root is centered without replacing its sty
   assert.match(themeCss, /\.r20-rich-context--block > \.r20-rich-root--centered \{ margin-right: auto; margin-left: auto; \}/);
   assert.doesNotMatch(themeCss, /\.r20-rich-root--centered \{[^}]*display:/);
   assert.doesNotMatch(themeCss, /\.r20-rich-root--centered \{[^}]*width:/);
+});
+
+test("CSS-blockified Roll20 link fallbacks use a full-width positioning context", () => {
+  const result = importRoll20HtmlV2('<div class="message desc" data-messageid="styled-link"><a style="position:absolute;width:100%;top:6px;left:0;display:block;text-align:center">title</a><a style="position:relative;padding-top:12px;display:block">body</a></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, /<div class="log-rich-context r20-rich-context r20-rich-context--block">/);
+  assert.match(html, /<span class="r20-rich-root--centered" style="position:absolute;width:100%;top:6px;left:0;display:block;text-align:center">title<\/span>/);
+  assert.match(html, /<span style="position:relative;padding-top:12px;display:block">body<\/span>/);
+  assert.doesNotMatch(html, /r20-rich-context--inline/);
+});
+
+test("an ordinary inline styled badge remains inline", () => {
+  const result = importRoll20HtmlV2('<div class="message desc" data-messageid="inline-badge"><a style="color:#fff;background-color:#c2200e;padding:0 3px">KPC</a></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, /<span class="log-rich-context r20-rich-context r20-rich-context--inline">/);
+  assert.doesNotMatch(html, /r20-rich-context--block/);
 });
