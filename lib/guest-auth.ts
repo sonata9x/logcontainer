@@ -12,7 +12,7 @@ export async function getGuestLinkContext(token: string) {
     .eq("token_hash", hashOpaqueToken(token)).eq("is_active", true).maybeSingle();
   if (!link) return null;
   const [{ data: page }, { data: log }] = await Promise.all([
-    admin.from("pages").select("id, title, page_type, deleted_at, is_archived").eq("id", link.page_id).maybeSingle(),
+    admin.from("pages").select("id, title, page_type, deleted_at, is_archived, overview, font_family, session_card_path, session_card_mime, session_card_size").eq("id", link.page_id).maybeSingle(),
     admin.from("logs").select("id, visible_entry_count, import_report, platform, updated_at").eq("page_id", link.page_id).maybeSingle()
   ]);
   if (!page || page.page_type !== "log" || page.deleted_at || page.is_archived || !log) return null;

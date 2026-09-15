@@ -107,3 +107,19 @@ test("an ordinary inline styled badge remains inline", () => {
   assert.match(html, /<span class="log-rich-context r20-rich-context r20-rich-context--inline">/);
   assert.doesNotMatch(html, /r20-rich-context--block/);
 });
+
+test("centered block roots discard only redundant boundary breaks", () => {
+  const result = importRoll20HtmlV2('<div class="message desc" data-messageid="trim"><div style="display:block;text-align:center"><br>first<br><br>second<br></div></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, />first<br\/><br\/>second</);
+  assert.doesNotMatch(html, /r20-rich-root--centered"[^>]*><br/);
+  assert.doesNotMatch(html, /second<br\/><\/span>/);
+});
+
+test("speaker and a sole roll template share one inline flow", () => {
+  const result = importRoll20HtmlV2('<div class="message general" data-messageid="roll"><span class="by">탐사자:</span><div class="sheet-rolltemplate-coc-1"><div class="sheet-template-container"><div class="sheet-template-header">관찰력</div><div>기준치: 60</div></div></div></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, /r20-message__content-flow--speaker-template/);
+  assert.match(html, /r20-template--speaker-inline/);
+  assert.ok(html.indexOf("r20-message__speaker") < html.indexOf("r20-template--"));
+});

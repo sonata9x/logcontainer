@@ -11,12 +11,13 @@ type Props = {
   onAdd: () => void;
   onEditCss: () => void;
   onHistory: () => void;
+  onEditBgm?: () => void;
   onRestoreOriginal: () => void;
   onDelete: () => void;
   onClose: () => void;
 };
 
-export function EntryContextMenu({ x, y, canEditCss, canRestoreOriginal, onAdd, onEditCss, onHistory, onRestoreOriginal, onDelete, onClose }: Props) {
+export function EntryContextMenu({ x, y, canEditCss, canRestoreOriginal, onAdd, onEditCss, onHistory, onEditBgm, onRestoreOriginal, onDelete, onClose }: Props) {
   useEffect(() => {
     const close = () => onClose();
     const keydown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -38,6 +39,7 @@ export function EntryContextMenu({ x, y, canEditCss, canRestoreOriginal, onAdd, 
   const menu = <div className="entry-context-menu" role="menu" style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <button type="button" role="menuitem" onClick={() => run(onAdd)}>아래에 로그 블록 추가</button>
     {canEditCss && <button type="button" role="menuitem" onClick={() => run(onEditCss)}>CSS 수정</button>}
+    {onEditBgm && <button type="button" role="menuitem" onClick={() => run(onEditBgm)}>BGM 설정</button>}
     <button type="button" role="menuitem" onClick={() => run(onHistory)}>수정 이력</button>
     {canRestoreOriginal && <button type="button" role="menuitem" onClick={() => run(onRestoreOriginal)}>원본 상태로 복원</button>}
     <hr />

@@ -29,6 +29,7 @@ const sidebarReorderMigration = readFileSync(new URL("../supabase/migrations/202
 const scopedMoveMigration = readFileSync(new URL("../supabase/migrations/202609090001_scoped_resource_movement.sql", import.meta.url), "utf8");
 const handoutMigration = readFileSync(new URL("../supabase/migrations/202609090002_handout_library.sql", import.meta.url), "utf8");
 const sidebarReliabilityMigration = readFileSync(new URL("../supabase/migrations/202609090003_sidebar_drag_reliability.sql", import.meta.url), "utf8");
+const pageExtrasBgmMigration = readFileSync(new URL("../supabase/migrations/202609140001_page_extras_bgm.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -143,6 +144,7 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const scopedMoveMarker = "-- 202609090001_scoped_resource_movement.sql";
   const handoutMarker = "-- 202609090002_handout_library.sql";
   const sidebarReliabilityMarker = "-- 202609090003_sidebar_drag_reliability.sql";
+  const pageExtrasBgmMarker = "-- Optional page extras, reusable BGM assets, personal libraries and playlists.";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(marker) + marker.length, schema.indexOf(nextMarker))), normalizedSql(migration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(nextMarker) + nextMarker.length, schema.indexOf(runtimeMarker))), normalizedSql(latencyMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(runtimeMarker) + runtimeMarker.length, schema.indexOf(settingsMarker))), normalizedSql(runtimeMigration));
@@ -167,7 +169,8 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(sidebarReorderMarker) + sidebarReorderMarker.length, schema.indexOf(scopedMoveMarker))), normalizedSql(sidebarReorderMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(scopedMoveMarker) + scopedMoveMarker.length, schema.indexOf(handoutMarker))), normalizedSql(scopedMoveMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(handoutMarker) + handoutMarker.length, schema.indexOf(sidebarReliabilityMarker))), normalizedSql(handoutMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(sidebarReliabilityMarker) + sidebarReliabilityMarker.length)), normalizedSql(sidebarReliabilityMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(sidebarReliabilityMarker) + sidebarReliabilityMarker.length, schema.indexOf(pageExtrasBgmMarker))), normalizedSql(sidebarReliabilityMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(pageExtrasBgmMarker) + pageExtrasBgmMarker.length)), normalizedSql(pageExtrasBgmMigration.replace(/^-- Optional page extras, reusable BGM assets, personal libraries and playlists\.\s*/, "")));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

@@ -45,6 +45,17 @@ function styleNeedsBlockFlow(style: RichStyle) {
   return BLOCK_FLOW_DISPLAYS.has(styleValue(style, "display") ?? "") || styleValue(style, "position") === "absolute";
 }
 
+function isWhitespaceNode(node: RichNode) {
+  return node.type === "text" && /^\s+$/.test(node.text);
+}
+
+function trimPresentationBoundaries(nodes: RichNode[]) {
+  const next = [...nodes];
+  while (next.length && (isWhitespaceNode(next[0]) || next[0].type === "break")) next.shift();
+  while (next.length && (isWhitespaceNode(next.at(-1)!) || next.at(-1)!.type === "break")) next.pop();
+  return next;
+}
+
 function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?: TextEditor; root?: boolean }): ReactNode {
   if (node.type === "text") return <EditableText id={node.id} text={node.text} editor={editor} />;
   if (node.type === "break") return <br />;
@@ -53,7 +64,8 @@ function RichNodeView({ node, editor, root = false }: { node: RichNode; editor?:
     return node.href ? <a href={node.href} target="_blank" rel="noopener noreferrer">{image}</a> : image;
   }
   if (node.type === "inline-roll") return <Roll20InlineRoll roll={node.roll} />;
-  const children = node.children.map((child) => <RichNodeView key={child.id} node={child} editor={editor} />);
+  const sourceChildren = root && (isCentered(node.style) || styleNeedsBlockFlow(node.style)) ? trimPresentationBoundaries(node.children) : node.children;
+  const children = sourceChildren.map((child) => <RichNodeView key={child.id} node={child} editor={editor} />);
   const props = { className: root && isCentered(node.style) ? "r20-rich-root--centered" : undefined, style: styleObject(node.style), title: node.title ?? undefined };
   if (!editor && node.tag === "a" && node.href) return <a {...props} href={node.href} target="_blank" rel="noopener noreferrer">{children}</a>;
   const Tag = node.tag === "a" ? "span" : node.tag;
@@ -67,7 +79,8 @@ function richNeedsBlockFlow(nodes: RichNode[]): boolean {
 function RichBlockView({ block, editor }: { block: Extract<LogBlock, { type: "rich" }>; editor?: TextEditor }) {
   const blockFlow = richNeedsBlockFlow(block.nodes);
   const Tag = blockFlow ? "div" : "span";
-  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{block.nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} root />)}</Tag>;
+  const nodes = blockFlow || block.nodes.some((node) => node.type === "element" && isCentered(node.style)) ? trimPresentationBoundaries(block.nodes) : block.nodes;
+  return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} root />)}</Tag>;
 }
 
 function fieldValue(field: RollTemplateField) {
@@ -87,7 +100,7 @@ function templateRows(block: RollTemplateBlock) {
   return rows;
 }
 
-function BlockView({ block, editor }: { block: LogBlock; editor?: TextEditor }) {
+function BlockView({ block, editor, speakerTemplate = false }: { block: LogBlock; editor?: TextEditor; speakerTemplate?: boolean }) {
   if (block.type === "text") return <span className="r20-text"><EditableText id={block.id} text={block.text} editor={editor} /></span>;
   if (block.type === "inline-roll") return <Roll20InlineRoll roll={block} />;
   if (block.type === "image") {
@@ -99,7 +112,7 @@ function BlockView({ block, editor }: { block: LogBlock; editor?: TextEditor }) 
   const rows = templateRows(block);
   const resultLabel = block.resultLabel || localizedResultLabel(block.resultLevel);
   return (
-    <section className={`r20-template r20-template--${block.resultLevel ?? "normal"}`}>
+    <section className={`r20-template r20-template--${block.resultLevel ?? "normal"}${speakerTemplate ? " r20-template--speaker-inline" : ""}`}>
       <table className="r20-template__table">
         {block.title && <caption>{block.title}</caption>}
         <tbody>{rows.map((row) => <tr className={`r20-template__field${row.result ? " r20-template__field--result" : ""}`} key={row.key}><td className="r20-template__label">{row.label}{/[：:]$/.test(row.label) ? "" : ":"}</td><td className={`r20-template__value${row.result && block.resultLevel ? ` r20-template__value--${block.resultLevel}` : ""}`}>{row.value}</td></tr>)}</tbody>
@@ -119,14 +132,15 @@ export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryD
   const showSpeaker = document.kind === "dialogue" && presentation.speakerExplicit && Boolean(document.speaker?.name);
   const showAvatar = document.kind === "dialogue" && presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
+  const speakerTemplate = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "roll-template";
   return (
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
       {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</div>}
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
-        <div className="r20-message__content-flow">
+        <div className={`r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}`}>
           {showSpeaker && <strong className="r20-message__speaker">{document.speaker!.name}:</strong>}
-          {document.blocks.map((block) => <BlockView key={block.id} block={block} editor={textEditor} />)}
+          {document.blocks.map((block) => <BlockView key={block.id} block={block} editor={textEditor} speakerTemplate={speakerTemplate} />)}
         </div>
       </div>
     </article>

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getGuestApiContext, GUEST_SESSION_COOKIE } from "@/lib/guest-auth";
 import { LOG_ENTRY_DTO_COLUMNS, toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
+import { getPageBgmItems } from "@/lib/bgm";
+import { serializePageExtras } from "@/lib/page-extras";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -11,12 +13,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   let query = context.admin.from("log_entries").select(LOG_ENTRY_DTO_COLUMNS)
     .eq("log_id", context.log.id).eq("is_deleted", false).order("sort_key").limit(50);
   if (Number.isFinite(after)) query = query.gt("sort_key", after);
-  const [{ data, error }, { data: latestEvent }] = await Promise.all([
+  const [{ data, error }, { data: latestEvent }, extras, bgmItems] = await Promise.all([
     query,
-    context.admin.from("log_change_events").select("id").eq("log_id", context.log.id).order("id", { ascending: false }).limit(1).maybeSingle()
+    context.admin.from("log_change_events").select("id").eq("log_id", context.log.id).order("id", { ascending: false }).limit(1).maybeSingle(),
+    serializePageExtras(context.admin, context.page),
+    getPageBgmItems(context.admin, context.page.id)
   ]);
   return error ? databaseErrorResponse(error, "Guest 로그를 불러오지 못했습니다.") : NextResponse.json({
-    page: { id: context.page.id, title: context.page.title },
+    page: { id: context.page.id, title: context.page.title }, extras, bgmItems,
     participant: { id: context.participant.id, nickname: context.participant.nickname, accessLevel: context.participant.access_level },
     entries: (data ?? []).map((entry) => toLogEntryDto(entry as Record<string, unknown>)),
     totalCount: context.log.visible_entry_count, importReport: context.log.import_report,

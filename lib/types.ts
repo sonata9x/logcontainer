@@ -4,6 +4,7 @@ export type WorkspaceRole = "owner" | "editor";
 export type ResourceRole = "viewer" | "editor" | "admin" | "owner";
 export type PageType = "folder" | "log";
 export type LogPlatform = "manual" | "roll20" | "takoyaki-box" | "ccfolia" | "other";
+export type LogFontFamily = "pretendard" | "gowoon-dodum" | "goun-batang" | "ridi-batang" | "nanum-myeongjo" | "natural-sans" | "ibm-plex-sans";
 export type AccountStatus = "pending" | "approved" | "rejected" | "disabled";
 
 export type Profile = {
@@ -48,8 +49,71 @@ export type WorkspacePage = {
   can_manage_shares?: boolean;
   can_invite?: boolean;
   can_self_remove?: boolean;
+  overview?: string | null;
+  font_family?: LogFontFamily;
+  session_card_path?: string | null;
+  session_card_mime?: string | null;
+  session_card_size?: number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type PageExtras = {
+  overview: string | null;
+  fontFamily: LogFontFamily;
+  sessionCardUrl: string | null;
+  sessionCardMime: string | null;
+  sessionCardSize: number | null;
+};
+
+export type BgmSourceType = "upload" | "youtube";
+export type BgmAsset = {
+  id: string;
+  owner_user_id?: string;
+  source_type: BgmSourceType;
+  canonical_title: string;
+  youtube_video_id?: string | null;
+  duration_seconds?: number | null;
+  mime_type?: string | null;
+  byte_size?: number | null;
+};
+
+export type BgmLibraryItem = {
+  id: string;
+  bgm_asset_id: string;
+  custom_title: string | null;
+  created_at: string;
+  asset: BgmAsset;
+};
+
+export type BgmPlaylistItem = {
+  id: string;
+  playlist_id: string;
+  bgm_asset_id: string;
+  custom_title: string | null;
+  sort_order: number;
+  asset: BgmAsset;
+};
+
+export type BgmPlaylist = {
+  id: string;
+  title: string;
+  source_page_id: string | null;
+  created_at: string;
+  updated_at: string;
+  items: BgmPlaylistItem[];
+};
+
+export type PageBgmItem = {
+  id: string;
+  page_id: string;
+  bgm_asset_id: string;
+  role: "waiting" | "entry";
+  entry_id: string | null;
+  sort_order: number;
+  custom_title: string | null;
+  created_at: string;
+  asset: BgmAsset;
 };
 
 export type HandoutImage = {

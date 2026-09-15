@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { previewSiblingResourceReorder } from "../lib/resources/reorder";
+import { previewSiblingResourceReorder, wouldCreateResourceCycle } from "../lib/resources/reorder";
+import { readFileSync } from "node:fs";
+
+const sidebar = readFileSync(new URL("../components/WorkspaceSidebar.tsx", import.meta.url), "utf8");
 
 const pages = [
   { id: "a", order_index: 0, tree_parent_id: null, tree_relation: "workspace" as const },
@@ -29,4 +32,22 @@ test("sidebar preview never crosses personal or shared hierarchy boundaries", ()
   assert.ok(result);
   assert.equal(result.relation, "folder");
   assert.equal(result.parentId, "shared");
+});
+
+test("folder drops reject the folder itself and every descendant", () => {
+  const tree = [
+    { id: "parent", order_index: 0, tree_parent_id: null },
+    { id: "child", order_index: 0, tree_parent_id: "parent" },
+    { id: "grandchild", order_index: 0, tree_parent_id: "child" },
+    { id: "other", order_index: 1, tree_parent_id: null }
+  ];
+  assert.equal(wouldCreateResourceCycle("grandchild", ["parent"], tree), true);
+  assert.equal(wouldCreateResourceCycle("parent", ["parent"], tree), true);
+  assert.equal(wouldCreateResourceCycle("other", ["parent"], tree), false);
+});
+
+test("long sidebar pointer drags auto-scroll and share the cycle guard with native drops", () => {
+  assert.match(sidebar, /scrollArea\.scrollBy/);
+  assert.match(sidebar, /wouldCreateResourceCycle\(target\.id/);
+  assert.match(sidebar, /!invalidFolderTarget/);
 });

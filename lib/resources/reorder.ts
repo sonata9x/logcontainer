@@ -42,3 +42,16 @@ export function previewSiblingResourceReorder<T extends TreePlacement>(pages: T[
     relation: target.tree_relation ?? "workspace"
   };
 }
+
+export function wouldCreateResourceCycle(targetId: string, movingIds: string[], pages: TreePlacement[]) {
+  const moving = new Set(movingIds);
+  const parentById = new Map(pages.map((page) => [page.id, page.tree_parent_id ?? null]));
+  let currentId: string | null = targetId;
+  const visited = new Set<string>();
+  while (currentId && !visited.has(currentId)) {
+    if (moving.has(currentId)) return true;
+    visited.add(currentId);
+    currentId = parentById.get(currentId) ?? null;
+  }
+  return false;
+}

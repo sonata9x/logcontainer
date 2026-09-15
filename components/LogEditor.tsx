@@ -6,7 +6,7 @@ import { Archive, Download, EllipsisVertical, GripVertical, History, Info, MoreH
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
 import { changedReorderRange } from "@/lib/logs/reorder";
-import type { LogEntry, LogEntryRevision, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
+import type { LogEntry, LogEntryRevision, PageBgmItem, PageExtras, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
@@ -21,6 +21,8 @@ import { ExportDialog } from "@/components/ExportDialog";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import type { SupportedImportPlatform } from "@/lib/logs/import/types";
 import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
+import { BgmLibraryAddButton, BgmPlayButton, BgmPlayerProvider } from "@/components/BgmPlayer";
+import { BgmAttachDialog, PageExtrasDisplay, PageExtrasEditor } from "@/components/PageExtrasPanel";
 
 export type ImportSummary = {
   provider?: string;
@@ -107,8 +109,16 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
   const [entryDragPreview, setEntryDragPreview] = useState<{ x: number; y: number; label: string } | null>(null);
   const [reorderPending, setReorderPending] = useState(false);
+  const [pageExtras, setPageExtras] = useState<PageExtras | null>(null);
+  const [bgmItems, setBgmItems] = useState<PageBgmItem[]>([]);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
+  useEffect(() => {
+    void Promise.all([
+      fetch(`/api/pages/${page.id}/extras`, { cache: "no-store" }).then((response) => response.json()),
+      fetch(`/api/pages/${page.id}/bgm`, { cache: "no-store" }).then((response) => response.json())
+    ]).then(([extrasResult, bgmResult]) => { if (extrasResult.extras) setPageExtras(extrasResult.extras); if (bgmResult.items) setBgmItems(bgmResult.items); });
+  }, [page.id]);
   useEffect(() => () => {
     pointerDragCleanupRef.current?.();
     if (reorderEventTimeoutRef.current) clearTimeout(reorderEventTimeoutRef.current);
@@ -453,13 +463,14 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   }
 
   return (
-    <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} />{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
-      <div className="workspace-content">
+    <BgmPlayerProvider access={{ pageId: page.id }}>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} pageTitle={title} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
+      <div className="workspace-content" data-font={pageExtras?.fontFamily ?? "pretendard"}>
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
+        <PageExtrasDisplay extras={pageExtras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />
         {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><button className="modal-close" type="button" onClick={() => setShowImport(false)} disabled={pending}><X size={17} /></button><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as SupportedImportPlatform | "ccfolia" | "")} disabled={pending} required><option value="" disabled>플랫폼을 선택해주세요</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{importPlatform === "roll20" && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><label><input type="checkbox" checked={separateCasual} onChange={(event) => setSeparateCasual(event.target.checked)} disabled={pending} /> 사담 탭 분리</label><span>{separateCasual ? "사담(casual)을 같은 글의 별도 탭에 보관합니다." : "사담(casual)은 제외됩니다."} 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || !importPlatform || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
         {((summary?.casualMessageCount ?? 0) > 0 || liveEntries.some(isCasualEntry)) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
-        <section>{visibleStreamEntries(liveEntries, activeStream).map((entry) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} canEdit={Boolean(page.can_edit)} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
+        <section>{visibleStreamEntries(liveEntries, activeStream).map((entry) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} bgmItem={bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id) ?? null} canEdit={Boolean(page.can_edit)} onBgmChange={(item) => setBgmItems((current) => [...current.filter((value) => value.entry_id !== entry.id), ...(item ? [item] : [])])} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}
@@ -467,7 +478,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
       {exportOpen && <ExportDialog endpoint={`/api/pages/${page.id}/export`} title={title} usePersonalDefaults onClose={() => setExportOpen(false)} />}
       {entryDragPreview && <div className="pointer-drag-preview pointer-drag-preview--log" style={{ left: entryDragPreview.x, top: entryDragPreview.y }}><GripVertical className="pointer-drag-preview__grip" size={17} /><strong>{entryDragPreview.label}</strong></div>}
-    </>
+    </BgmPlayerProvider>
   );
 }
 
@@ -509,7 +520,7 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
   return <div className="trash-control"><button className="button" onClick={toggle}><History size={14} /> 원본 백업</button>{open && <div className="trash-panel import-history-panel">{imports.length ? imports.map((item) => <div className="trash-item" key={item.id}><span><strong>{new Date(item.created_at).toLocaleString("ko-KR")}</strong><small>원본 {item.report?.sourceMessageCount ?? 0}개 · 논리 메시지 {item.report?.logicalMessageCount ?? item.report?.importedMessageCount ?? 0}개 · 오류 중복 제거 {item.report?.errorDuplicateCount ?? item.report?.duplicateMessageCount ?? 0}개</small></span><a className="button" href={`/api/pages/${pageId}/imports/${item.id}`}>HTML 다운로드</a></div>) : <p>저장된 원본이 없습니다.</p>}</div>}</div>;
 }
 
-const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onChange, onInsert, onDelete }: { pageId: string; entry: LogEntry; canEdit: boolean; onChange: (entry: LogEntry) => void; onInsert: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
+const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canEdit, onBgmChange, onChange, onInsert, onDelete }: { pageId: string; entry: LogEntry; bgmItem: PageBgmItem | null; canEdit: boolean; onBgmChange: (item: PageBgmItem | null) => void; onChange: (entry: LogEntry) => void; onInsert: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(null);
@@ -517,6 +528,7 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onCh
   const [showHistory, setShowHistory] = useState(false);
   const [showCss, setShowCss] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [editingBgm, setEditingBgm] = useState(false);
   const [cssDrafts, setCssDrafts] = useState<Array<{ id: string; label: string; css: string }>>([]);
   const [revisions, setRevisions] = useState<LogEntryRevision[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -651,9 +663,11 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, canEdit, onCh
         {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
       </article>;
   return <div className="entry-wrap">
+    {bgmItem && <><BgmPlayButton item={bgmItem} className="entry-bgm-button" /><BgmLibraryAddButton item={bgmItem} /></>}
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
     {entryBody}
-    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
     {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}
     {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}
     {showHistory && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div></ModalPortal>}
