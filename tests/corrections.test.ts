@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCorrections, normalizeEllipsis, normalizeQuotes, stripHtml } from "../lib/logs/corrections";
+import { applyCorrections, createReviewExport, normalizeEllipsis, normalizeQuotes, parseExportRequest, stripHtml } from "../lib/logs/corrections";
+import { EXPORT_PAGE_SIZE, fetchAllByRange } from "../lib/logs/export-all";
 import type { LogEntry } from "../lib/types";
 
 function entry(overrides: Partial<LogEntry>): LogEntry {
@@ -28,4 +29,25 @@ test("TXT export applies custom markers only at download time", () => {
   const result = applyCorrections([source], { custom_quote_open: "『", custom_quote_close: "』", custom_ellipsis: "⋯" });
   assert.equal(result, "GM\t『기다려⋯』\n");
   assert.equal(source.content, '"기다려..."');
+});
+
+test("review export preserves punctuation and multiline dialogue while using colon speaker format", () => {
+  const source = [
+    entry({ speaker_name: "아키라", content: '<b>..."그런 거 아니야?"</b>\n둘째 줄   ' }),
+    entry({ order_index: 1, sort_key: 1, entry_type: "image", content: "map.png" }),
+    entry({ order_index: 2, sort_key: 2, entry_type: "handout", content: "비밀 문서" })
+  ];
+  assert.equal(createReviewExport(source), '아키라: ..."그런 거 아니야?"\n둘째 줄\n\n[이미지 : map.png]\n\n[핸드아웃 : 비밀 문서]\n');
+  assert.deepEqual(parseExportRequest({ preset: "review" }), { preset: "review" });
+});
+
+test("full export range reader is not truncated at the service row cap", async () => {
+  const expected = Array.from({ length: EXPORT_PAGE_SIZE * 2 + 17 }, (_, index) => index);
+  const ranges: Array<[number, number]> = [];
+  const result = await fetchAllByRange<number>((from, to) => {
+    ranges.push([from, to]);
+    return Promise.resolve({ data: expected.slice(from, to + 1), error: null });
+  });
+  assert.deepEqual(result.data, expected);
+  assert.deepEqual(ranges, [[0, 999], [1000, 1999], [2000, 2999]]);
 });

@@ -2,7 +2,7 @@ import { sanitizeLogHtml } from "@/lib/logs/html";
 import { isStoredLogEntryDocumentV2 } from "@/lib/logs/model/validate";
 import type { LogEntry } from "@/lib/types";
 
-export const LOG_ENTRY_DTO_COLUMNS = "id, log_id, order_index, sort_key, entry_type, speaker_name, speaker_color, content, raw_html, document_version, document, is_deleted, deleted_at, is_added, updated_by, created_at, updated_at";
+export const LOG_ENTRY_DTO_COLUMNS = "id, log_id, order_index, sort_key, entry_type, speaker_name, speaker_color, content, raw_html, document_version, document, has_image_content, is_deleted, deleted_at, is_added, updated_by, created_at, updated_at";
 
 export function toLogEntryDto(input: Record<string, unknown>): LogEntry {
   const document = isStoredLogEntryDocumentV2(input.document) ? input.document : null;
