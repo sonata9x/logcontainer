@@ -30,16 +30,25 @@ html, body { margin: 0; min-height: 100%; }
 body {
   background: var(--canvas);
   color: var(--text);
-  font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--system-font-family, Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 14px;
 }
-[data-font="pretendard"] { font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-[data-font="gowoon-dodum"] { font-family: GowoonDodum, sans-serif; }
-[data-font="goun-batang"] { font-family: GounBatang, serif; }
-[data-font="ridi-batang"] { font-family: Ridibatang, "Nanum Myeongjo", serif; }
-[data-font="nanum-myeongjo"] { font-family: "Nanum Myeongjo", serif; }
-[data-font="natural-sans"] { font-family: NaturalSans, Pretendard, sans-serif; }
-[data-font="ibm-plex-sans"] { font-family: IbmPlexSans, sans-serif; }
+[data-font="pretendard"] { --log-font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+[data-font="gowoon-dodum"] { --log-font-family: GowoonDodum, sans-serif; }
+[data-font="goun-batang"] { --log-font-family: GounBatang, serif; }
+[data-font="ridi-batang"] { --log-font-family: Ridibatang, "Nanum Myeongjo", serif; }
+[data-font="nanum-myeongjo"] { --log-font-family: "Nanum Myeongjo", serif; }
+[data-font="natural-sans"] { --log-font-family: NaturalSans, Pretendard, sans-serif; }
+[data-font="ibm-plex-sans"] { --log-font-family: IbmPlexSans, sans-serif; }
+.workspace-shell { font-family: var(--system-font-family, Pretendard, sans-serif); }
+.page-title-input, .public-log > h1, .page-overview, .log-entry {
+  font-family: var(--log-font-family, Pretendard, sans-serif);
+}
+.log-entry button, .inline-content-editor__actions, .inline-content-editor__empty, .r20-message__timestamp {
+  font-family: var(--system-font-family, Pretendard, sans-serif);
+}
+.log-entry .field { font-family: var(--system-font-family, Pretendard, sans-serif); }
+.log-entry textarea { font-family: var(--log-font-family, Pretendard, sans-serif); }
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }

@@ -42,4 +42,8 @@ GPT 사이드탭에서 기존 폴더 이름 변경의 `prompt()` 역시 지원�
 
 추가 요청: 대기 BGM은 페이지마다 한 곡만 허용하며 다른 곡 선택 시 교체한다. `202609170002_single_waiting_bgm.sql`은 기존 연결 중 가장 최근 곡을 남기고 unique partial index를 추가한다. 페이지 잠금·편집권한·곡 접근권한·업로드 확정을 검증하는 RPC 안에서 기존 연결 삭제와 새 연결 삽입을 원자적으로 실행한다. 실패 시 기존 연결을 복구하는 DB transaction이며, 본문 메시지 BGM과 보관함/음악 파일은 변경하지 않는다. 재생 아이콘은 원형 테두리를 제거하고 투명 배경/hover 및 기존 focus outline을 유지한다.
 
-신규 SQL 적용 후 대기 BGM 교체를 실제 미리보기에서 검증하고 main 병합·push한다. 핸드아웃의 모든 모바일 화면 크기 및 원본 전체 visual parity를 완료했다고 주장하지 않는다.
+사용자가 `202609170002` SQL 적용을 완료했다. 실제 미리보기에서 기존 복수 대기 BGM이 최신 MP3 한 곡으로 정리됐으며, MP3→YouTube→MP3 교체 및 새로고침 후 한 곡 유지가 확인됐다. 재생 버튼 border 0px, 투명 배경도 확인했다. 음악 파일 및 보관함 항목은 유지했다.
+
+추가 요청: 페이지 폰트는 글 제목/본문/개요에만 적용한다. `[data-font]`는 이제 log font 변수를 지정할 뿐 시스템 UI에 font-family를 직접 전파하지 않는다. 날짜·편집 버튼은 시스템 폰트를 사용하고 Rich Content의 명시적 font-family는 보존한다. 시스템 UI 폰트는 계정의 `user_preferences.system_font_family`에 저장한다. 기존 자신의 설정에 대한 SELECT/UPDATE RLS를 재사용하고, 허용된 7종만 API 및 DB constraint에서 검증한다. 설정 저장 즉시 sidebar/status/buttons/menus와 body portal에 적용하며 workspace 이탈 시 body 스타일을 복구한다. 기존 사용자는 Pretendard 기본값으로 시작한다. 게시 및 손님 화면의 콘텐츠 폰트도 제목/본문에만 적용하고 시스템 UI는 기본 서비스 폰트를 사용한다.
+
+`202609170003_system_font_preferences.sql` 적용 후 계정 설정 저장 및 두 폰트 분리를 실제 미리보기에서 검증하고 main 병합·push한다. 핸드아웃의 모든 모바일 화면 크기 및 원본 전체 visual parity를 완료했다고 주장하지 않는다.
