@@ -51,8 +51,9 @@ function isWhitespaceNode(node: RichNode) {
 
 function trimPresentationBoundaries(nodes: RichNode[]) {
   const next = [...nodes];
-  while (next.length && (isWhitespaceNode(next[0]) || next[0].type === "break")) next.shift();
-  while (next.length && (isWhitespaceNode(next.at(-1)!) || next.at(-1)!.type === "break")) next.pop();
+  // Explicit breaks belong to the author's vertical layout, not indentation.
+  while (next.length && isWhitespaceNode(next[0])) next.shift();
+  while (next.length && isWhitespaceNode(next.at(-1)!)) next.pop();
   return next;
 }
 

@@ -70,8 +70,8 @@ test("Roll20 theme keeps user CSS positioning in a block context without service
   assert.match(themeCss, /\.r20-message--description \.r20-message__content-flow \{ text-align: center; \}/);
   assert.match(themeCss, /\.r20-inline-roll \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff9c7;/);
   assert.match(themeCss, /\.r20-template__table caption \{[\s\S]*?background: #000;[\s\S]*?color: #fff;/);
-  assert.doesNotMatch(themeCss, /\.r20-message__content-flow \{[^}]*position: relative/);
-  assert.match(themeCss, /\.r20-rich-context--block \{ display: block; margin: 0; \}/);
+  assert.match(themeCss, /\.r20-message__content-flow \{[^}]*position: relative/);
+  assert.match(themeCss, /\.r20-rich-context--block \{ position: static; display: block; margin: 0; \}/);
   assert.match(themeCss, /\.log-rich-context \{[^}]*position: relative/);
 });
 
@@ -108,12 +108,11 @@ test("an ordinary inline styled badge remains inline", () => {
   assert.doesNotMatch(html, /r20-rich-context--block/);
 });
 
-test("centered block roots discard only redundant boundary breaks", () => {
+test("centered block roots preserve authored vertical boundary breaks", () => {
   const result = importRoll20HtmlV2('<div class="message desc" data-messageid="trim"><div style="display:block;text-align:center"><br>first<br><br>second<br></div></div>');
   const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
-  assert.match(html, />first<br\/><br\/>second</);
-  assert.doesNotMatch(html, /r20-rich-root--centered"[^>]*><br/);
-  assert.doesNotMatch(html, /second<br\/><\/span>/);
+  assert.match(html, /><br\/>first<br\/><br\/>second<br\/></);
+  assert.match(html, /r20-rich-root--centered"[^>]*><br/);
 });
 
 test("speaker and a sole roll template share one inline flow", () => {

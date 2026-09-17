@@ -56,11 +56,13 @@ export function PageExtrasEditor({ pageId, pageTitle, extras, bgmItems, onChange
   }
   async function save() {
     setPending(true);
-    const response = await fetch(`/api/pages/${pageId}/extras`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ overview, fontFamily }) });
-    const result = await response.json().catch(() => ({}));
-    setPending(false);
-    if (!response.ok) return window.alert(result.error ?? "페이지 설정을 저장하지 못했습니다.");
-    onChange(result.extras); setOpen(false);
+    try {
+      const response = await fetch(`/api/pages/${pageId}/extras`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ overview, fontFamily }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "페이지 설정을 저장하지 못했습니다.");
+      onChange(result.extras); setOpen(false);
+    } catch (error) { window.alert(error instanceof Error ? error.message : "페이지 설정을 저장하지 못했습니다."); }
+    finally { setPending(false); }
   }
   async function uploadCard(file: File) {
     if (!SESSION_CARD_TYPES.has(file.type) || file.size <= 0 || file.size > SESSION_CARD_MAX_BYTES) return window.alert("10MB 이하 PNG, JPG, GIF, WebP 이미지만 사용할 수 있습니다.");

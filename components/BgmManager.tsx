@@ -17,13 +17,20 @@ export function BgmManager() {
   useEffect(() => { void load(); }, [load]);
 
   async function addYoutube(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setPending(true); const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/bgm/library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: form.get("title"), youtubeUrl: form.get("youtubeUrl") }) });
-    const result = await response.json().catch(() => ({})); setPending(false);
-    if (!response.ok) return window.alert(result.error ?? "YouTube BGM을 추가하지 못했습니다.");
-    event.currentTarget.reset(); await load();
+    event.preventDefault();
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    setPending(true);
+    try {
+      const response = await fetch("/api/bgm/library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: form.get("title"), youtubeUrl: form.get("youtubeUrl") }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "YouTube BGM을 추가하지 못했습니다.");
+      element.reset(); await load();
+    } catch (error) { window.alert(error instanceof Error ? error.message : "BGM을 저장하지 못했습니다."); }
+    finally { setPending(false); }
   }
   async function upload(file: File) {
+    if (!/\.mp3$/i.test(file.name) || file.size <= 0 || file.size > 25_000_000) return window.alert("25MB 이하 MP3 파일만 사용할 수 있습니다.");
     const title = window.prompt("BGM 제목", file.name.replace(/\.mp3$/i, ""))?.trim(); if (!title) return;
     setPending(true);
     try {

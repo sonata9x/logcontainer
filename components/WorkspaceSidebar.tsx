@@ -82,6 +82,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const dragReorderRef = useRef<ResourceReorder<WorkspacePage> | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const pointerDragCleanupRef = useRef<(() => void) | null>(null);
+  const lastDragScrollAtRef = useRef(0);
   const resourceMutationInFlightRef = useRef(false);
   const suppressTreeRefreshUntilRef = useRef(0);
   const selectionAnchor = useRef<string | null>(null);
@@ -319,16 +320,18 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const moveResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const pointer = pointerDragRef.current;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
-    if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 4) return;
+    if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 8) return;
     pointer.moved = true;
     event.preventDefault();
     setDragPreview((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current);
     const scrollArea = document.querySelector<HTMLElement>("#workspace-navigation .page-tree");
-    if (scrollArea) {
+    const scrollAt = performance.now();
+    if (scrollArea && scrollAt - lastDragScrollAtRef.current >= 16) {
+      lastDragScrollAtRef.current = scrollAt;
       const scrollBounds = scrollArea.getBoundingClientRect();
       const edge = Math.min(48, scrollBounds.height / 4);
-      if (event.clientY < scrollBounds.top + edge) scrollArea.scrollBy({ top: -Math.max(8, (scrollBounds.top + edge - event.clientY) * 0.45), behavior: "auto" });
-      else if (event.clientY > scrollBounds.bottom - edge) scrollArea.scrollBy({ top: Math.max(8, (event.clientY - (scrollBounds.bottom - edge)) * 0.45), behavior: "auto" });
+      if (event.clientY < scrollBounds.top + edge) scrollArea.scrollBy({ top: -Math.min(8, Math.max(1, (scrollBounds.top + edge - event.clientY) * 0.15)), behavior: "auto" });
+      else if (event.clientY > scrollBounds.bottom - edge) scrollArea.scrollBy({ top: Math.min(8, Math.max(1, (event.clientY - (scrollBounds.bottom - edge)) * 0.15)), behavior: "auto" });
     }
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     if (hit?.closest(".workspace-root-drop")) {
@@ -338,16 +341,21 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     }
     const row = hit?.closest<HTMLElement>("[data-resource-id]");
     const target = row?.dataset.resourceId ? livePages.find((page) => page.id === row.dataset.resourceId) : null;
-    if (!row || !target || draggingIdsRef.current.includes(target.id)) return setResourceDropTarget(null);
+    if (!row || !target) return setResourceDropTarget(null);
+    // A live preview moves the dragged row under the cursor. Keep its last
+    // insertion intent instead of cancelling a valid drop because of that reflow.
+    if (draggingIdsRef.current.includes(target.id)) return;
     if (target.page_type === "folder" && wouldCreateResourceCycle(target.id, draggingIdsRef.current, dragOriginPagesRef.current ?? livePages)) return setResourceDropTarget(null);
     const bounds = row.getBoundingClientRect();
     const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
-    if (target.page_type === "folder" && ratio >= 0.2 && ratio <= 0.8) {
+    if (target.page_type === "folder" && ratio >= 0.3 && ratio <= 0.7) {
       if (dragOriginPagesRef.current) setLivePages(dragOriginPagesRef.current);
       dragReorderRef.current = null;
       return setResourceDropTarget(target.id, "inside");
     }
     const position = ratio < 0.5 ? "before" : "after";
+    // Do not flip insertion sides for tiny pointer movements near a row's midpoint.
+    if (target.page_type !== "folder" && ratio > 0.4 && ratio < 0.6) return;
     if (previewResourceReorder(target.id, position)) return;
     const origin = dragOriginPagesRef.current;
     const crossesContainer = origin && draggingIdsRef.current.some((resourceId) => {
