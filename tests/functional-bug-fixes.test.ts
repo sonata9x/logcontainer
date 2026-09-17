@@ -32,6 +32,20 @@ test("async YouTube forms retain the form and release pending on failure", () =>
   }
 });
 
+test("MP3 upload uses an accessible in-page title dialog instead of browser prompt", () => {
+  const dialog = read("components/BgmUploadDialog.tsx");
+  assert.match(dialog, /role="dialog" aria-modal="true" aria-label="MP3 업로드"/);
+  assert.match(dialog, /role="alert"/);
+  assert.match(dialog, /await onUpload\(title.trim\(\)\)/);
+  assert.match(dialog, /pending \|\| !title.trim\(\)/);
+  for (const file of ["BgmManager", "BgmSourceCreator"]) {
+    const ui = read(`components/${file}.tsx`);
+    assert.match(ui, /<BgmUploadDialog/);
+    assert.doesNotMatch(ui, /window.prompt\("BGM 제목"/);
+    assert.match(ui, /throw new Error\("25MB 이하 MP3/);
+  }
+});
+
 test("Rich absolute offsets anchor to message flow, not synthetic block wrapper", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.r20-message__content-flow \{ position: relative;/);

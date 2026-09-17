@@ -4,11 +4,13 @@ import { ChevronDown, ChevronUp, ListMusic, Music, Pencil, Plus, Trash2, Upload 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { BgmLibraryItem, BgmPlaylist } from "@/lib/types";
+import { BgmUploadDialog } from "@/components/BgmUploadDialog";
 
 export function BgmManager() {
   const [items, setItems] = useState<BgmLibraryItem[]>([]);
   const [playlists, setPlaylists] = useState<BgmPlaylist[]>([]);
   const [pending, setPending] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     const [library, playlist] = await Promise.all([fetch("/api/bgm/library", { cache: "no-store" }).then((response) => response.json()), fetch("/api/bgm/playlists", { cache: "no-store" }).then((response) => response.json())]);
@@ -29,9 +31,8 @@ export function BgmManager() {
     } catch (error) { window.alert(error instanceof Error ? error.message : "BGM을 저장하지 못했습니다."); }
     finally { setPending(false); }
   }
-  async function upload(file: File) {
-    if (!/\.mp3$/i.test(file.name) || file.size <= 0 || file.size > 25_000_000) return window.alert("25MB 이하 MP3 파일만 사용할 수 있습니다.");
-    const title = window.prompt("BGM 제목", file.name.replace(/\.mp3$/i, ""))?.trim(); if (!title) return;
+  async function upload(file: File, title: string) {
+    if (!/\.mp3$/i.test(file.name) || file.size <= 0 || file.size > 25_000_000) throw new Error("25MB 이하 MP3 파일만 사용할 수 있습니다.");
     setPending(true);
     try {
       const prepare = await fetch("/api/bgm/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, mimeType: "audio/mpeg", byteSize: file.size }) });
@@ -41,8 +42,8 @@ export function BgmManager() {
       const confirm = await fetch("/api/bgm/upload", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId: target.assetId }) });
       const result = await confirm.json().catch(() => ({})); if (!confirm.ok) throw new Error(result.error ?? "업로드를 확정하지 못했습니다.");
       await load();
-    } catch (error) { window.alert(error instanceof Error ? error.message : "BGM을 업로드하지 못했습니다."); }
-    finally { setPending(false); }
+      setUploadFile(null);
+    } finally { setPending(false); }
   }
   async function rename(item: BgmLibraryItem) {
     const title = window.prompt("보관함에서 표시할 이름", item.custom_title || item.asset.canonical_title); if (title == null) return;
@@ -84,5 +85,5 @@ export function BgmManager() {
     const response = await fetch("/api/bgm/playlists/items", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ playlistId: playlist.id, itemIds: reordered.map((item) => item.id) }) }); if (!response.ok) return window.alert("곡 순서를 바꾸지 못했습니다."); await load();
   }
 
-  return <section className="bgm-manager"><div className="bgm-manager-heading"><h3><Music size={16} />BGM 보관함</h3><button className="button" onClick={() => fileInput.current?.click()} disabled={pending}><UploadIcon size={14} />MP3 업로드</button><input ref={fileInput} className="visually-hidden" type="file" accept="audio/mpeg,.mp3" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /></div><form className="bgm-youtube-form" onSubmit={addYoutube}><input name="title" placeholder="BGM 제목" maxLength={200} required /><input name="youtubeUrl" placeholder="YouTube 주소" required /><button className="button" disabled={pending}><Plus size={14} />추가</button></form><div className="bgm-library-list">{items.map((item) => <div key={item.id}><span>{item.custom_title || item.asset.canonical_title}<small>{item.asset.source_type === "youtube" ? "YouTube" : "MP3"}</small></span><button onClick={() => void rename(item)} title="이름 변경"><Pencil size={13} /></button><button onClick={() => void remove(item)} title="보관함에서 제거"><Trash2 size={13} /></button></div>)}{!items.length && <p>아직 저장한 BGM이 없습니다.</p>}</div><div className="bgm-manager-heading"><h3><ListMusic size={16} />플레이리스트</h3><button className="button" onClick={() => void createPlaylist()}><Plus size={14} />새 플레이리스트</button></div><div className="bgm-playlist-list">{playlists.map((playlist) => <section key={playlist.id}><header><strong>{playlist.title}</strong>{playlist.source_page_id && <small>페이지와 자동 연동</small>}<button onClick={() => void addToPlaylist(playlist)}><Plus size={13} /></button><button onClick={() => void renamePlaylist(playlist)}><Pencil size={13} /></button><button onClick={() => void deletePlaylist(playlist)}><Trash2 size={13} /></button></header>{playlist.items.map((item) => <div key={item.id}><span>{item.custom_title || item.asset.canonical_title}</span><button onClick={() => void movePlaylistItem(playlist, item.id, -1)} title="위로"><ChevronUp size={12} /></button><button onClick={() => void movePlaylistItem(playlist, item.id, 1)} title="아래로"><ChevronDown size={12} /></button><button onClick={() => void renamePlaylistItem(playlist, item.id, item.custom_title || item.asset.canonical_title)} title="플레이리스트 별칭"><Pencil size={12} /></button><button onClick={() => void removePlaylistItem(playlist, item.id)} title="플레이리스트에서 제거"><Trash2 size={12} /></button></div>)}</section>)}</div></section>;
+  return <section className="bgm-manager"><div className="bgm-manager-heading"><h3><Music size={16} />BGM 보관함</h3><button className="button" onClick={() => fileInput.current?.click()} disabled={pending}><UploadIcon size={14} />MP3 업로드</button><input ref={fileInput} className="visually-hidden" type="file" accept="audio/mpeg,.mp3" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) setUploadFile(file); }} /></div><form className="bgm-youtube-form" onSubmit={addYoutube}><input name="title" placeholder="BGM 제목" maxLength={200} required /><input name="youtubeUrl" placeholder="YouTube 주소" required /><button className="button" disabled={pending}><Plus size={14} />추가</button></form><div className="bgm-library-list">{items.map((item) => <div key={item.id}><span>{item.custom_title || item.asset.canonical_title}<small>{item.asset.source_type === "youtube" ? "YouTube" : "MP3"}</small></span><button onClick={() => void rename(item)} title="이름 변경"><Pencil size={13} /></button><button onClick={() => void remove(item)} title="보관함에서 제거"><Trash2 size={13} /></button></div>)}{!items.length && <p>아직 저장한 BGM이 없습니다.</p>}</div><div className="bgm-manager-heading"><h3><ListMusic size={16} />플레이리스트</h3><button className="button" onClick={() => void createPlaylist()}><Plus size={14} />새 플레이리스트</button></div><div className="bgm-playlist-list">{playlists.map((playlist) => <section key={playlist.id}><header><strong>{playlist.title}</strong>{playlist.source_page_id && <small>페이지와 자동 연동</small>}<button onClick={() => void addToPlaylist(playlist)}><Plus size={13} /></button><button onClick={() => void renamePlaylist(playlist)}><Pencil size={13} /></button><button onClick={() => void deletePlaylist(playlist)}><Trash2 size={13} /></button></header>{playlist.items.map((item) => <div key={item.id}><span>{item.custom_title || item.asset.canonical_title}</span><button onClick={() => void movePlaylistItem(playlist, item.id, -1)} title="위로"><ChevronUp size={12} /></button><button onClick={() => void movePlaylistItem(playlist, item.id, 1)} title="아래로"><ChevronDown size={12} /></button><button onClick={() => void renamePlaylistItem(playlist, item.id, item.custom_title || item.asset.canonical_title)} title="플레이리스트 별칭"><Pencil size={12} /></button><button onClick={() => void removePlaylistItem(playlist, item.id)} title="플레이리스트에서 제거"><Trash2 size={12} /></button></div>)}</section>)}</div>{uploadFile && <BgmUploadDialog key={uploadFile.name + uploadFile.lastModified} file={uploadFile} pending={pending} onUpload={(title) => upload(uploadFile, title)} onClose={() => setUploadFile(null)} />}</section>;
 }
