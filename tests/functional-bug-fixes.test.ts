@@ -58,3 +58,27 @@ test("empty pages expose manual content creation and handout header has accessib
   const ui = read("components/HandoutLibrary.tsx");
   for (const action of ["수정", "삭제", "닫기"]) assert.ok(ui.includes(`aria-label="핸드아웃 ${action}"`));
 });
+
+test("waiting BGM replacement is permission-checked atomic and constrained to one row", () => {
+  const sql = read("supabase/migrations/202609170002_single_waiting_bgm.sql");
+  assert.match(sql, /create unique index if not exists page_bgm_one_waiting_idx[\s\S]*\(page_id\) where role = 'waiting'/);
+  assert.match(sql, /actor_id is null or not public.can_edit_resource/);
+  assert.match(sql, /can_access_bgm_asset\(target_asset_id, actor_id\)/);
+  assert.match(sql, /and is_ready and deleted_at is null for share/);
+  assert.match(sql, /not is_archived for update/);
+  assert.match(sql, /partition by page_id order by created_at desc, sort_order desc, id desc/);
+  assert.match(sql, /delete from public.page_bgm_items where page_id = target_page_id and role = 'waiting'/);
+  assert.match(sql, /revoke all on function public.set_page_waiting_bgm.*from public, anon/);
+  assert.doesNotMatch(sql, /delete from public\.(bgm_assets|bgm_library_items|bgm_playlist_items)/);
+  const route = read("app/api/pages/[id]/bgm/route.ts");
+  assert.match(route, /if \(role === "waiting"\)[\s\S]*rpc\("set_page_waiting_bgm"/);
+  const ui = read("components/PageExtrasPanel.tsx");
+  assert.match(ui, /bgmItems.filter\(\(item\) => item.role !== "waiting"\), result.item/);
+  assert.match(ui, /다른 곡을 선택하면 현재 대기 BGM을 교체합니다/);
+});
+
+test("BGM playback icons have no circular border and retain focus styling", () => {
+  const css = read("app/globals.css");
+  assert.match(css, /\.global-bgm-player button, \.bgm-play-button \{[^}]*border: 0;[^}]*background: transparent/);
+  assert.match(css, /\.bgm-play-button:hover, \.global-bgm-player button:hover/);
+});
