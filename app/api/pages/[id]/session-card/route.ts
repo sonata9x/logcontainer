@@ -30,7 +30,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: files, error: listError } = await admin.storage.from(SESSION_CARD_BUCKET).list(id, { search: body.path.slice(id.length + 1), limit: 2 });
   if (listError || !files?.some((file) => `${id}/${file.name}` === body.path)) return NextResponse.json({ error: "업로드된 이미지를 찾지 못했습니다." }, { status: 400 });
   const { data: previous } = await context.supabase.from("pages").select(SELECT).eq("id", id).single();
-  const { error } = await context.supabase.from("pages").update({ session_card_path: body.path, session_card_mime: body.mimeType, session_card_size: body.byteSize }).eq("id", id);
+  const { error } = await context.supabase.rpc("update_page_extras", { target_page_id: id, changes: { session_card_path: body.path, session_card_mime: body.mimeType, session_card_size: body.byteSize } });
   if (error) {
     await admin.storage.from(SESSION_CARD_BUCKET).remove([body.path]);
     return databaseErrorResponse(error, "세션 카드를 저장하지 못했습니다.");
@@ -44,7 +44,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const context = await getApiPageContext(id);
   if (!context?.canEdit || context.page.page_type !== "log") return NextResponse.json({ error: "페이지 수정 권한이 없습니다." }, { status: 403 });
   const { data: previous } = await context.supabase.from("pages").select(SELECT).eq("id", id).single();
-  const { error } = await context.supabase.from("pages").update({ session_card_path: null, session_card_mime: null, session_card_size: null }).eq("id", id);
+  const { error } = await context.supabase.rpc("update_page_extras", { target_page_id: id, changes: { session_card_path: null, session_card_mime: null, session_card_size: null } });
   if (error) return databaseErrorResponse(error, "세션 카드를 삭제하지 못했습니다.");
   if (previous?.session_card_path) await createSupabaseAdminClient().storage.from(SESSION_CARD_BUCKET).remove([previous.session_card_path]);
   return NextResponse.json({ ok: true });

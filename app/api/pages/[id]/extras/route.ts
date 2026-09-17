@@ -28,7 +28,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   if (Object.hasOwn(body, "fontFamily")) update.font_family = parseLogFontFamily(body.fontFamily);
   if (!Object.keys(update).length) return NextResponse.json({ error: "변경할 값이 없습니다." }, { status: 400 });
-  const { data, error } = await context.supabase.from("pages").update(update).eq("id", id).select(SELECT).single();
+  const { data, error } = await context.supabase.rpc("update_page_extras", { target_page_id: id, changes: update });
   if (error) return databaseErrorResponse(error, "페이지 정보를 저장하지 못했습니다.");
   return NextResponse.json({ extras: await serializePageExtras(createSupabaseAdminClient(), data) });
 }

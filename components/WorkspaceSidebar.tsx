@@ -6,7 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import type { PageType, ResourceRole, WorkspacePage } from "@/lib/types";
+import type { LogFontFamily, PageType, ResourceRole, WorkspacePage } from "@/lib/types";
+import { LOG_FONT_OPTIONS, parseLogFontFamily } from "@/lib/fonts";
+import { useWorkspaceAppearance } from "@/components/WorkspaceAppearance";
 import { defaultCorrectionSettings, type CorrectionSettings } from "@/lib/logs/corrections";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import { normalizeHexColor } from "@/lib/color";
@@ -61,6 +63,7 @@ function OverlayPortal({ children }: { children: ReactNode }) {
 }
 
 export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentColor, pages, isSiteAdmin }: { workspaceId: string; workspaceName: string; nickname: string; accentColor: string; pages: WorkspacePage[]; isSiteAdmin: boolean }) {
+  const { systemFont, setSystemFont } = useWorkspaceAppearance();
   const router = useRouter();
   const pathname = usePathname();
   const [creating, setCreating] = useState(false);
@@ -82,6 +85,7 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const dragReorderRef = useRef<ResourceReorder<WorkspacePage> | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const pointerDragCleanupRef = useRef<(() => void) | null>(null);
+  const lastDragScrollAtRef = useRef(0);
   const resourceMutationInFlightRef = useRef(false);
   const suppressTreeRefreshUntilRef = useRef(0);
   const selectionAnchor = useRef<string | null>(null);
@@ -319,16 +323,18 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
   const moveResourcePointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const pointer = pointerDragRef.current;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
-    if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 4) return;
+    if (!pointer.moved && Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 8) return;
     pointer.moved = true;
     event.preventDefault();
     setDragPreview((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current);
     const scrollArea = document.querySelector<HTMLElement>("#workspace-navigation .page-tree");
-    if (scrollArea) {
+    const scrollAt = performance.now();
+    if (scrollArea && scrollAt - lastDragScrollAtRef.current >= 16) {
+      lastDragScrollAtRef.current = scrollAt;
       const scrollBounds = scrollArea.getBoundingClientRect();
       const edge = Math.min(48, scrollBounds.height / 4);
-      if (event.clientY < scrollBounds.top + edge) scrollArea.scrollBy({ top: -Math.max(8, (scrollBounds.top + edge - event.clientY) * 0.45), behavior: "auto" });
-      else if (event.clientY > scrollBounds.bottom - edge) scrollArea.scrollBy({ top: Math.max(8, (event.clientY - (scrollBounds.bottom - edge)) * 0.45), behavior: "auto" });
+      if (event.clientY < scrollBounds.top + edge) scrollArea.scrollBy({ top: -Math.min(8, Math.max(1, (scrollBounds.top + edge - event.clientY) * 0.15)), behavior: "auto" });
+      else if (event.clientY > scrollBounds.bottom - edge) scrollArea.scrollBy({ top: Math.min(8, Math.max(1, (event.clientY - (scrollBounds.bottom - edge)) * 0.15)), behavior: "auto" });
     }
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     if (hit?.closest(".workspace-root-drop")) {
@@ -338,16 +344,21 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     }
     const row = hit?.closest<HTMLElement>("[data-resource-id]");
     const target = row?.dataset.resourceId ? livePages.find((page) => page.id === row.dataset.resourceId) : null;
-    if (!row || !target || draggingIdsRef.current.includes(target.id)) return setResourceDropTarget(null);
+    if (!row || !target) return setResourceDropTarget(null);
+    // A live preview moves the dragged row under the cursor. Keep its last
+    // insertion intent instead of cancelling a valid drop because of that reflow.
+    if (draggingIdsRef.current.includes(target.id)) return;
     if (target.page_type === "folder" && wouldCreateResourceCycle(target.id, draggingIdsRef.current, dragOriginPagesRef.current ?? livePages)) return setResourceDropTarget(null);
     const bounds = row.getBoundingClientRect();
     const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
-    if (target.page_type === "folder" && ratio >= 0.2 && ratio <= 0.8) {
+    if (target.page_type === "folder" && ratio >= 0.3 && ratio <= 0.7) {
       if (dragOriginPagesRef.current) setLivePages(dragOriginPagesRef.current);
       dragReorderRef.current = null;
       return setResourceDropTarget(target.id, "inside");
     }
     const position = ratio < 0.5 ? "before" : "after";
+    // Do not flip insertion sides for tiny pointer movements near a row's midpoint.
+    if (target.page_type !== "folder" && ratio > 0.4 && ratio < 0.6) return;
     if (previewResourceReorder(target.id, position)) return;
     const origin = dragOriginPagesRef.current;
     const crossesContainer = origin && draggingIdsRef.current.some((resourceId) => {
@@ -415,32 +426,44 @@ export function WorkspaceSidebar({ workspaceId, workspaceName, nickname, accentC
     <div className={`workspace-root-drop ${draggingIds.length ? "is-visible" : ""} ${dropTargetId === "root" ? "drop-target" : ""}`} aria-hidden={!draggingIds.length} onDragEnter={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); setResourceDropTarget("root", "root"); }} onDragOver={(event) => { if (!draggingIdsRef.current.length) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setResourceDropTarget("root", "root"); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setResourceDropTarget(null); }} onDrop={(event) => dropResources(event, null)}>최상위로 이동</div>
     <TreeInteractionContext.Provider value={treeInteraction}><PageTreeContext.Provider value={childrenByParent}><nav className="page-tree" aria-label="페이지">{roots.map((page) => <PageNode key={page.id} page={page} pages={livePages} depth={0} createPage={createPage} reloadTree={reloadTree} />)}{!roots.length && <p className="sidebar-empty">아직 페이지가 없습니다.</p>}</nav></PageTreeContext.Provider></TreeInteractionContext.Provider>
     <div className="sidebar-footer"><TrashPanel onChanged={reloadTree} /><button className="sidebar-action" onClick={() => setSettingsOpen(true)}><Settings size={15} />설정</button>{isSiteAdmin && <Link className="sidebar-action" href="/workspace/admin/accounts"><ShieldCheck size={15} />계정 관리</Link>}<button className="sidebar-action" onClick={logout}><LogOut size={15} />로그아웃</button></div>
-    {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
+    {settingsOpen && <WorkspaceSettingsDialog workspaceName={currentWorkspaceName} nickname={currentNickname} accentColor={accentColor} systemFont={systemFont} onClose={() => setSettingsOpen(false)} onSaved={(next) => { setCurrentWorkspaceName(next.workspaceName); setCurrentNickname(next.nickname); setSystemFont(next.systemFont); document.querySelector<HTMLElement>(".workspace-shell")?.style.setProperty("--accent", next.accentColor); setSettingsOpen(false); }} />}
     {pendingMove && <MoveScopeDialog sourceShared={pendingMove.sourceShared} targetShared={pendingMove.targetShared} onClose={() => setPendingMove(null)} onChoose={(scope) => { const request = pendingMove; setPendingMove(null); void moveResources(request.resourceIds, request.targetFolderId, scope); }} />}
     {dragPreview && <OverlayPortal><div className="pointer-drag-preview" style={{ left: dragPreview.x, top: dragPreview.y }}><GripVertical className="pointer-drag-preview__grip" size={17} /><strong>{dragPreview.label}</strong>{dragPreview.count > 1 && <small>외 {dragPreview.count - 1}개</small>}</div></OverlayPortal>}
     </aside>
   </>;
 }
 
-function WorkspaceSettingsDialog({ workspaceName, nickname, accentColor, onClose, onSaved }: { workspaceName: string; nickname: string; accentColor: string; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string; accentColor: string }) => void }) {
+function WorkspaceSettingsDialog({ workspaceName, nickname, accentColor, systemFont, onClose, onSaved }: { workspaceName: string; nickname: string; accentColor: string; systemFont: LogFontFamily; onClose: () => void; onSaved: (next: { workspaceName: string; nickname: string; accentColor: string; systemFont: LogFontFamily }) => void }) {
   const [settingsTab, setSettingsTab] = useState<"general" | "bgm">("general");
   const [nextWorkspaceName, setNextWorkspaceName] = useState(workspaceName);
   const [nextNickname, setNextNickname] = useState(nickname);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [nextAccentColor, setNextAccentColor] = useState(accentColor);
+  const [nextSystemFont, setNextSystemFont] = useState<LogFontFamily>(systemFont);
+  const [loadingPreferences, setLoadingPreferences] = useState(true);
   const [correctionSettings, setCorrectionSettings] = useState<CorrectionSettings>(defaultCorrectionSettings);
   useEscapeClose(onClose, pending);
-  useEffect(() => { void fetch("/api/account/settings").then((response) => response.json()).then((result) => { if (result.accentColor) setNextAccentColor(result.accentColor); if (result.correctionSettings) setCorrectionSettings(result.correctionSettings); }); }, []);
+  useEffect(() => {
+    void fetch("/api/account/settings").then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "설정을 불러오지 못했습니다.");
+      if (result.accentColor) setNextAccentColor(result.accentColor);
+      if (result.correctionSettings) setCorrectionSettings(result.correctionSettings);
+      setNextSystemFont(parseLogFontFamily(result.systemFont));
+      setLoadingPreferences(false);
+    }).catch(() => setError("설정을 불러오지 못했습니다. 창을 닫고 다시 열어주세요."));
+  }, []);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending || loadingPreferences) return;
     setPending(true);
     setError("");
     try {
-      const response = await fetch("/api/account/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceName: nextWorkspaceName, nickname: nextNickname, accentColor: nextAccentColor, correctionSettings }) });
+      const response = await fetch("/api/account/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceName: nextWorkspaceName, nickname: nextNickname, accentColor: nextAccentColor, systemFont: nextSystemFont, correctionSettings }) });
       const result = await response.json();
       if (!response.ok) return setError(result.error ?? "설정을 저장하지 못했습니다.");
-      onSaved({ workspaceName: result.workspaceName, nickname: result.nickname, accentColor: result.accentColor });
+      onSaved({ workspaceName: result.workspaceName, nickname: result.nickname, accentColor: result.accentColor, systemFont: parseLogFontFamily(result.systemFont) });
     } catch {
       setError("설정을 저장하지 못했습니다.");
     } finally {
@@ -449,7 +472,7 @@ function WorkspaceSettingsDialog({ workspaceName, nickname, accentColor, onClose
   }
   const toggles: Array<[keyof CorrectionSettings, string]> = [["remove_html_tags", "HTML 태그 제거"], ["normalize_ellipsis", "말줄임표 통일"], ["normalize_quotes", "큰따옴표 통일"], ["speaker_tab_format", "화자명 뒤에 탭"], ["clean_blank_lines", "빈 줄 정리"], ["mark_handout_position", "이미지·핸드아웃 위치 표시"]];
   const normalizedAccent = normalizeHexColor(nextAccentColor);
-  return <OverlayPortal><div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card settings-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기" disabled={pending}><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스, 표시 색상과 TXT 기본값을 변경합니다.</p><div className="settings-tabs"><button className={settingsTab === "general" ? "active" : ""} onClick={() => setSettingsTab("general")}>일반</button><button className={settingsTab === "bgm" ? "active" : ""} onClick={() => setSettingsTab("bgm")}>BGM 관리</button></div>{settingsTab === "general" && <form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label><div className="field"><span>포인트 색상</span><div className="accent-color-row"><input className="accent-color-chip" aria-label="포인트 색상 선택" type="color" value={normalizedAccent ?? accentColor} onChange={(event) => setNextAccentColor(event.target.value.toUpperCase())} /><input aria-label="포인트 색상 HEX" value={nextAccentColor} maxLength={7} onChange={(event) => setNextAccentColor(event.target.value)} onBlur={() => { const normalized = normalizeHexColor(nextAccentColor); if (normalized) setNextAccentColor(normalized); }} placeholder="#4F6BED" aria-invalid={!normalizedAccent} /></div>{!normalizedAccent && <small className="field-error">#RGB 또는 #RRGGBB 형식으로 입력해주세요.</small>}</div><fieldset><legend>TXT 교정 기본값</legend><div className="correction-toggles">{toggles.map(([key, label]) => <label key={key}><input type="checkbox" checked={Boolean(correctionSettings[key])} onChange={(event) => setCorrectionSettings((current) => ({ ...current, [key]: event.target.checked }))} /> {label}</label>)}</div><div className="correction-symbols"><label>여는 따옴표<input value={correctionSettings.custom_quote_open} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_open: event.target.value }))} /></label><label>닫는 따옴표<input value={correctionSettings.custom_quote_close} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_close: event.target.value }))} /></label><label>말줄임표<input value={correctionSettings.custom_ellipsis} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_ellipsis: event.target.value }))} /></label><label>핸드아웃 기호<input value={correctionSettings.custom_handout_icon} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_handout_icon: event.target.value }))} /></label></div></fieldset>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending || !normalizedAccent}>{pending ? "저장 중…" : "저장"}</button></div></form>}{settingsTab === "bgm" && <BgmManager />}</section></div></OverlayPortal>;
+  return <OverlayPortal><div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card settings-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="닫기" disabled={pending}><X size={17} /></button><h2>설정</h2><p>개인 워크스페이스, 시스템 글꼴, 표시 색상과 TXT 기본값을 변경합니다.</p><div className="settings-tabs"><button className={settingsTab === "general" ? "active" : ""} onClick={() => setSettingsTab("general")}>일반</button><button className={settingsTab === "bgm" ? "active" : ""} onClick={() => setSettingsTab("bgm")}>BGM 관리</button></div>{settingsTab === "general" && <form onSubmit={save}><label className="field">워크스페이스 이름<input value={nextWorkspaceName} onChange={(event) => setNextWorkspaceName(event.target.value)} maxLength={100} required /></label><label className="field">닉네임<input value={nextNickname} onChange={(event) => setNextNickname(event.target.value)} maxLength={80} required /></label><div className="field"><span>포인트 색상</span><div className="accent-color-row"><input className="accent-color-chip" aria-label="포인트 색상 선택" type="color" value={normalizedAccent ?? accentColor} onChange={(event) => setNextAccentColor(event.target.value.toUpperCase())} /><input aria-label="포인트 색상 HEX" value={nextAccentColor} maxLength={7} onChange={(event) => setNextAccentColor(event.target.value)} onBlur={() => { const normalized = normalizeHexColor(nextAccentColor); if (normalized) setNextAccentColor(normalized); }} placeholder="#4F6BED" aria-invalid={!normalizedAccent} /></div>{!normalizedAccent && <small className="field-error">#RGB 또는 #RRGGBB 형식으로 입력해주세요.</small>}</div><label className="field">시스템 글꼴<select value={nextSystemFont} onChange={(event) => setNextSystemFont(event.target.value as LogFontFamily)} disabled={loadingPreferences || pending}>{LOG_FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>버튼·메뉴·사이드바 등에 적용됩니다. 글 제목과 본문은 페이지 꾸미기에서 변경하세요.</small></label><fieldset><legend>TXT 교정 기본값</legend><div className="correction-toggles">{toggles.map(([key, label]) => <label key={key}><input type="checkbox" checked={Boolean(correctionSettings[key])} onChange={(event) => setCorrectionSettings((current) => ({ ...current, [key]: event.target.checked }))} /> {label}</label>)}</div><div className="correction-symbols"><label>여는 따옴표<input value={correctionSettings.custom_quote_open} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_open: event.target.value }))} /></label><label>닫는 따옴표<input value={correctionSettings.custom_quote_close} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_quote_close: event.target.value }))} /></label><label>말줄임표<input value={correctionSettings.custom_ellipsis} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_ellipsis: event.target.value }))} /></label><label>핸드아웃 기호<input value={correctionSettings.custom_handout_icon} maxLength={8} onChange={(event) => setCorrectionSettings((current) => ({ ...current, custom_handout_icon: event.target.value }))} /></label></div></fieldset>{error && <p className="error">{error}</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" disabled={pending || loadingPreferences || !normalizedAccent}>{pending ? "저장 중…" : "저장"}</button></div></form>}{settingsTab === "bgm" && <BgmManager />}</section></div></OverlayPortal>;
 }
 
 function TrashPanel({ onChanged }: { onChanged: () => Promise<void> }) {

@@ -1,27 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { LogFontFamily, PageExtras } from "@/lib/types";
+import type { PageExtras } from "@/lib/types";
+import { parseLogFontFamily } from "@/lib/fonts";
+export { LOG_FONT_OPTIONS, parseLogFontFamily } from "@/lib/fonts";
 
 export const SESSION_CARD_BUCKET = "session-cards";
 export const SESSION_CARD_MAX_BYTES = 10_000_000;
 export const SESSION_CARD_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-export const LOG_FONT_OPTIONS: ReadonlyArray<{ value: LogFontFamily; label: string }> = [
-  { value: "pretendard", label: "Pretendard" },
-  { value: "gowoon-dodum", label: "고운 돋움" },
-  { value: "goun-batang", label: "고운 바탕" },
-  { value: "ridi-batang", label: "리디바탕" },
-  { value: "nanum-myeongjo", label: "나눔명조" },
-  { value: "natural-sans", label: "내추럴 산스" },
-  { value: "ibm-plex-sans", label: "IBM Plex Sans KR" }
-];
-
-const LOG_FONT_VALUES = new Set(LOG_FONT_OPTIONS.map((option) => option.value));
-
-export function parseLogFontFamily(value: unknown): LogFontFamily {
-  return typeof value === "string" && LOG_FONT_VALUES.has(value as LogFontFamily)
-    ? value as LogFontFamily
-    : "pretendard";
-}
-
 export function validSessionCard(mimeType: unknown, byteSize: unknown) {
   return typeof mimeType === "string" && SESSION_CARD_TYPES.has(mimeType)
     && typeof byteSize === "number" && Number.isSafeInteger(byteSize)

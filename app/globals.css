@@ -30,16 +30,25 @@ html, body { margin: 0; min-height: 100%; }
 body {
   background: var(--canvas);
   color: var(--text);
-  font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--system-font-family, Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 14px;
 }
-[data-font="pretendard"] { font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-[data-font="gowoon-dodum"] { font-family: GowoonDodum, sans-serif; }
-[data-font="goun-batang"] { font-family: GounBatang, serif; }
-[data-font="ridi-batang"] { font-family: Ridibatang, "Nanum Myeongjo", serif; }
-[data-font="nanum-myeongjo"] { font-family: "Nanum Myeongjo", serif; }
-[data-font="natural-sans"] { font-family: NaturalSans, Pretendard, sans-serif; }
-[data-font="ibm-plex-sans"] { font-family: IbmPlexSans, sans-serif; }
+[data-font="pretendard"] { --log-font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+[data-font="gowoon-dodum"] { --log-font-family: GowoonDodum, sans-serif; }
+[data-font="goun-batang"] { --log-font-family: GounBatang, serif; }
+[data-font="ridi-batang"] { --log-font-family: Ridibatang, "Nanum Myeongjo", serif; }
+[data-font="nanum-myeongjo"] { --log-font-family: "Nanum Myeongjo", serif; }
+[data-font="natural-sans"] { --log-font-family: NaturalSans, Pretendard, sans-serif; }
+[data-font="ibm-plex-sans"] { --log-font-family: IbmPlexSans, sans-serif; }
+.workspace-shell { font-family: var(--system-font-family, Pretendard, sans-serif); }
+.page-title-input, .public-log > h1, .page-overview, .log-entry {
+  font-family: var(--log-font-family, Pretendard, sans-serif);
+}
+.log-entry button, .inline-content-editor__actions, .inline-content-editor__empty, .r20-message__timestamp {
+  font-family: var(--system-font-family, Pretendard, sans-serif);
+}
+.log-entry .field { font-family: var(--system-font-family, Pretendard, sans-serif); }
+.log-entry textarea { font-family: var(--log-font-family, Pretendard, sans-serif); }
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
@@ -127,6 +136,8 @@ a { color: inherit; text-decoration: none; }
 .page-title-input { width: 100%; margin-bottom: 40px; border: 0; outline: 0; padding: 0; font-size: clamp(27px, 4vw, 34px); font-weight: 720; letter-spacing: -.035em; color: var(--text); }
 .page-meta { color: var(--muted); margin: 10px 0 34px; }
 .empty-state { padding: 80px 24px; text-align: center; color: var(--muted); }
+.empty-log-actions { margin: 20px 0; padding: 16px; border: 1px dashed var(--line); border-radius: 7px; }
+.empty-log-actions > p { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .log-entry { position: relative; margin: 8px 0; padding: 10px 12px; border-radius: 7px; }
 .log-entry:hover { background: #fafaf8; }
 .log-entry-speaker { margin-bottom: 5px; font-weight: 700; }
@@ -189,7 +200,7 @@ a { color: inherit; text-decoration: none; }
 .r20-message__avatar-slot { width: 32px; min-width: 32px; height: 32px; align-self: start; }
 .r20-message__avatar { display: block; flex: none; width: 32px; height: 32px; aspect-ratio: 1 / 1; align-self: start; border: 0; border-radius: 0; object-fit: cover; }
 .r20-message__body { min-width: 0; }
-.r20-message__content-flow { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.r20-message__content-flow { position: relative; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .r20-message__content-flow--speaker-template { display: flex; align-items: flex-start; gap: 6px; white-space: normal; }
 .r20-message__content-flow--speaker-template .r20-message__speaker { flex: none; margin-right: 0; }
 .r20-message__speaker { margin-right: 6px; color: #000; font-weight: 750; }
@@ -208,7 +219,7 @@ a { color: inherit; text-decoration: none; }
 .r20-message--description .r20-rich-context { text-align: inherit; }
 .log-rich-context *, .log-rich-context *::before, .log-rich-context *::after { box-sizing: border-box; }
 .r20-rich-context--inline { display: inline; }
-.r20-rich-context--block { display: block; margin: 0; }
+.r20-rich-context--block { position: static; display: block; margin: 0; }
 .r20-rich-context--block > .r20-rich-root--centered { margin-right: auto; margin-left: auto; }
 .r20-rich-image { max-width: 100%; height: auto; }
 .r20-template { display: block; width: min(100%, 430px); margin: 7px 0; border: 0; border-radius: 0; background: transparent; color: #000; font-style: normal; box-shadow: none; }
@@ -331,11 +342,14 @@ a { color: inherit; text-decoration: none; }
 .handout-source-list label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 13px; }
 .handout-modal .field { margin-top: 14px; }
 .handout-content-input { min-height: 220px; resize: vertical; }
-.handout-view-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.handout-view-heading h2 { margin-bottom: 18px; }
-.handout-view-heading > div { display: flex; gap: 6px; }
+.handout-view-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 28px; }
+.handout-view-heading h2 { min-width: 0; margin: 3px 0 0; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.handout-view-heading > div { display: flex; flex: none; gap: 4px; }
+.handout-view-heading > div button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+.handout-view-heading > div button:hover { background: var(--hover); }
+.handout-view-heading > div .danger { color: #a63832; }
 .handout-view-heading .button, .handout-editor-tools .button { display: inline-flex; align-items: center; gap: 5px; }
-.handout-content { margin: 0 0 20px; line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
+.handout-content { margin: 0 0 28px; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-wrap; }
 .handout-images, .handout-image-editor { display: grid; gap: 10px; }
 .handout-images img { display: block; width: auto; max-width: 100%; max-height: 72vh; margin: 0 auto; border-radius: 5px; }
 .handout-image-editor { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); margin-top: 12px; }
@@ -360,7 +374,8 @@ a { color: inherit; text-decoration: none; }
 .bgm-youtube-frame { position: fixed; width: 1px; height: 1px; left: -100px; bottom: -100px; border: 0; opacity: 0; pointer-events: none; }
 .global-bgm-player { position: fixed; z-index: 120; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 9px; width: min(460px, calc(100vw - 36px)); padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgb(255 255 255 / 96%); box-shadow: 0 10px 32px rgb(0 0 0 / 16%); }
 .global-bgm-player strong { min-width: 0; overflow: hidden; flex: 1; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.global-bgm-player button, .bgm-play-button { display: grid; width: 29px; height: 29px; flex: 0 0 auto; padding: 0; place-items: center; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--text); cursor: pointer; }
+.global-bgm-player button, .bgm-play-button { display: grid; width: 29px; height: 29px; flex: 0 0 auto; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
+.bgm-play-button:hover, .global-bgm-player button:hover { background: var(--hover); }
 .global-bgm-player label { display: flex; align-items: center; gap: 5px; }
 .global-bgm-player input { width: 88px; }
 .entry-bgm-button { position: absolute; z-index: 3; left: -39px; top: 13px; }
@@ -438,8 +453,7 @@ a { color: inherit; text-decoration: none; }
   .handout-trigger { font-size: 0; }
   .handout-trigger svg { width: 18px; height: 18px; }
   .move-scope-options { grid-template-columns: 1fr; }
-  .handout-view-heading { display: block; }
-  .handout-view-heading > div { margin-bottom: 16px; }
+  .handout-view-heading { gap: 8px; }
   .workspace-content { width: min(var(--log-column-width), calc(100% - 24px)); padding: 32px 0 96px; }
   .page-title-input { font-size: clamp(27px, 9vw, 34px); line-height: 1.15; }
   .page-meta { margin: 9px 0 25px; font-size: 12px; line-height: 1.55; }

@@ -1,4 +1,6 @@
 import { WorkspaceSidebar } from "@/components/WorkspaceSidebar";
+import { WorkspaceAppearance } from "@/components/WorkspaceAppearance";
+import { fontFamilyStack, parseLogFontFamily } from "@/lib/fonts";
 import { requireWorkspaceSession } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { WorkspacePage } from "@/lib/types";
@@ -17,15 +19,17 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   const supabase = await createSupabaseServerClient();
   const [{ data }, { data: preferences }] = await Promise.all([
     supabase.rpc("get_workspace_tree", { target_workspace_id: session.workspace.id }),
-    supabase.from("user_preferences").select("accent_color").eq("user_id", session.profile.id).maybeSingle()
+    supabase.from("user_preferences").select("accent_color, system_font_family").eq("user_id", session.profile.id).maybeSingle()
   ]);
   const completedAt = performance.now();
   console.info(JSON.stringify({ event: "workspace_layout_timing", sessionMs: Math.round(sessionAt - startedAt), treeMs: Math.round(completedAt - sessionAt), resourceCount: data?.length ?? 0, totalMs: Math.round(completedAt - startedAt) }));
 
   return (
-    <div className="workspace-shell" style={{ "--accent": preferences?.accent_color ?? "#4F6BED" } as CSSProperties}>
+    <div className="workspace-shell" style={{ "--accent": preferences?.accent_color ?? "#4F6BED", "--system-font-family": fontFamilyStack(preferences?.system_font_family) } as CSSProperties}>
+      <WorkspaceAppearance initialSystemFont={parseLogFontFamily(preferences?.system_font_family)}>
       <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} nickname={session.profile.display_name ?? session.profile.username} accentColor={preferences?.accent_color ?? "#4F6BED"} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
       <main className="workspace-main">{children}</main>
+      </WorkspaceAppearance>
     </div>
   );
 }

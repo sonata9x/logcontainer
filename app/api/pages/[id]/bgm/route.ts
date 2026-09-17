@@ -23,6 +23,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const role = body.role === "entry" ? "entry" : "waiting";
   const entryId = role === "entry" && typeof body.entryId === "string" ? body.entryId : null;
   if (!assetId || (role === "entry" && !entryId)) return NextResponse.json({ error: "BGM 대상이 올바르지 않습니다." }, { status: 400 });
+  if (role === "waiting") {
+    const { data, error } = await context.supabase.rpc("set_page_waiting_bgm", {
+      target_page_id: id, target_asset_id: assetId,
+      target_custom_title: typeof body.customTitle === "string" ? body.customTitle.trim().slice(0, 200) || null : null
+    });
+    if (error) return databaseErrorResponse(error, "대기 BGM을 변경하지 못했습니다.");
+    return NextResponse.json({ item: data }, { status: 201 });
+  }
   if (entryId) {
     const { data: entry } = await context.supabase.from("log_entries").select("id, logs!inner(page_id)").eq("id", entryId).eq("logs.page_id", id).maybeSingle();
     if (!entry) return NextResponse.json({ error: "이 페이지의 로그 메시지가 아닙니다." }, { status: 400 });
