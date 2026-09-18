@@ -26,7 +26,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
 
   return (
     <div className="workspace-shell" style={{ "--accent": preferences?.accent_color ?? "#4F6BED", "--system-font-family": fontFamilyStack(preferences?.system_font_family) } as CSSProperties}>
-      <WorkspaceAppearance initialSystemFont={parseLogFontFamily(preferences?.system_font_family)}>
+      <WorkspaceAppearance initialSystemFont={parseLogFontFamily(preferences?.system_font_family)} initialAccentColor={preferences?.accent_color ?? "#4F6BED"}>
         <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} nickname={session.profile.display_name ?? session.profile.username} accentColor={preferences?.accent_color ?? "#4F6BED"} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
         <main className="workspace-main">{children}</main>
       </WorkspaceAppearance>

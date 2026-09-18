@@ -66,6 +66,8 @@ a { color: inherit; text-decoration: none; }
 .button { border: 1px solid #d6d6d2; border-radius: 6px; background: white; padding: 8px 12px; cursor: pointer; }
 .button:hover { background: var(--hover); }
 .button-primary { border-color: var(--accent); background: var(--accent); color: white; }
+.button-primary:hover { background: color-mix(in srgb, var(--accent) 90%, black); }
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
 .button-danger { color: var(--danger); }
 .button:disabled { cursor: wait; opacity: .55; }
 .error { color: var(--danger); }
@@ -276,6 +278,9 @@ a { color: inherit; text-decoration: none; }
 .member-identity strong { flex: 0 1 auto; }
 .member-identity small { flex: 1 1 auto; color: var(--muted); }
 .member-row .row-actions { flex: 0 0 auto; }
+.member-row select { min-width: 80px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); font-family: var(--system-font-family, Pretendard, sans-serif); font-size: 13px; line-height: 1.5; }
+.member-remove { display: grid; width: 30px; height: 30px; padding: 0; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--danger); cursor: pointer; }
+.member-remove:hover { background: var(--hover); }
 .accent-color-row { display: flex; align-items: center; gap: 9px; }
 .accent-color-row input:not([type="color"]) { flex: 1; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; }
 .accent-color-chip { flex: 0 0 34px; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: transparent; cursor: pointer; }
@@ -377,12 +382,16 @@ a { color: inherit; text-decoration: none; }
 .global-bgm-player { position: fixed; z-index: 120; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 9px; width: min(460px, calc(100vw - 36px)); padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgb(255 255 255 / 96%); box-shadow: 0 10px 32px rgb(0 0 0 / 16%); }
 .global-bgm-player strong { min-width: 0; overflow: hidden; flex: 1; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .global-bgm-player button, .bgm-play-button { display: grid; width: 29px; height: 29px; flex: 0 0 auto; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
+.bgm-play-button { background: #efefed; color: var(--muted); font-family: var(--system-font-family, Pretendard, sans-serif); }
 .bgm-play-button:hover, .global-bgm-player button:hover { background: var(--hover); }
 .global-bgm-player label { display: flex; align-items: center; gap: 5px; }
 .global-bgm-player input { width: 88px; }
 .entry-bgm-button { position: absolute; z-index: 3; left: -58px; top: 13px; }
-.bgm-library-add { display: grid; width: 25px; height: 25px; padding: 0; place-items: center; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); cursor: pointer; }
-.entry-wrap > .bgm-library-add { position: absolute; z-index: 3; left: -56px; top: 47px; }
+@media (max-width: 1100px) {
+  .workspace-content .entry-bgm-button, .guest-log.is-editing .entry-bgm-button { display: none; }
+  .guest-log.is-editing .entry-wrap:has(> .entry-bgm-button) { padding-top: 0; }
+}
+.bgm-playlist-dialog { width: min(520px, 100%); }
 .bgm-current-track { display: flex; align-items: center; gap: 10px; margin: 16px 0; padding: 12px; background: var(--hover); border-radius: 6px; }
 .bgm-current-track > div { display: grid; gap: 4px; min-width: 0; }
 .bgm-current-track strong { overflow-wrap: anywhere; }
@@ -391,7 +400,7 @@ a { color: inherit; text-decoration: none; }
 .settings-modal { width: min(700px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; }
 .settings-tabs { display: flex; gap: 4px; margin: 18px 0; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
 .settings-tabs button { padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
-.settings-tabs button.active { background: var(--hover); color: var(--text); font-weight: 700; }
+.settings-tabs button.active { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); font-weight: 700; }
 .settings-tabs + .bgm-manager { margin-top: 0; padding-top: 0; border-top: 0; }
 .bgm-manager-heading { display: flex; align-items: center; gap: 8px; margin: 14px 0 9px; }
 .bgm-manager-heading h3 { display: flex; align-items: center; gap: 6px; margin: 0 auto 0 0; font-size: 15px; }
@@ -469,10 +478,8 @@ a { color: inherit; text-decoration: none; }
   .r20-message { padding-right: 3px; padding-left: 3px; }
   .log-entry-drag-handle { left: -13px; opacity: .5; }
   /* Narrow viewports have no outside gutter; keep controls in their own row. */
-  .entry-wrap:has(> .entry-bgm-button) { padding-top: 34px; }
-  .entry-bgm-button { left: 0; top: 0; }
-  .entry-wrap > .bgm-library-add { left: 34px; top: 0; }
-  .entry-sortable:has(.entry-bgm-button) > .log-entry-drag-handle { top: 41px; }
+  .public-log .entry-wrap:has(> .entry-bgm-button) { padding-top: 34px; }
+  .public-log .entry-bgm-button { left: 0; top: 0; }
   .entry-more { opacity: .72; }
   .styled-segment, .inline-add-row { grid-template-columns: 1fr; }
   .entry-context-menu { width: 190px; }

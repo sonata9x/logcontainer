@@ -5,7 +5,8 @@ import { LogEntryBlock } from "@/components/LogEntryBlock";
 import { HandoutLibrary } from "@/components/HandoutLibrary";
 import type { LogEntry } from "@/lib/types";
 import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
-import { BgmLibraryAddButton, BgmPlayButton, BgmPlayerProvider } from "@/components/BgmPlayer";
+import { BgmPlayButton, BgmPlayerProvider } from "@/components/BgmPlayer";
+import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
 import { PageExtrasDisplay } from "@/components/PageExtrasPanel";
 import type { PageBgmItem, PageExtras } from "@/lib/types";
 
@@ -46,6 +47,6 @@ export function PublicLog({ token, title, initialEntries, totalCount }: { token:
     observer.observe(target);
     return () => observer.disconnect();
   }, [entries.length, loadMore, totalCount]);
-  const content = <main className="public-log" data-font={extras?.fontFamily ?? "pretendard"}><header className="public-log-toolbar"><span>{title}</span><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} publicationToken={token} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section>{visibleStreamEntries(entries, activeStream).map((entry) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id}>{bgm && <><BgmPlayButton item={bgm} className="entry-bgm-button" /><BgmLibraryAddButton item={bgm} publicationToken={token} /></>}<LogEntryBlock entry={entry} /></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
+  const content = <main className="public-log" data-font={extras?.fontFamily ?? "pretendard"}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section>{visibleStreamEntries(entries, activeStream).map((entry) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id}>{bgm && <BgmPlayButton item={bgm} className="entry-bgm-button" />}<LogEntryBlock entry={entry} /></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
   return pageId ? <BgmPlayerProvider access={{ pageId, publicationToken: token }}>{content}</BgmPlayerProvider> : content;
 }

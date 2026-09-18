@@ -80,5 +80,6 @@ test("waiting BGM replacement is permission-checked atomic and constrained to on
 test("BGM playback icons have no circular border and retain focus styling", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.global-bgm-player button, \.bgm-play-button \{[^}]*border: 0;[^}]*background: transparent/);
+  assert.match(css, /\.bgm-play-button \{ background: #efefed; color: var\(--muted\)/);
   assert.match(css, /\.bgm-play-button:hover, \.global-bgm-player button:hover/);
 });
