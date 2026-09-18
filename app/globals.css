@@ -154,6 +154,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .log-entry-content { line-height: 1.72; white-space: pre-wrap; }
 .preserved-roll20-entry > .message { margin: 0; }
 .entry-wrap { position: relative; display: flow-root; }
+.entry-playback-anchor { position: relative; display: flow-root; }
 .entry-more { position: absolute; z-index: 3; top: 5px; right: 5px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: rgb(255 255 255 / 88%); color: var(--muted); cursor: pointer; opacity: 0; }
 .entry-wrap:hover > .entry-more, .entry-more:focus-visible { opacity: 1; }
 .inline-add-form { margin: 8px 0 18px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -339,6 +340,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .public-log .log-entry { padding-left: 0; padding-right: 0; }
 /* Contain only the message body: wrapper containment clips the outside BGM controls. */
 .entry-wrap > .log-entry, .public-log .log-entry { content-visibility: auto; contain-intrinsic-size: auto 96px; }
+.entry-playback-anchor > .log-entry { content-visibility: auto; contain-intrinsic-size: auto 96px; }
 .entry-sortable { position: relative; }
 .entry-sortable.is-dragging { opacity: .48; }
 .log-entry-drag-handle { position: absolute; z-index: 2; top: 7px; left: -24px; display: grid; width: 22px; height: 28px; padding: 0; place-items: center; border: 0; background: transparent; color: #a29f98; cursor: grab; opacity: 0; touch-action: none; user-select: none; transition: opacity .12s ease, color .12s ease; }
@@ -407,10 +409,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .global-bgm-player button:hover { background: var(--hover); }
 .global-bgm-player label { display: flex; align-items: center; gap: 5px; }
 .global-bgm-player input { width: 88px; }
-.entry-bgm-button { position: absolute; z-index: 3; left: -58px; top: 13px; }
+.entry-bgm-button { position: absolute; z-index: 3; left: -58px; top: 50%; transform: translateY(-50%); }
 @media (max-width: 1100px) {
   .workspace-content .entry-bgm-button, .guest-log.is-editing .entry-bgm-button { display: none; }
-  .guest-log.is-editing .entry-wrap:has(> .entry-bgm-button) { padding-top: 0; }
+  .guest-log.is-editing .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 0; }
 }
 .bgm-playlist-dialog { width: min(520px, 100%); }
 .bgm-current-track { display: flex; align-items: center; gap: 10px; margin: 16px 0; padding: 12px; background: var(--hover); border-radius: 6px; }
@@ -556,9 +558,9 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   .log-entry { padding-right: 4px; padding-left: 4px; }
   .r20-message { padding-right: 3px; padding-left: 3px; }
   .log-entry-drag-handle { left: -13px; opacity: .5; }
-  /* Narrow viewports have no outside gutter; keep controls in their own row. */
-  .public-log .entry-wrap:has(> .entry-bgm-button) { padding-top: 34px; }
-  .public-log .entry-bgm-button { left: 0; top: 0; }
+  /* Reserve an inside gutter on narrow published views, still vertically centered. */
+  .public-log .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 34px; }
+  .public-log .entry-bgm-button { left: 0; top: 50%; }
   .entry-more { opacity: .72; }
   .styled-segment, .inline-add-row { grid-template-columns: 1fr; }
   .entry-context-menu { width: 190px; }

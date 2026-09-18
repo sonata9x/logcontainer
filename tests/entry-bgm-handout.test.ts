@@ -4,13 +4,23 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-test("BGM controls stay outside paint containment and public logs have a narrow-screen row", () => {
+test("BGM controls stay outside paint containment and public logs have a narrow-screen gutter", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.entry-wrap > \.log-entry, \.public-log \.log-entry \{ content-visibility: auto/);
   assert.doesNotMatch(css, /\.entry-wrap\s*[,\{][^}]*content-visibility/);
   assert.match(css, /\.entry-bgm-button \{[^}]*left: -58px/);
-  assert.match(css, /\.public-log \.entry-wrap:has\(> \.entry-bgm-button\) \{ padding-top: 34px/);
+  assert.match(css, /\.public-log \.entry-playback-anchor:has\(> \.entry-bgm-button\) \{ padding-left: 34px/);
   assert.match(css, /@media \(max-width: 1100px\)[\s\S]*\.workspace-content \.entry-bgm-button, \.guest-log.is-editing \.entry-bgm-button \{ display: none/);
+});
+
+test("BGM button centers on the message alone and all views use the same anchor", () => {
+  const css = read("app/globals.css");
+  assert.match(css, /\.entry-bgm-button \{[^}]*top: 50%; transform: translateY\(-50%\);/);
+  assert.match(css, /\.entry-playback-anchor \{ position: relative; display: flow-root; \}/);
+  assert.match(css, /\.entry-playback-anchor > \.log-entry \{ content-visibility: auto/);
+  assert.doesNotMatch(css, /\.entry-playback-anchor\s*\{[^}]*content-visibility/);
+  assert.match(read("components/LogEditor.tsx"), /<EntryPlaybackAnchor item=\{bgmItem\}>\{entryBody\}<\/EntryPlaybackAnchor>/);
+  for (const view of ["PublicLog", "GuestLog"]) assert.match(read(`components/${view}.tsx`), /<EntryPlaybackAnchor item=\{bgm\}><LogEntryBlock entry=\{entry\} \/><\/EntryPlaybackAnchor>/);
 });
 
 test("entry BGM follows stable entry identity, not its ordered index", () => {
