@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 export function BgmUploadDialog({ file, pending, onUpload, onClose }: {
   file: File; pending: boolean; onUpload: (title: string) => Promise<void>; onClose: () => void;
 }) {
   const [title, setTitle] = useState(file.name.replace(/\.mp3$/i, "").slice(0, 200));
   const [error, setError] = useState<string | null>(null);
+  useEscapeClose(() => { if (!pending) onClose(); });
   async function submit() {
     setError(null);
     try { await onUpload(title.trim()); }

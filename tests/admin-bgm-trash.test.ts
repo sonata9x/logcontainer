@@ -7,6 +7,7 @@ import { drainStorageDeletionQueue } from "../lib/storage-cleanup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const migration = readFileSync(new URL("../supabase/migrations/202609180001_admin_bgm_and_trash.sql", import.meta.url), "utf8");
+const refinement = readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8");
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const ADMIN = "00000000-0000-0000-0000-000000000001";
 const USER = "00000000-0000-0000-0000-000000000002";
@@ -38,6 +39,7 @@ test("site admin BGM and owner trash SQL execute against isolated PostgreSQL", a
       create schema auth;
       create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.actor', true), '')::uuid $$;
       create table profiles(id uuid primary key, username text, display_name text, account_status text, is_site_admin boolean);
+      create table user_preferences(user_id uuid primary key, accent_color text default '#4F6BED', created_at timestamptz default now(), updated_at timestamptz default now());
       create function is_account_approved(actor uuid) returns boolean language sql stable as $$ select exists(select 1 from profiles where id = actor and account_status = 'approved') $$;
       create function is_site_admin(actor uuid) returns boolean language sql stable as $$ select exists(select 1 from profiles where id = actor and is_site_admin) $$;
       create table pages(id uuid primary key, original_owner_id uuid, title text, deleted_at timestamptz, session_card_path text, parent_id uuid references pages(id) on delete set null);
@@ -46,8 +48,8 @@ test("site admin BGM and owner trash SQL execute against isolated PostgreSQL", a
       create table log_entries(id uuid primary key, log_id uuid references logs(id) on delete cascade, is_deleted boolean default false);
       create table log_change_events(log_id uuid references logs(id) on delete cascade, entry_id uuid, event_type text);
       create table log_entry_revisions(id uuid primary key, entry_id uuid references log_entries(id) on delete cascade);
-      create table bgm_assets(id uuid primary key, owner_user_id uuid, source_type text, canonical_title text, byte_size int, storage_path text, is_ready boolean default false, deleted_at timestamptz, created_at timestamptz default now());
-      create table bgm_library_items(id uuid default gen_random_uuid(), bgm_asset_id uuid references bgm_assets(id) on delete restrict, user_id uuid);
+      create table bgm_assets(id uuid primary key, owner_user_id uuid, source_type text, canonical_title text, byte_size int, storage_path text, is_ready boolean default false, deleted_at timestamptz, created_at timestamptz default now(), youtube_video_id text, youtube_url text);
+      create table bgm_library_items(id uuid default gen_random_uuid(), bgm_asset_id uuid references bgm_assets(id) on delete restrict, user_id uuid, custom_title text);
       create table bgm_playlists(id uuid primary key, title text, user_id uuid);
       create table bgm_playlist_items(id uuid default gen_random_uuid(), bgm_asset_id uuid references bgm_assets(id) on delete restrict, playlist_id uuid references bgm_playlists(id));
       create table page_bgm_items(id uuid default gen_random_uuid(), bgm_asset_id uuid references bgm_assets(id) on delete restrict, page_id uuid references pages(id) on delete cascade, entry_id uuid references log_entries(id) on delete cascade, role text);
@@ -77,7 +79,7 @@ test("site admin BGM and owner trash SQL execute against isolated PostgreSQL", a
     await t.test("inventory includes all users and all references; source paths are not returned", async () => {
       await db.exec(`
         insert into pages values ('${PAGE}', '${USER}', '공유 로그', null, null, null);
-        insert into bgm_assets values ('${ASSET}', '${USER}', 'upload', '피아노', 3000000, '${USER}/${ASSET}.mp3', true, null, now() - interval '2 days');
+        insert into bgm_assets(id,owner_user_id,source_type,canonical_title,byte_size,storage_path,is_ready,deleted_at,created_at) values ('${ASSET}', '${USER}', 'upload', '피아노', 3000000, '${USER}/${ASSET}.mp3', true, null, now() - interval '2 days');
         insert into bgm_library_items(bgm_asset_id,user_id) values ('${ASSET}','${USER}'), ('${ASSET}','${OTHER}');
         insert into bgm_playlists values ('00000000-0000-0000-0000-000000000030','공동 음악','${OTHER}');
         insert into bgm_playlist_items(bgm_asset_id,playlist_id) values ('${ASSET}','00000000-0000-0000-0000-000000000030');
@@ -163,6 +165,54 @@ test("site admin BGM and owner trash SQL execute against isolated PostgreSQL", a
       assert.equal(results[0].total, 206); assert.equal(results[0].matching, 206);
       assert.equal(new Set(results.flatMap((result) => result.assets.map((asset) => asset.id))).size, 206);
     });
+
+    await t.test("neutral default migration preserves custom and previously edited blue colors", async () => {
+      await db.exec(`insert into user_preferences values ('${USER}','#4F6BED',now()-interval '2 days',now()-interval '2 days'), ('${OTHER}','#4F6BED',now()-interval '2 days',now()), ('${ADMIN}','#C2200E',now()-interval '2 days',now());`);
+      await db.exec(refinement); await db.exec(refinement);
+      const colors = (await db.query<{ user_id: string; accent_color: string }>("select * from user_preferences")).rows;
+      assert.equal(colors.find((row) => row.user_id === USER)?.accent_color, "#62625F");
+      assert.equal(colors.find((row) => row.user_id === OTHER)?.accent_color, "#4F6BED");
+      assert.equal(colors.find((row) => row.user_id === ADMIN)?.accent_color, "#C2200E");
+      assert.equal((await db.query<{ accent_color: string }>("insert into user_preferences(user_id) values(gen_random_uuid()) returning accent_color")).rows[0].accent_color, "#62625F");
+    });
+
+    await t.test("owner YouTube edits update the shared asset without duplicating references; aliases stay personal", async () => {
+      const youtube = "00000000-0000-0000-0000-000000000021";
+      const mine = "00000000-0000-0000-0000-000000000071";
+      const other = "00000000-0000-0000-0000-000000000072";
+      await db.exec(`insert into bgm_assets(id,owner_user_id,source_type,canonical_title,is_ready,youtube_video_id,youtube_url) values ('${youtube}','${USER}','youtube','유튜브',true,'dQw4w9WgXcQ','https://www.youtube.com/watch?v=dQw4w9WgXcQ'); insert into bgm_library_items(id,bgm_asset_id,user_id) values ('${mine}','${youtube}','${USER}'),('${other}','${youtube}','${OTHER}'); insert into page_bgm_items(bgm_asset_id,page_id,role) values ('${youtube}','${PAGE}','waiting'); insert into bgm_playlist_items(bgm_asset_id,playlist_id) values ('${youtube}','00000000-0000-0000-0000-000000000030');`);
+      await actor(USER);
+      const before = await count("bgm_assets");
+      const result = (await db.query<{ result: { sourceUpdated: boolean } }>("select update_bgm_library_details($1,'새 이름','abcdefghijk') result", [mine])).rows[0].result;
+      assert.equal(result.sourceUpdated, true); assert.equal(await count("bgm_assets"), before);
+      const asset = (await db.query<{ youtube_video_id: string; youtube_url: string; canonical_title: string }>("select * from bgm_assets where id=$1", [youtube])).rows[0];
+      assert.equal(asset.youtube_video_id, "abcdefghijk"); assert.equal(asset.youtube_url, "https://www.youtube.com/watch?v=abcdefghijk"); assert.equal(asset.canonical_title, "유튜브");
+      assert.equal(await count("page_bgm_items"), 1); assert.equal(await count("bgm_playlist_items"), 1);
+      await actor(OTHER);
+      await db.query("select update_bgm_library_details($1,'내 별칭',null)", [other]);
+      await assert.rejects(db.query("select update_bgm_library_details($1,'잘못된 이름','lmnopqrstuv')", [other]), /only source owner/);
+      assert.equal((await db.query<{ custom_title: string }>("select custom_title from bgm_library_items where id=$1", [other])).rows[0].custom_title, "내 별칭");
+      await assert.rejects(db.query("select update_bgm_library_details($1,'다른 사람 보관함',null)", [mine]), /library item not found/);
+      await assert.rejects(db.query("select update_bgm_library_details($1,'이름','bad')", [other]), /invalid YouTube video/);
+      await actor(ADMIN);
+      const adminLibrary = (await db.query<{ id: string }>("insert into bgm_library_items(bgm_asset_id,user_id) values ($1,$2) returning id", [youtube, ADMIN])).rows[0].id;
+      await db.query("select update_bgm_library_details($1,'관리자 별칭','lmnopqrstuv')", [adminLibrary]);
+      assert.equal((await db.query<{ youtube_video_id: string }>("select youtube_video_id from bgm_assets where id=$1", [youtube])).rows[0].youtube_video_id, "lmnopqrstuv");
+    });
+
+    await t.test("inventory usage filters run before pagination and retain trash-page references as usage", async () => {
+      await actor(ADMIN);
+      const lib = "00000000-0000-0000-0000-000000000080";
+      const playlist = "00000000-0000-0000-0000-000000000081";
+      const none = "00000000-0000-0000-0000-000000000082";
+      await db.exec(`update bgm_assets set canonical_title='filter-page' where id='00000000-0000-0000-0000-000000000021'; update pages set deleted_at=now() where id='${PAGE}'; insert into bgm_assets(id,owner_user_id,source_type,canonical_title,is_ready) values ('${lib}','${USER}','youtube','filter-library',true),('${playlist}','${USER}','youtube','filter-playlist',true),('${none}','${USER}','youtube','filter-none',true); insert into bgm_library_items(bgm_asset_id,user_id) values ('${lib}','${USER}'); insert into bgm_playlist_items(bgm_asset_id,playlist_id) values ('${playlist}','00000000-0000-0000-0000-000000000030');`);
+      for (const [filter, expected] of [["all", 4], ["no-page", 3], ["library-only", 1], ["unreferenced", 1]] as const) {
+        const result = (await db.query<{ result: { matching: number; assets: unknown[] } }>("select admin_bgm_inventory('filter-',0,$1) result", [filter])).rows[0].result;
+        assert.equal(result.matching, expected); assert.equal(result.assets.length, expected);
+      }
+      await assert.rejects(db.query("select admin_bgm_inventory('',0,'invalid')"), /invalid usage filter/);
+      await actor(USER); await assert.rejects(db.query("select admin_bgm_inventory('',0,'all')"), /permission denied/);
+    });
   } finally { await db.close(); }
 });
 
@@ -173,7 +223,7 @@ test("admin and trash UI/API keep permission boundaries and destructive confirma
   assert.ok(route.indexOf("storage.from(BGM_AUDIO_BUCKET).remove") < route.indexOf('from("bgm_assets").delete'));
   assert.match(read("app/workspace/admin/layout.tsx"), /!session.profile.is_site_admin/);
   assert.match(read("components/AdminBgmPanel.tsx"), /confirmation !== selected.title/);
-  assert.match(read("components/WorkspaceSidebar.tsx"), /isSiteAdmin && <div className="sidebar-admin"/);
+  assert.match(read("components/WorkspaceSidebar.tsx"), /isSiteAdmin && <Link className="sidebar-action" href="\/workspace\/admin\/accounts"><ShieldCheck size=\{15\} \/>관리<\/Link>/);
   assert.match(read("components/TrashDialog.tsx"), /role="dialog" aria-modal="true"/);
   assert.match(read("app/api/resources/trash/route.ts"), /EMPTY_TRASH/);
   assert.match(read("app/api/pages/[id]/trash/route.ts"), /!context\?\.isOriginalOwner/);
@@ -187,7 +237,8 @@ test("square color chips, aligned soft buttons and neutral overview preserve con
   assert.match(css, /\.accent-color-chip::-moz-color-swatch/);
   assert.match(css, /\.page-overview \{[^}]*border: 1px solid var\(--line\); border-radius: 6px; background: transparent/);
   assert.match(read("lib/use-escape-close.ts"), /closeStack.at\(-1\) === token/);
-  assert.ok(read("supabase/schema.sql").endsWith(migration));
+  const schema = read("supabase/schema.sql");
+  assert.equal(schema.slice(schema.indexOf("-- 202609180001_admin_bgm_and_trash.sql") + "-- 202609180001_admin_bgm_and_trash.sql".length, schema.indexOf("-- 202609180002_bgm_edit_and_neutral_theme.sql")).trim(), migration.trim());
 });
 
 test("Storage cleanup retries failures and deletes queue metadata only after file removal", async () => {

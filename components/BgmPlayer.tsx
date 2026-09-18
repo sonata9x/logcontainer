@@ -35,9 +35,8 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
       iframe.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "https://www.youtube.com");
       setPlaying(false); return;
     }
-    if (current?.id === item.id && source) {
-      if (source.type === "upload") await audio.current?.play();
-      else iframe.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "https://www.youtube.com");
+    if (current?.id === item.id && source?.type === "upload") {
+      await audio.current?.play();
       setPlaying(true); return;
     }
     stop();
@@ -51,6 +50,12 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
     setSource(result.sourceType === "youtube" ? { type: "youtube", videoId: result.videoId } : { type: "upload", url: result.url });
     setPlaying(true);
   }, [access.guestToken, access.pageId, access.publicationToken, current?.id, playing, source, stop]);
+
+  useEffect(() => {
+    const changed = (event: Event) => { if ((event as CustomEvent<{ assetId: string }>).detail?.assetId === current?.bgm_asset_id) stop(); };
+    window.addEventListener("bgm-source-updated", changed);
+    return () => window.removeEventListener("bgm-source-updated", changed);
+  }, [current?.bgm_asset_id, stop]);
 
   useEffect(() => {
     if (source?.type !== "upload" || !audio.current) return;

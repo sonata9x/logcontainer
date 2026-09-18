@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { fontFamilyStack } from "@/lib/fonts";
-import { normalizeHexColor } from "@/lib/color";
+import { DEFAULT_ACCENT_COLOR, normalizeHexColor } from "@/lib/color";
 import type { LogFontFamily } from "@/lib/types";
 
 const AppearanceContext = createContext<{
@@ -18,7 +18,7 @@ export function WorkspaceAppearance({ initialSystemFont, initialAccentColor, chi
   useEffect(() => setSystemFont(initialSystemFont), [initialSystemFont]);
   useEffect(() => setAccentColor(initialAccentColor), [initialAccentColor]);
   useEffect(() => {
-    const color = normalizeHexColor(accentColor) ?? "#4F6BED";
+    const color = normalizeHexColor(accentColor) ?? DEFAULT_ACCENT_COLOR;
     const shell = document.querySelector<HTMLElement>(".workspace-shell");
     const oldBodyAccent = document.body.style.getPropertyValue("--accent");
     const oldShellAccent = shell?.style.getPropertyValue("--accent") ?? "";

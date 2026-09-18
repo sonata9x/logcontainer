@@ -5,6 +5,14 @@ export type AdminBgmAsset = {
   playlists: Array<{ title: string; owner: string }>; libraries: string[];
 };
 
+export const BGM_USAGE_FILTERS = [
+  { value: "all", label: "전체" },
+  { value: "no-page", label: "로그 미사용" },
+  { value: "library-only", label: "보관함에만 존재" },
+  { value: "unreferenced", label: "연결 없음" }
+] as const;
+export type BgmUsageFilter = typeof BGM_USAGE_FILTERS[number]["value"];
+
 export function bgmUsageLabel(asset: Pick<AdminBgmAsset, "pages" | "playlists" | "libraries" | "deletedAt" | "ready">) {
   if (asset.deletedAt) return "삭제 대기 / 재시도 가능";
   if (!asset.ready) return "업로드 미완료";

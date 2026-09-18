@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getApprovedApiContext, getAuthenticatedApiContext } from "@/lib/api-auth";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { defaultCorrectionSettings, parseCorrectionSettings } from "@/lib/logs/corrections";
-import { normalizeHexColor } from "@/lib/color";
+import { DEFAULT_ACCENT_COLOR, normalizeHexColor } from "@/lib/color";
 import { isLogFontFamily, parseLogFontFamily } from "@/lib/fonts";
 
 export async function GET() {
@@ -11,7 +11,7 @@ export async function GET() {
   const { data, error } = await context.supabase.from("user_preferences")
     .select("accent_color, correction_settings, system_font_family").eq("user_id", context.user.id).maybeSingle();
   return error ? databaseErrorResponse(error, "개인 설정을 불러오지 못했습니다.") : NextResponse.json({
-    accentColor: data?.accent_color ?? "#4F6BED",
+    accentColor: data?.accent_color ?? DEFAULT_ACCENT_COLOR,
     systemFont: parseLogFontFamily(data?.system_font_family),
     correctionSettings: parseCorrectionSettings(data?.correction_settings) ?? defaultCorrectionSettings
   });

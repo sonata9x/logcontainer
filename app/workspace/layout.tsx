@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { WorkspacePage } from "@/lib/types";
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
+import { DEFAULT_ACCENT_COLOR } from "@/lib/color";
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await requireWorkspaceSession();
@@ -25,9 +26,9 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   console.info(JSON.stringify({ event: "workspace_layout_timing", sessionMs: Math.round(sessionAt - startedAt), treeMs: Math.round(completedAt - sessionAt), resourceCount: data?.length ?? 0, totalMs: Math.round(completedAt - startedAt) }));
 
   return (
-    <div className="workspace-shell" style={{ "--accent": preferences?.accent_color ?? "#4F6BED", "--system-font-family": fontFamilyStack(preferences?.system_font_family) } as CSSProperties}>
-      <WorkspaceAppearance initialSystemFont={parseLogFontFamily(preferences?.system_font_family)} initialAccentColor={preferences?.accent_color ?? "#4F6BED"}>
-        <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} nickname={session.profile.display_name ?? session.profile.username} accentColor={preferences?.accent_color ?? "#4F6BED"} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
+    <div className="workspace-shell" style={{ "--accent": preferences?.accent_color ?? DEFAULT_ACCENT_COLOR, "--system-font-family": fontFamilyStack(preferences?.system_font_family) } as CSSProperties}>
+      <WorkspaceAppearance initialSystemFont={parseLogFontFamily(preferences?.system_font_family)} initialAccentColor={preferences?.accent_color ?? DEFAULT_ACCENT_COLOR}>
+        <WorkspaceSidebar workspaceId={session.workspace.id} workspaceName={session.workspace.name} nickname={session.profile.display_name ?? session.profile.username} accentColor={preferences?.accent_color ?? DEFAULT_ACCENT_COLOR} pages={(data ?? []) as WorkspacePage[]} isSiteAdmin={session.profile.is_site_admin} />
         <main className="workspace-main">{children}</main>
       </WorkspaceAppearance>
     </div>

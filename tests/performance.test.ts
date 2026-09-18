@@ -181,7 +181,9 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(singleWaitingMarker) + singleWaitingMarker.length, schema.indexOf(systemFontMarker))), normalizedSql(singleWaitingMigration));
   const adminBgmMarker = "-- 202609180001_admin_bgm_and_trash.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(systemFontMarker) + systemFontMarker.length, schema.indexOf(adminBgmMarker))), normalizedSql(systemFontMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(adminBgmMarker) + adminBgmMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180001_admin_bgm_and_trash.sql", import.meta.url), "utf8")));
+  const bgmEditMarker = "-- 202609180002_bgm_edit_and_neutral_theme.sql";
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(adminBgmMarker) + adminBgmMarker.length, schema.indexOf(bgmEditMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180001_admin_bgm_and_trash.sql", import.meta.url), "utf8")));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmEditMarker) + bgmEditMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8")));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

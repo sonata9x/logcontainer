@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { getSiteAdminApiContext } from "@/lib/admin-auth";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { BGM_AUDIO_BUCKET } from "@/lib/bgm";
+import { BGM_USAGE_FILTERS } from "@/lib/bgm-admin";
 
 export async function GET(request: Request) {
   const context = await getSiteAdminApiContext();
   if (!context) return NextResponse.json({ error: "사이트 관리자만 접근할 수 있습니다." }, { status: 403 });
   const url = new URL(request.url);
   const offset = Math.max(0, Math.floor(Number(url.searchParams.get("offset")) || 0));
-  const { data, error } = await context.supabase.rpc("admin_bgm_inventory", { search_text: (url.searchParams.get("search") ?? "").slice(0, 200), page_offset: Math.min(offset, 2_000_000_000) });
+  const filter = url.searchParams.get("usage") ?? "all";
+  if (!BGM_USAGE_FILTERS.some((item) => item.value === filter)) return NextResponse.json({ error: "올바르지 않은 필터입니다." }, { status: 400 });
+  const { data, error } = await context.supabase.rpc("admin_bgm_inventory", { search_text: (url.searchParams.get("search") ?? "").slice(0, 200), page_offset: Math.min(offset, 2_000_000_000), usage_filter: filter });
   return error ? databaseErrorResponse(error, "BGM 목록을 불러오지 못했습니다.") : NextResponse.json(data, { headers: { "Cache-Control": "private, no-store" } });
 }
 
