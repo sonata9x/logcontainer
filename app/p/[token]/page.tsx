@@ -6,6 +6,8 @@ import { PublicationPasswordGate } from "@/components/PublicationPasswordGate";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { getPublishedLog } from "@/lib/logs/published";
 import { getPublicationAccess, PUBLICATION_SESSION_COOKIE } from "@/lib/publication-auth";
+import { parseLogFontFamily } from "@/lib/fonts";
+import { LogFontPreload } from "@/components/logs/LogFontPreload";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -19,5 +21,6 @@ export default async function PublishedLogPage({ params }: { params: Promise<{ t
   const published = await getPublishedLog(token);
   if (!published) notFound();
   const entries = published.entries.map(toLogEntryDto);
-  return <PublicLog token={token} title={published.page.title} initialEntries={entries} totalCount={published.totalCount ?? entries.length} />;
+  const fontFamily = parseLogFontFamily(access.page.font_family);
+  return <><LogFontPreload font={fontFamily} /><PublicLog token={token} title={published.page.title} initialEntries={entries} totalCount={published.totalCount ?? entries.length} initialFontFamily={fontFamily} key={token} /></>;
 }

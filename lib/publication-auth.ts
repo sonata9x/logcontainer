@@ -12,7 +12,7 @@ export async function getPublicationContext(token: string) {
     .eq("token", token).eq("is_active", true).maybeSingle();
   if (!publication) return null;
   const [{ data: page }, { data: log }] = await Promise.all([
-    admin.from("pages").select("id, title, page_type, is_archived, deleted_at").eq("id", publication.page_id).maybeSingle(),
+    admin.from("pages").select("id, title, page_type, is_archived, deleted_at, font_family").eq("id", publication.page_id).maybeSingle(),
     admin.from("logs").select("id, visible_entry_count").eq("page_id", publication.page_id).maybeSingle()
   ]);
   if (!page || page.page_type !== "log" || page.is_archived || page.deleted_at || !log) return null;

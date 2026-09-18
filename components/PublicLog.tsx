@@ -10,9 +10,9 @@ import { BgmPlayerProvider } from "@/components/BgmPlayer";
 import { EntryPlaybackAnchor } from "@/components/logs/EntryPlaybackAnchor";
 import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
 import { PageExtrasDisplay } from "@/components/PageExtrasPanel";
-import type { PageBgmItem, PageExtras } from "@/lib/types";
+import type { LogFontFamily, PageBgmItem, PageExtras } from "@/lib/types";
 
-export function PublicLog({ token, title, initialEntries, totalCount }: { token: string; title: string; initialEntries: LogEntry[]; totalCount: number }) {
+export function PublicLog({ token, title, initialEntries, totalCount, initialFontFamily }: { token: string; title: string; initialEntries: LogEntry[]; totalCount: number; initialFontFamily: LogFontFamily }) {
   const [entries, setEntries] = useState(initialEntries);
   const [loading, setLoading] = useState(false);
   const [activeStream, setActiveStream] = useState<LogStream>("main");
@@ -49,6 +49,6 @@ export function PublicLog({ token, title, initialEntries, totalCount }: { token:
     observer.observe(target);
     return () => observer.disconnect();
   }, [entries.length, loadMore, totalCount]);
-  const content = <main className="public-log" data-font={extras?.fontFamily ?? "pretendard"}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section className="log-timeline">{visibleStreamEntries(entries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
+  const content = <main className="public-log" data-font={extras?.fontFamily ?? initialFontFamily}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section className="log-timeline">{visibleStreamEntries(entries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
   return pageId ? <BgmPlayerProvider access={{ pageId, publicationToken: token }}>{content}</BgmPlayerProvider> : content;
 }
