@@ -84,5 +84,6 @@ test("BGM playback icons have no circular border and retain focus styling", () =
   const css = read("app/globals.css");
   assert.match(css, /\.global-bgm-player button, \.bgm-play-button \{[^}]*border: 0;[^}]*background: transparent/);
   assert.match(css, /\.bgm-play-button \{ background: transparent; color: var\(--muted\)/);
-  assert.match(css, /\.bgm-play-button:hover, \.global-bgm-player button:hover/);
+  assert.match(css, /\.bgm-play-button:hover \{ background: transparent; color: var\(--text\)/);
+  assert.match(css, /\.global-bgm-player button:hover \{ background: var\(--hover\)/);
 });
