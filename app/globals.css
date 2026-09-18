@@ -206,7 +206,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .r20-message--dialogue { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 9px; align-items: start; }
 /* One inter-message gap, based on the current visible order in every log view. */
 .log-timeline > * + * { margin-block-start: 12px; }
-.log-timeline > [data-compact-spacing="true"] { margin-block-start: 4px; }
+.log-timeline > [data-compact-spacing="true"] { margin-block-start: 0; }
+.log-timeline > [data-compact-spacing="true"] .r20-message { min-height: 0; padding-top: 1px; padding-bottom: 1px; }
+/* Keep the speaker column, but an absent avatar must not force a 32px row. */
+.log-timeline > [data-compact-spacing="true"] .r20-message__avatar-slot:empty { height: 0; }
 .log-timeline .log-entry { margin-block: 0; }
 .log-timeline .r20-message { margin-block: 0; }
 /* Remove service-owned edge margins, including the bottom of dice cards.

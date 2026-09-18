@@ -51,6 +51,14 @@ test("dice cards, CSS panels, images and descriptions retain the full gap on bot
   assert.equal(isCompactEntrySpacing(description, ordinary), false);
 });
 
+test("inline color and badges do not prevent same-speaker dialogue from becoming compact", () => {
+  const rich = importRoll20HtmlV2('<div class="message general"><span class="by">GM:</span><a style="color:blue">colored dialogue</a></div>').documents[0];
+  assert.ok(rich.blocks.some((block) => block.type === "rich"));
+  const colored = v2("GM", rich.blocks);
+  assert.equal(isCompactEntrySpacing(colored, v2("GM")), true);
+  assert.equal(isCompactEntrySpacing(v2("GM"), colored), true);
+});
+
 test("stream filtering and append boundaries use the visible predecessor", () => {
   const a = v2("GM"), hidden = v2("PC"), b = v2("GM");
   hidden.document!.source.stream = { id: "casual", name: null };
@@ -63,7 +71,7 @@ test("stream filtering and append boundaries use the visible predecessor", () =>
 test("all three views share spacing; dice edge margins and import continuation padding cannot stack", () => {
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /\.log-timeline > \* \+ \* \{ margin-block-start: 12px; \}/);
-  assert.match(css, /\.log-timeline > \[data-compact-spacing="true"\] \{ margin-block-start: 4px; \}/);
+  assert.match(css, /\.log-timeline > \[data-compact-spacing="true"\] \{ margin-block-start: 0; \}/);
   assert.match(css, /\.log-timeline \.log-entry \{ margin-block: 0; \}/);
   assert.match(css, /:is\(\.r20-template, \.r20-image-block\):last-child \{ margin-bottom: 0; \}/);
   assert.doesNotMatch(css, /\.r20-message--continuation \{/);
@@ -73,4 +81,13 @@ test("all three views share spacing; dice edge margins and import continuation p
     assert.match(source, /isCompactEntrySpacing\(entry, visibleEntries\[index - 1\]\)/);
     assert.match(source, /data-compact-spacing=/);
   }
+});
+
+test("compact dialogue removes hidden-avatar row height without affecting other blocks", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.log-timeline > \[data-compact-spacing="true"\] \.r20-message \{ min-height: 0; padding-top: 1px; padding-bottom: 1px; \}/);
+  assert.match(css, /\.log-timeline > \[data-compact-spacing="true"\] \.r20-message__avatar-slot:empty \{ height: 0; \}/);
+  assert.match(css, /\.r20-message__avatar-slot \{[^}]*width: 32px;[^}]*height: 32px;/);
+  assert.match(css, /\.r20-message \{[^}]*min-height: 36px; padding: 5px 9px;/);
+  assert.doesNotMatch(css, /\.r20-message__avatar-slot:empty \{[^}]*display: none/);
 });
