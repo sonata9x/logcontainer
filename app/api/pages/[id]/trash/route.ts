@@ -22,3 +22,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { data, error } = await context.supabase.rpc("set_log_entry_deleted_v3", { target_page_id: id, target_entry_id: body.entryId, should_delete: false });
   return error ? databaseErrorResponse(error, "로그 블록을 복원하지 못했습니다.") : NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>) });
 }
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const context = await getApiPageContext(id);
+  if (!context?.isOriginalOwner) return NextResponse.json({ error: "최초 소유자만 로그 휴지통을 비울 수 있습니다." }, { status: 403 });
+  const body = await request.json().catch(() => ({}));
+  if (body.confirm !== "EMPTY_TRASH") return NextResponse.json({ error: "확인이 필요합니다." }, { status: 400 });
+  const { data, error } = await context.supabase.rpc("empty_log_entry_trash", { target_page_id: id });
+  return error ? databaseErrorResponse(error, "로그 휴지통을 비우지 못했습니다.") : NextResponse.json({ removed: data ?? 0 });
+}

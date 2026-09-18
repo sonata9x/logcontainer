@@ -4,6 +4,7 @@ import { purgeExpiredResourceHandoutImages, purgeStaleHandoutUploads } from "@/l
 import { purgeExpiredImportUploads } from "@/lib/logs/import-upload";
 import { purgeStaleBgmAssets } from "@/lib/bgm";
 import { purgeExpiredSessionCards } from "@/lib/page-extras";
+import { drainStorageDeletionQueue } from "@/lib/storage-cleanup";
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -25,12 +26,13 @@ export async function GET(request: Request) {
       purgeStaleHandoutUploads(admin),
       purgeStaleBgmAssets(admin)
     ]);
+    const purgedQueuedObjects = await drainStorageDeletionQueue(admin);
     const failure = error ?? eventError ?? rateLimitError ?? sessionError;
     if (failure) {
       console.error("[purge] failed", { code: failure.code ?? "unknown" });
       return NextResponse.json({ error: "정리 작업을 완료하지 못했습니다." }, { status: 500 });
     }
-    return NextResponse.json({ purged: data ?? 0, purgedLogEvents: events ?? 0, purgedRateLimits: rateLimits ?? 0, purgedExternalSessions: sessions ?? 0, purgedImportUploads, purgedExpiredHandoutImages, purgedExpiredSessionCards, purgedStaleHandoutUploads, purgedStaleBgmAssets });
+    return NextResponse.json({ purged: data ?? 0, purgedLogEvents: events ?? 0, purgedRateLimits: rateLimits ?? 0, purgedExternalSessions: sessions ?? 0, purgedImportUploads, purgedExpiredHandoutImages, purgedExpiredSessionCards, purgedStaleHandoutUploads, purgedStaleBgmAssets, purgedQueuedObjects });
   } catch (error) {
     console.error("[purge] failed", { name: error instanceof Error ? error.name : "unknown" });
     return NextResponse.json({ error: "정리 작업을 완료하지 못했습니다." }, { status: 500 });

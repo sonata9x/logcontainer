@@ -60,13 +60,17 @@ export async function purgeStaleBgmAssets(admin: SupabaseClient) {
   if (error) throw new Error("stale BGM lookup failed");
   let purged = 0;
   for (const asset of candidates ?? []) {
-    const [{ count: library }, { count: playlists }, { count: pages }] = await Promise.all([
+    const [library, playlists, pages] = await Promise.all([
       admin.from("bgm_library_items").select("id", { count: "exact", head: true }).eq("bgm_asset_id", asset.id),
       admin.from("bgm_playlist_items").select("id", { count: "exact", head: true }).eq("bgm_asset_id", asset.id),
       admin.from("page_bgm_items").select("id", { count: "exact", head: true }).eq("bgm_asset_id", asset.id)
     ]);
-    if ((library ?? 0) + (playlists ?? 0) + (pages ?? 0) > 0) continue;
-    if (asset.storage_path) await admin.storage.from(BGM_AUDIO_BUCKET).remove([asset.storage_path]);
+    if (library.error || playlists.error || pages.error) throw new Error("BGM reference lookup failed");
+    if ((library.count ?? 0) + (playlists.count ?? 0) + (pages.count ?? 0) > 0) continue;
+    if (asset.storage_path) {
+      const { error: storageError } = await admin.storage.from(BGM_AUDIO_BUCKET).remove([asset.storage_path]);
+      if (storageError) continue;
+    }
     const { error: deleteError } = await admin.from("bgm_assets").delete().eq("id", asset.id);
     if (!deleteError) purged += 1;
   }
