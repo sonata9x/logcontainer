@@ -205,6 +205,8 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .r20-message { display: block; width: 100%; min-height: 36px; padding: 5px 9px; line-height: 1.55; box-sizing: border-box; background: #fff; }
 .r20-message--dialogue { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 9px; align-items: start; }
 .r20-message--continuation { padding-top: 4px; padding-bottom: 4px; }
+/* Separate styled content panels without changing authored padding or positioning. */
+.r20-message:has(.r20-rich-context--block [style]) { margin-block: 6px; }
 .r20-message--description, .r20-message--system { background: #fff; }
 .r20-message--system { color: #7c493b; }
 .r20-message__avatar-slot { width: 32px; min-width: 32px; height: 32px; align-self: start; }

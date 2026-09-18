@@ -47,7 +47,9 @@ Auth API 쓰기와 application DB는 별개 트랜잭션이다. 이를 하나의
 - orchestration mock: claim 실패 시 Auth 미호출, 성공/실패의 최종 처리 순서 및 비밀번호 이력 미포함, 최종 저장 실패 시 성공 응답 불허.
 - 최종 전체 테스트/빌드/린트 결과는 작업 완료 보고 참조. 실제 Supabase SQL Editor 적용 및 실제 Auth 세션/브라우저 클릭/복구 링크 재생성은 이 세션에서 확인하지 못함(로컬 env와 브라우저 조작 도구 없음). 사용자 계정/비밀번호를 테스트용으로 변경하지 않았음. 실제 동시 다중 DB connection race는 PGlite 단일 연결 테스트로 대체했다고 주장하지 않는다.
 
-최종 자동 검증: 전체 테스트 212개 통과, production build 및 ESLint 통과. 비상 운영 SQL도 격리 DB에서 15분 전 실행 거부·15분 후 작업 해제·코드 재사용 거부·이력 기록을 검증했다.
+최종 자동 검증: 사용자 CSS 바깥 여백 조정 포함 전체 테스트 213개 통과, production build 및 ESLint 통과. 비상 운영 SQL도 격리 DB에서 15분 전 실행 거부·15분 후 작업 해제·코드 재사용 거부·이력 기록을 검증했다.
 원격 main의 후속 4개 커밋(`9a3a145`까지: 투명 BGM 버튼/채워진 재생 아이콘/가져오기 화면 X 제거)을 작업 브랜치에 병합하여 보존했다. 이전 BGM 회색 배경을 강제하던 CSS 회귀 assertion은 최신 main의 투명 배경 요구로 갱신했다.
+
+추가 UI 조정: 사용자 inline style이 포함된 block-flow Rich 콘텐츠 메시지에만 바깥 위·아래 여백을 각각 6px 추가했다. 일반 대화/inline 배지 간격, 사용자 CSS padding/top/bottom, 중앙 정렬, canonical document는 변경하지 않는다. 편집·게시 공통 Roll20 테마에 적용한다.
 
 근거: [OWASP 복구 권고](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html), [Supabase sessions/session_id](https://supabase.com/docs/guides/auth/sessions), [공식 Auth session 모델](https://github.com/supabase/auth/blob/master/internal/models/sessions.go), [서버 전용 updateUserById](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid), [Supabase password security/current password 설정](https://supabase.com/docs/guides/auth/password-security).
