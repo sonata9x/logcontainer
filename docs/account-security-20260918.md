@@ -40,6 +40,8 @@ Auth API 쓰기와 application DB는 별개 트랜잭션이다. 이를 하나의
 ## 적용·검증·남은 확인
 
 - 신규 SQL `202609180003_account_security.sql` 한 개를 먼저 적용해야 한다. 기존 계정은 cutoff가 없어 적용만으로 로그아웃되지 않음. 기존 API/서버 세션 context 반환 schema 유지. schema.sql bootstrap에 동일 내용 포함. main/배포 승격은 SQL 적용 후 진행.
+- Supabase Auth 비밀번호 설정에서 **Require current password when changing password**를 켜야 한다. 앱 route의 현재 비밀번호 확인만으로는 Supabase 공개 Auth API의 직접 password update까지 막는 것이 아니다. 이 옵션은 직접 Auth 변경에도 현재 비밀번호를 요구하여 탈취한 로그인 토큰만으로 변경하는 우회 경로를 막는다. 이메일 nonce를 보내는 별도 **Require reauthentication when changing password** 옵션과 혼동하지 않는다. 앱의 관리자/복구 변경은 서버 전용 admin API를 사용한다. 비밀번호 최소 4자 정책은 그대로 유지한다.
+- application 보안 이력/세션 cutoff는 이번 앱 API를 통한 변경에 적용된다. Supabase Auth API를 직접 호출한 변경은 앱 이력에 자동 포함되지 않으며 Supabase Auth 자체 감사 로그에서 별도로 확인해야 한다. Auth 관리 테이블에 임의의 password trigger를 추가하거나 모든 provider 변경이 앱 이력에 수집된다고 주장하지 않는다. 운영 적용 후 위 설정의 직접 API 거부 동작과 admin API 복구 동작을 실제 테스트 계정으로 추가 확인해야 한다.
 - 격리 PostgreSQL(PGlite): SQL 반복 실행, 아이디 중복/예약/가입 시 trigger, UUID 공유 유지, 미수락 초대 취소, token expiry/revoke/reissue/consume, 권한/RLS 직접 조회 차단, 구 세션 refresh 차단/새 세션 허용/Workspace context 차단, Auth 실패 pending 보호/15분 후 운영 해제, 90일 cleanup 실행 검증.
 - 실제 Supabase JS Auth SDK 요청을 mocked fetch로 검증: 별도 클라이언트 비밀번호 확인, 원문 대신 derive 전달, 반환 계정 UUID 확인, 임시 세션 local sign-out. 실제 Auth 서버 통신은 아니다.
 - orchestration mock: claim 실패 시 Auth 미호출, 성공/실패의 최종 처리 순서 및 비밀번호 이력 미포함, 최종 저장 실패 시 성공 응답 불허.
@@ -48,4 +50,4 @@ Auth API 쓰기와 application DB는 별개 트랜잭션이다. 이를 하나의
 최종 자동 검증: 전체 테스트 212개 통과, production build 및 ESLint 통과. 비상 운영 SQL도 격리 DB에서 15분 전 실행 거부·15분 후 작업 해제·코드 재사용 거부·이력 기록을 검증했다.
 원격 main의 후속 4개 커밋(`9a3a145`까지: 투명 BGM 버튼/채워진 재생 아이콘/가져오기 화면 X 제거)을 작업 브랜치에 병합하여 보존했다. 이전 BGM 회색 배경을 강제하던 CSS 회귀 assertion은 최신 main의 투명 배경 요구로 갱신했다.
 
-근거: [OWASP 복구 권고](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html), [Supabase sessions/session_id](https://supabase.com/docs/guides/auth/sessions), [공식 Auth session 모델](https://github.com/supabase/auth/blob/master/internal/models/sessions.go), [서버 전용 updateUserById](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid).
+근거: [OWASP 복구 권고](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html), [Supabase sessions/session_id](https://supabase.com/docs/guides/auth/sessions), [공식 Auth session 모델](https://github.com/supabase/auth/blob/master/internal/models/sessions.go), [서버 전용 updateUserById](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid), [Supabase password security/current password 설정](https://supabase.com/docs/guides/auth/password-security).
