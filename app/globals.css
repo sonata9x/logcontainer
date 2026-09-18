@@ -204,9 +204,15 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .log-entry-v2:hover { border: 0; background: #fff; }
 .r20-message { display: block; width: 100%; min-height: 36px; padding: 5px 9px; line-height: 1.55; box-sizing: border-box; background: #fff; }
 .r20-message--dialogue { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 9px; align-items: start; }
-.r20-message--continuation { padding-top: 4px; padding-bottom: 4px; }
-/* Separate styled content panels without changing authored padding or positioning. */
-.r20-message:has(.r20-rich-context--block [style]) { margin-block: 6px; }
+/* One inter-message gap, based on the current visible order in every log view. */
+.log-timeline > * + * { margin-block-start: 12px; }
+.log-timeline > [data-compact-spacing="true"] { margin-block-start: 4px; }
+.log-timeline .log-entry { margin-block: 0; }
+.log-timeline .r20-message { margin-block: 0; }
+/* Remove service-owned edge margins, including the bottom of dice cards.
+   Authored Rich CSS padding, margins and offsets remain untouched. */
+.r20-message__content-flow > :is(.r20-template, .r20-image-block):first-child { margin-top: 0; }
+.r20-message__content-flow > :is(.r20-template, .r20-image-block):last-child { margin-bottom: 0; }
 .r20-message--description, .r20-message--system { background: #fff; }
 .r20-message--system { color: #7c493b; }
 .r20-message__avatar-slot { width: 32px; min-width: 32px; height: 32px; align-self: start; }
