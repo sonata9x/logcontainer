@@ -35,6 +35,27 @@ test("only adjacent named dialogue from the same speaker is compact", () => {
   assert.equal(isCompactEntrySpacing(entry("GM", { entry_type: "system" }), entry("GM")), false);
 });
 
+test("visible avatar or timestamp starts a spaced group, but inherited hidden headers remain compact", () => {
+  const previous = v2("GM");
+  for (const header of ["avatar", "timestamp"] as const) {
+    const current = v2("GM");
+    current.document!.speaker!.avatarUrl = header === "avatar" ? "https://example.com/avatar.png" : null;
+    current.document!.timestamp.raw = header === "timestamp" ? "July 14, 2026 1:13AM" : null;
+    current.document!.presentation = { speakerExplicit: true, avatarExplicit: header === "avatar", timestampExplicit: header === "timestamp", continuation: true };
+    assert.equal(isCompactEntrySpacing(current, previous), false);
+    // Subsequent headerless dialogue still follows tightly after this group header.
+    assert.equal(isCompactEntrySpacing(v2("GM"), current), true);
+    current.document!.presentation.avatarExplicit = false;
+    current.document!.presentation.timestampExplicit = false;
+    assert.equal(isCompactEntrySpacing(current, previous), true);
+    delete current.document!.presentation;
+    assert.equal(isCompactEntrySpacing(current, previous), false);
+  }
+  const emptyHeader = v2("GM");
+  emptyHeader.document!.presentation = { speakerExplicit: true, avatarExplicit: true, timestampExplicit: true, continuation: false };
+  assert.equal(isCompactEntrySpacing(emptyHeader, previous), true);
+});
+
 test("dice cards, CSS panels, images and descriptions retain the full gap on both sides", () => {
   const ordinary = v2("GM");
   const documents = ["rendered-v2-cases.html", "rendered-topology-v2.html"].flatMap((file) => importRoll20HtmlV2(readFileSync(new URL(`./fixtures/roll20/${file}`, import.meta.url), "utf8")).documents);

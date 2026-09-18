@@ -22,6 +22,13 @@ function dialogueSpeaker(entry: LogEntry | undefined): string | null {
 }
 
 export function isCompactEntrySpacing(entry: LogEntry, previous: LogEntry | undefined): boolean {
+  if (entry.document_version === 2 && entry.document) {
+    const { speaker, timestamp, presentation } = entry.document;
+    // Use the same visibility rules as the renderer, not inherited metadata.
+    const showsAvatar = Boolean(speaker?.avatarUrl) && (presentation?.avatarExplicit ?? true);
+    const showsTimestamp = Boolean(timestamp.raw) && (presentation?.timestampExplicit ?? true);
+    if (showsAvatar || showsTimestamp) return false;
+  }
   const speaker = dialogueSpeaker(entry);
   return speaker !== null && speaker === dialogueSpeaker(previous);
 }
