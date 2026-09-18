@@ -3,7 +3,7 @@ import type { Profile, ResourcePermissions, ResourceRole, Workspace } from "@/li
 
 type PersonalSessionPayload = { profile: Profile; workspace: Workspace };
 
-export async function getAuthenticatedApiContext() {
+async function getClaimsContext() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const userId = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
@@ -12,8 +12,18 @@ export async function getAuthenticatedApiContext() {
   return { supabase, user: { id: userId, email } };
 }
 
+export async function getAuthenticatedApiContext() {
+  const context = await getClaimsContext();
+  if (!context) return null;
+  const { data: sessionValid, error: sessionError } = await context.supabase.rpc("account_session_valid");
+  if (sessionError || sessionValid !== true) return null;
+  return context;
+}
+
 export async function getApprovedApiContext() {
-  const authenticated = await getAuthenticatedApiContext();
+  // This existing RPC checks is_account_approved(auth.uid()), which includes
+  // account_session_valid at the DB boundary. Avoid a redundant network RPC.
+  const authenticated = await getClaimsContext();
   if (!authenticated) return null;
   const { supabase, user } = authenticated;
   const { data } = await supabase.rpc("get_personal_session_context");

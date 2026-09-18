@@ -62,7 +62,7 @@ test("inline content mode keeps Rich presentation and exposes only text leaves",
   assert.doesNotMatch(html, /textarea|select|node id|RichNode|TextBlock/);
 });
 
-test("Roll20 theme keeps user CSS positioning in a block context without service-added vertical spacing", () => {
+test("Roll20 theme preserves user CSS positioning inside the block context", () => {
   assert.match(themeCss, /\.log-entry-v2 \{[\s\S]*?border: 0;[\s\S]*?border-radius: 0;[\s\S]*?background: #fff;/);
   assert.doesNotMatch(themeCss, /\.entry-wrap:nth-child\(even\) \.r20-message/);
   assert.match(themeCss, /\.r20-message--dialogue \{[\s\S]*?grid-template-columns: 32px minmax\(0, 1fr\)/);
@@ -73,6 +73,15 @@ test("Roll20 theme keeps user CSS positioning in a block context without service
   assert.match(themeCss, /\.r20-message__content-flow \{[^}]*position: relative/);
   assert.match(themeCss, /\.r20-rich-context--block \{ position: static; display: block; margin: 0; \}/);
   assert.match(themeCss, /\.log-rich-context \{[^}]*position: relative/);
+});
+
+test("styled content panels get only a small outer vertical gap, not changes to their authored layout", () => {
+  assert.match(themeCss, /\.r20-message:has\(\.r20-rich-context--block \[style\]\) \{ margin-block: 6px; \}/);
+  const result = importRoll20HtmlV2('<div class="message desc"><div style="display:block;padding:12px 9px;position:relative;top:-5px;text-align:center">panel</div></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.match(html, /style="display:block;padding:12px 9px;position:relative;top:-5px;text-align:center"/);
+  assert.match(html, /r20-rich-context--block/);
+  assert.doesNotMatch(themeCss, /\.r20-message:has\(\.r20-rich-context--inline/);
 });
 
 test("image alt remains alternative text and is not rendered as a caption", () => {

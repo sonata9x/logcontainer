@@ -183,7 +183,9 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(systemFontMarker) + systemFontMarker.length, schema.indexOf(adminBgmMarker))), normalizedSql(systemFontMigration));
   const bgmEditMarker = "-- 202609180002_bgm_edit_and_neutral_theme.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(adminBgmMarker) + adminBgmMarker.length, schema.indexOf(bgmEditMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180001_admin_bgm_and_trash.sql", import.meta.url), "utf8")));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmEditMarker) + bgmEditMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8")));
+  const accountSecurityMarker = "-- 202609180003_account_security.sql";
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmEditMarker) + bgmEditMarker.length, schema.indexOf(accountSecurityMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8")));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(accountSecurityMarker) + accountSecurityMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180003_account_security.sql", import.meta.url), "utf8")));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

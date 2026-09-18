@@ -64,7 +64,8 @@ test("narrow-editor playback is hidden but public playback remains visible", () 
   assert.doesNotMatch(rule, /\.public-log/);
   assert.match(css, /\.public-log \.entry-bgm-button \{ left: 0; top: 0/);
   assert.doesNotMatch(css, /\.entry-wrap > \.bgm-library-add/);
-  assert.match(css, /\.bgm-play-button \{ background: #efefed; color: var\(--muted\)/);
+  assert.match(css, /\.bgm-play-button \{ background: transparent; color: var\(--muted\)/);
+  assert.match(css, /\.bgm-play-button:hover \{ background: transparent; color: var\(--text\)/);
 });
 
 test("theme accent reaches portals, restores on exit, and hover does not lose theme color", () => {

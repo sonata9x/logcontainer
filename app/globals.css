@@ -205,6 +205,8 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .r20-message { display: block; width: 100%; min-height: 36px; padding: 5px 9px; line-height: 1.55; box-sizing: border-box; background: #fff; }
 .r20-message--dialogue { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 9px; align-items: start; }
 .r20-message--continuation { padding-top: 4px; padding-bottom: 4px; }
+/* Separate styled content panels without changing authored padding or positioning. */
+.r20-message:has(.r20-rich-context--block [style]) { margin-block: 6px; }
 .r20-message--description, .r20-message--system { background: #fff; }
 .r20-message--system { color: #7c493b; }
 .r20-message__avatar-slot { width: 32px; min-width: 32px; height: 32px; align-self: start; }
@@ -436,6 +438,18 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .log-entry-drag-handle:hover { color: var(--text); }
 .log-entry-drag-handle:active { cursor: grabbing; }
 .load-more-entries { display: block; margin: 24px auto 80px; }
+.account-security-panel > p, .account-security-panel form p { font-size: 13px; line-height: 1.7; }
+.account-security-panel fieldset { border: 0; padding: 0; margin: 0; }
+.account-security-panel > details { margin-top: 24px; }
+.account-security-history ol { list-style: none; margin: 12px 0; padding: 0; }
+.account-security-history li { display: flex; flex-direction: column; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.account-security-history small { color: var(--muted); }
+.account-secret-box { border: 1px solid var(--line); border-radius: 7px; padding: 14px; margin: 16px 0; overflow-wrap: anywhere; }
+.account-secret-box p, .account-secret-box small { font-size: 12px; line-height: 1.7; }
+.account-secret-box input { font-family: monospace; }
+.account-secret-box .button { margin: 8px 8px 0 0; }
+.account-recovery-list { list-style: none; padding: 0; }
+.account-recovery-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; font-size: 12px; }
 .admin-navigation { display: flex; align-items: center; gap: 24px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
 .admin-navigation nav { display: flex; gap: 18px; }
 .admin-navigation a { color: var(--muted); }

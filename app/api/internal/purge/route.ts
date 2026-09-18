@@ -17,22 +17,23 @@ export async function GET(request: Request) {
     // the database rows disappear, so their paths remain discoverable on retry.
     const purgedExpiredHandoutImages = await purgeExpiredResourceHandoutImages(admin);
     const purgedExpiredSessionCards = await purgeExpiredSessionCards(admin);
-    const [{ data, error }, { data: events, error: eventError }, { data: rateLimits, error: rateLimitError }, { data: sessions, error: sessionError }, purgedImportUploads, purgedStaleHandoutUploads, purgedStaleBgmAssets] = await Promise.all([
+    const [{ data, error }, { data: events, error: eventError }, { data: rateLimits, error: rateLimitError }, { data: sessions, error: sessionError }, { data: accountEvents, error: accountEventError }, purgedImportUploads, purgedStaleHandoutUploads, purgedStaleBgmAssets] = await Promise.all([
       admin.rpc("purge_expired_resources"),
       admin.rpc("purge_stale_log_change_events"),
       admin.rpc("purge_security_rate_limits"),
       admin.rpc("purge_expired_external_sessions"),
+      admin.rpc("purge_account_security_records"),
       purgeExpiredImportUploads(),
       purgeStaleHandoutUploads(admin),
       purgeStaleBgmAssets(admin)
     ]);
     const purgedQueuedObjects = await drainStorageDeletionQueue(admin);
-    const failure = error ?? eventError ?? rateLimitError ?? sessionError;
+    const failure = error ?? eventError ?? rateLimitError ?? sessionError ?? accountEventError;
     if (failure) {
       console.error("[purge] failed", { code: failure.code ?? "unknown" });
       return NextResponse.json({ error: "정리 작업을 완료하지 못했습니다." }, { status: 500 });
     }
-    return NextResponse.json({ purged: data ?? 0, purgedLogEvents: events ?? 0, purgedRateLimits: rateLimits ?? 0, purgedExternalSessions: sessions ?? 0, purgedImportUploads, purgedExpiredHandoutImages, purgedExpiredSessionCards, purgedStaleHandoutUploads, purgedStaleBgmAssets, purgedQueuedObjects });
+    return NextResponse.json({ purged: data ?? 0, purgedLogEvents: events ?? 0, purgedRateLimits: rateLimits ?? 0, purgedExternalSessions: sessions ?? 0, purgedAccountSecurityEvents: accountEvents ?? 0, purgedImportUploads, purgedExpiredHandoutImages, purgedExpiredSessionCards, purgedStaleHandoutUploads, purgedStaleBgmAssets, purgedQueuedObjects });
   } catch (error) {
     console.error("[purge] failed", { name: error instanceof Error ? error.name : "unknown" });
     return NextResponse.json({ error: "정리 작업을 완료하지 못했습니다." }, { status: 500 });

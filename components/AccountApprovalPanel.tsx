@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { AccountStatus, Profile } from "@/lib/types";
+import { AdminAccountSecurityDialog } from "@/components/AdminAccountSecurityDialog";
 
 const FILTERS: Array<{ value: AccountStatus; label: string }> = [
   { value: "pending", label: "승인 대기" },
@@ -10,11 +11,12 @@ const FILTERS: Array<{ value: AccountStatus; label: string }> = [
   { value: "disabled", label: "사용 중지" }
 ];
 
-export function AccountApprovalPanel() {
+export function AccountApprovalPanel({ actorId }: { actorId: string }) {
   const [status, setStatus] = useState<AccountStatus>("pending");
   const [accounts, setAccounts] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  const [securityAccount, setSecurityAccount] = useState<Profile | null>(null);
 
   async function load(nextStatus = status) {
     setLoading(true);
@@ -42,10 +44,12 @@ export function AccountApprovalPanel() {
     <div className="status-tabs">{FILTERS.map((filter) => <button key={filter.value} className={`button ${status === filter.value ? "active" : ""}`} onClick={() => setStatus(filter.value)}>{filter.label}</button>)}</div>
     {loading ? <p>불러오는 중…</p> : accounts.length ? <div className="account-list">{accounts.map((account) => <article className="account-row" key={account.id}>
       <div><strong>{account.display_name || account.username}</strong><small>@{account.username} · 신청 {new Date(account.created_at).toLocaleDateString("ko-KR")}{account.is_site_admin ? " · 사이트 관리자" : ""}</small></div>
+      <button className="button" onClick={() => setSecurityAccount(account)}>보안 이력 / 복구</button>
       {!account.is_site_admin && <div className="account-actions">
         {account.account_status !== "approved" && <button className="button button-primary" disabled={acting === account.id} onClick={() => moderate(account.id, "approve")}>승인</button>}
         {account.account_status !== "rejected" && <button className="button button-danger" disabled={acting === account.id} onClick={() => moderate(account.id, "reject")}>거절</button>}
       </div>}
     </article>)}</div> : <p className="muted">해당 상태의 계정이 없습니다.</p>}
+    {securityAccount && <AdminAccountSecurityDialog userId={securityAccount.id} username={securityAccount.username} isOwnAccount={securityAccount.id === actorId} approved={securityAccount.account_status === "approved"} onClose={() => setSecurityAccount(null)} />}
   </section>;
 }
