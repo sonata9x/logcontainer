@@ -391,8 +391,9 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .global-bgm-player { position: fixed; z-index: 120; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 9px; width: min(460px, calc(100vw - 36px)); padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgb(255 255 255 / 96%); box-shadow: 0 10px 32px rgb(0 0 0 / 16%); }
 .global-bgm-player strong { min-width: 0; overflow: hidden; flex: 1; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .global-bgm-player button, .bgm-play-button { display: grid; width: 29px; height: 29px; flex: 0 0 auto; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
-.bgm-play-button { background: #efefed; color: var(--muted); font-family: var(--system-font-family, Pretendard, sans-serif); }
-.bgm-play-button:hover, .global-bgm-player button:hover { background: var(--hover); }
+.bgm-play-button { background: transparent; color: var(--muted); font-family: var(--system-font-family, Pretendard, sans-serif); }
+.bgm-play-button:hover { background: transparent; color: var(--text); }
+.global-bgm-player button:hover { background: var(--hover); }
 .global-bgm-player label { display: flex; align-items: center; gap: 5px; }
 .global-bgm-player input { width: 88px; }
 .entry-bgm-button { position: absolute; z-index: 3; left: -58px; top: 13px; }

@@ -78,5 +78,5 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
 
 export function BgmPlayButton({ item, className = "" }: { item: PageBgmItem; className?: string }) {
   const player = useBgmPlayer();
-  return <button className={`bgm-play-button ${className}`} onClick={() => void player.play(item)} title={`${displayBgmTitle(item)} 재생`} aria-label={`${displayBgmTitle(item)} 재생`}>{player.currentId === item.id ? <Pause size={14} /> : <Play size={14} />}</button>;
+  return <button className={`bgm-play-button ${className}`} onClick={() => void player.play(item)} title={`${displayBgmTitle(item)} 재생`} aria-label={`${displayBgmTitle(item)} 재생`}>{player.currentId === item.id ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}</button>;
 }
