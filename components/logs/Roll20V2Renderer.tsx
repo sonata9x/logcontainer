@@ -78,9 +78,12 @@ function richNeedsBlockFlow(nodes: RichNode[]): boolean {
 }
 
 function RichBlockView({ block, editor }: { block: Extract<LogBlock, { type: "rich" }>; editor?: TextEditor }) {
-  const blockFlow = richNeedsBlockFlow(block.nodes);
+  // Older imports lost the flyout class and retained an empty unstyled div.
+  // Ignore its zero-content shell for presentation; immutable snapshots stay intact.
+  const contentNodes = block.nodes.filter((node) => !(node.type === "element" && node.tag === "div" && !node.style.length && !node.children.length && !node.href && !node.title));
+  const blockFlow = richNeedsBlockFlow(contentNodes);
   const Tag = blockFlow ? "div" : "span";
-  const nodes = blockFlow || block.nodes.some((node) => node.type === "element" && isCentered(node.style)) ? trimPresentationBoundaries(block.nodes) : block.nodes;
+  const nodes = contentNodes.length !== block.nodes.length || blockFlow || contentNodes.some((node) => node.type === "element" && isCentered(node.style)) ? trimPresentationBoundaries(contentNodes) : contentNodes;
   return <Tag className={`log-rich-context r20-rich-context ${blockFlow ? "r20-rich-context--block" : "r20-rich-context--inline"}`}>{nodes.map((node) => <RichNodeView key={node.id} node={node} editor={editor} root />)}</Tag>;
 }
 

@@ -71,7 +71,19 @@ function parseRenderedRecord(record: Roll20SourceRecord, seed: string): BlockPar
   const result: BlockParseResult = { blocks: [], warnings: [], sanitizedStyleCount: 0, droppedStyleCount: 0, unknownFallbackCount: 0 };
   const $ = cheerio.load(record.renderedHtml ?? "", null, false);
   const root = $(".message").first();
+  const hasExportMenu = root.find(".flyout").length > 0;
+  const hasAuthoredStyle = root.find("[style]").toArray().some((node) => !$(node).is(ROLL20_HEADER_SELECTOR) && Boolean($(node).attr("style")?.trim()));
   root.find(ROLL20_HEADER_SELECTOR).remove();
+  // Some copied Roll20 exports pad CSS messages with tabs before the flyout.
+  // Strip only that root-level boundary artifact, never <br> or Rich/pre text.
+  if (hasExportMenu && hasAuthoredStyle) {
+    const contents = root.contents().toArray();
+    while (contents.length) {
+      const last = contents.at(-1)!;
+      if (last.type !== "text" || !/^[\t\r\n ]+$/.test(last.data) || !last.data.includes("\t")) break;
+      $(last).remove(); contents.pop();
+    }
+  }
   const template = root.find("[class*='sheet-rolltemplate-']").first();
   if (template.length && isRollTemplateClass(template.attr("class"))) {
     const templateName = record.rolltemplate ?? String(template.attr("class") ?? "").split(/\s+/).find((name) => name.startsWith("sheet-rolltemplate-"))?.replace("sheet-rolltemplate-", "") ?? null;

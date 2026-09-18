@@ -22,7 +22,8 @@ import { useEscapeClose } from "@/lib/use-escape-close";
 import type { SupportedImportPlatform } from "@/lib/logs/import/types";
 import { isCompactEntrySpacing } from "@/lib/logs/entry-spacing";
 import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
-import { BgmPlayButton, BgmPlayerProvider } from "@/components/BgmPlayer";
+import { BgmPlayerProvider } from "@/components/BgmPlayer";
+import { EntryPlaybackAnchor } from "@/components/logs/EntryPlaybackAnchor";
 import { BgmPlaylistDialog } from "@/components/BgmPlaylistDialog";
 import { TrashDialog } from "@/components/TrashDialog";
 import { ImportPlatformHelp } from "@/components/ImportPlatformHelp";
@@ -694,9 +695,8 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
         {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
       </article>;
   return <div className="entry-wrap">
-    {bgmItem && <BgmPlayButton item={bgmItem} className="entry-bgm-button" />}
+    <EntryPlaybackAnchor item={bgmItem}>{entryBody}</EntryPlaybackAnchor>
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
-    {entryBody}
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
     {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}

@@ -22,4 +22,4 @@ export function isRollTemplateClass(classValue: string | undefined) {
   return roll20ClassNames(classValue).some((name) => name.startsWith("sheet-rolltemplate-"));
 }
 
-export const ROLL20_HEADER_SELECTOR = ".avatar, .character-avatar, .tstamp, .timestamp, time, .by, .speaker, .author, .username, .message-sender, .byline, .spacer, [aria-hidden='true'], [hidden]";
+export const ROLL20_HEADER_SELECTOR = ".avatar, .character-avatar, .tstamp, .timestamp, time, .by, .speaker, .author, .username, .message-sender, .byline, .spacer, .flyout, [aria-hidden='true'], [hidden]";
