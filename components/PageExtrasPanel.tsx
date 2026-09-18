@@ -9,28 +9,39 @@ import { LOG_FONT_OPTIONS, SESSION_CARD_MAX_BYTES, SESSION_CARD_TYPES } from "@/
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { BgmLibraryItem, BgmPlaylist, LogFontFamily, PageBgmItem, PageExtras } from "@/lib/types";
 import { BgmSourceCreator } from "@/components/BgmSourceCreator";
+import { displayBgmTitle } from "@/lib/bgm";
 
 export function BgmAttachDialog({ pageId, entryId, current, onChange, onClose }: { pageId: string; entryId: string; current: PageBgmItem | null; onChange: (item: PageBgmItem | null) => void; onClose: () => void }) {
   const [library, setLibrary] = useState<BgmLibraryItem[]>([]);
   const [playlists, setPlaylists] = useState<BgmPlaylist[]>([]);
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
   async function reload() { const [libraryResult, playlistResult] = await Promise.all([fetch("/api/bgm/library", { cache: "no-store" }).then((response) => response.json()), fetch("/api/bgm/playlists", { cache: "no-store" }).then((response) => response.json())]); setLibrary(libraryResult.items ?? []); setPlaylists(playlistResult.playlists ?? []); }
   useEffect(() => { void reload(); }, []);
   async function choose(assetId: string) {
+    if (pending) return;
     if (current?.bgm_asset_id === assetId) return onClose();
     setPending(true);
-    const response = await fetch(`/api/pages/${pageId}/bgm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId, role: "entry", entryId }) });
-    const result = await response.json().catch(() => ({})); setPending(false);
-    if (!response.ok) return window.alert(result.error ?? "메시지 BGM을 연결하지 못했습니다.");
-    onChange(result.item); onClose();
+    setError("");
+    try {
+      const response = await fetch(`/api/pages/${pageId}/bgm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId, role: "entry", entryId }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.item) throw new Error(result.error ?? "메시지 BGM을 연결하지 못했습니다.");
+      onChange(result.item); onClose();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "메시지 BGM을 연결하지 못했습니다."); }
+    finally { setPending(false); }
   }
   async function remove() {
-    if (!current) return;
-    setPending(true); const response = await fetch(`/api/pages/${pageId}/bgm?itemId=${current.id}`, { method: "DELETE" }); setPending(false);
-    if (!response.ok) return window.alert("메시지 BGM을 제거하지 못했습니다.");
-    onChange(null); onClose();
+    if (!current || pending) return;
+    setPending(true); setError("");
+    try {
+      const response = await fetch(`/api/pages/${pageId}/bgm?itemId=${current.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("메시지 BGM을 제거하지 못했습니다.");
+      onChange(null); onClose();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "메시지 BGM을 제거하지 못했습니다."); }
+    finally { setPending(false); }
   }
-  return typeof document === "undefined" ? null : createPortal(<div className="modal-backdrop" onMouseDown={() => !pending && onClose()}><section className="modal-card bgm-attach-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={18} /></button><h2>메시지 BGM</h2><BgmSourceCreator onCreated={reload} /><h3>내 BGM</h3><div className="bgm-picker-list">{library.length ? library.map((item) => <button className="button" key={item.id} onClick={() => void choose(item.bgm_asset_id)} disabled={pending}>{item.custom_title || item.asset.canonical_title}</button>) : <p>설정의 BGM 보관함에 BGM을 먼저 추가해주세요.</p>}</div>{playlists.length > 0 && <><h3>플레이리스트</h3><div className="bgm-picker-playlists">{playlists.map((playlist) => <details key={playlist.id}><summary>{playlist.title}</summary><div className="bgm-picker-list">{playlist.items.map((item) => <button className="button" key={item.id} onClick={() => void choose(item.bgm_asset_id)} disabled={pending}>{item.custom_title || item.asset.canonical_title}</button>)}</div></details>)}</div></>}<div className="modal-actions">{current && <button className="button button-danger" onClick={() => void remove()} disabled={pending}>연결 해제</button>}<button className="button" onClick={onClose}>닫기</button></div></section></div>, document.body);
+  return typeof document === "undefined" ? null : createPortal(<div className="modal-backdrop" onMouseDown={() => !pending && onClose()}><section className="modal-card bgm-attach-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" aria-label="BGM 설정 닫기" onClick={onClose} disabled={pending}><X size={18} /></button><h2>메시지 BGM</h2>{current && <section className="bgm-current-track" aria-label="현재 BGM"><BgmPlayButton item={current} /><div><span className="muted">현재 BGM</span><strong>{displayBgmTitle(current)}</strong></div></section>}{error && <p role="alert">{error}</p>}<BgmSourceCreator onCreated={reload} /><h3>내 BGM</h3><div className="bgm-picker-list">{library.length ? library.map((item) => <button className="button" key={item.id} onClick={() => void choose(item.bgm_asset_id)} disabled={pending} aria-pressed={current?.bgm_asset_id === item.bgm_asset_id}>{item.custom_title || item.asset.canonical_title}</button>) : <p>설정의 BGM 보관함에 BGM을 먼저 추가해주세요.</p>}</div>{playlists.length > 0 && <><h3>플레이리스트</h3><div className="bgm-picker-playlists">{playlists.map((playlist) => <details key={playlist.id}><summary>{playlist.title}</summary><div className="bgm-picker-list">{playlist.items.map((item) => <button className="button" key={item.id} onClick={() => void choose(item.bgm_asset_id)} disabled={pending} aria-pressed={current?.bgm_asset_id === item.bgm_asset_id}>{item.custom_title || item.asset.canonical_title}</button>)}</div></details>)}</div></>}<div className="modal-actions">{current && <button className="button button-danger" onClick={() => void remove()} disabled={pending}>연결 해제</button>}<button className="button" onClick={onClose} disabled={pending}>닫기</button></div></section></div>, document.body);
 }
 
 export function PageExtrasDisplay({ extras, waitingBgm, publicationToken }: { extras: PageExtras | null; waitingBgm: PageBgmItem[]; publicationToken?: string }) {
