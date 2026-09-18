@@ -1,3 +1,5 @@
+export const DEFAULT_ACCENT_COLOR = "#62625F";
+
 export function normalizeHexColor(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim().toUpperCase();

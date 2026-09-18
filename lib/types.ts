@@ -79,6 +79,7 @@ export type BgmAsset = {
 };
 
 export type BgmLibraryItem = {
+  can_edit_source?: boolean;
   id: string;
   bgm_asset_id: string;
   custom_title: string | null;

@@ -57,7 +57,7 @@ test("handout import copies selected rows and private image objects independentl
   assert.doesNotMatch(handoutUi, /handout\.images\.length.*개 이미지/);
 });
 
-test("library and playlist APIs cover add remove aliases ordering and linked-page creation", () => {
+test("library and playlist APIs preserve legacy linkage but new page imports are snapshots", () => {
   assert.match(libraryRoute, /export async function POST/);
   assert.match(libraryRoute, /export async function DELETE/);
   assert.match(libraryRoute, /publicationToken/);
@@ -66,7 +66,8 @@ test("library and playlist APIs cover add remove aliases ordering and linked-pag
   assert.match(playlistRoute, /export async function DELETE/);
   assert.match(playlistItemRoute, /custom_title/);
   assert.match(playlistItemRoute, /sort_order: index/);
-  assert.match(linkedPlaylistRoute, /source_page_id: id/);
+  assert.match(linkedPlaylistRoute, /uniquePagePlaylistUsages/);
+  assert.doesNotMatch(linkedPlaylistRoute, /source_page_id: id/);
   assert.match(linkedPlaylistRoute, /ignoreDuplicates: true/);
   assert.match(migration, /on conflict \(playlist_id, bgm_asset_id\) do nothing/);
 });

@@ -22,14 +22,17 @@ test("new BGM owner can select INSERT RETURNING without stable snapshot lookup",
   assert.match(sql, /or public.can_access_bgm_asset\(id, auth.uid\(\)\)/);
 });
 
-test("async YouTube forms retain the form and release pending on failure", () => {
+test("YouTube creation uses in-page dialogs and releases pending on failure", () => {
   for (const file of ["BgmManager", "BgmSourceCreator"]) {
     const ui = read(`components/${file}.tsx`);
-    assert.match(ui, /const element = event.currentTarget/);
-    assert.match(ui, /element.reset\(\)/);
+    assert.match(ui, /BgmDetailsDialog/);
     assert.doesNotMatch(ui, /event.currentTarget.reset/);
     assert.match(ui, /finally \{ setPending\(false\); \}/);
   }
+  const dialog = read("components/BgmDetailsDialog.tsx");
+  assert.match(dialog, /role="dialog" aria-modal="true"/);
+  assert.match(dialog, /role="alert"/);
+  assert.match(dialog, /parseYouTubeVideoId\(url\)/);
 });
 
 test("MP3 upload uses an accessible in-page title dialog instead of browser prompt", () => {
@@ -80,5 +83,6 @@ test("waiting BGM replacement is permission-checked atomic and constrained to on
 test("BGM playback icons have no circular border and retain focus styling", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.global-bgm-player button, \.bgm-play-button \{[^}]*border: 0;[^}]*background: transparent/);
+  assert.match(css, /\.bgm-play-button \{ background: #efefed; color: var\(--muted\)/);
   assert.match(css, /\.bgm-play-button:hover, \.global-bgm-player button:hover/);
 });

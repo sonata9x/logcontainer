@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Library, Music, Pause, Play, Volume2, X } from "lucide-react";
+import { Music, Pause, Play, Volume2, X } from "lucide-react";
 import type { PageBgmItem } from "@/lib/types";
 import { displayBgmTitle } from "@/lib/bgm";
 
@@ -35,9 +35,8 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
       iframe.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "https://www.youtube.com");
       setPlaying(false); return;
     }
-    if (current?.id === item.id && source) {
-      if (source.type === "upload") await audio.current?.play();
-      else iframe.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "https://www.youtube.com");
+    if (current?.id === item.id && source?.type === "upload") {
+      await audio.current?.play();
       setPlaying(true); return;
     }
     stop();
@@ -51,6 +50,12 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
     setSource(result.sourceType === "youtube" ? { type: "youtube", videoId: result.videoId } : { type: "upload", url: result.url });
     setPlaying(true);
   }, [access.guestToken, access.pageId, access.publicationToken, current?.id, playing, source, stop]);
+
+  useEffect(() => {
+    const changed = (event: Event) => { if ((event as CustomEvent<{ assetId: string }>).detail?.assetId === current?.bgm_asset_id) stop(); };
+    window.addEventListener("bgm-source-updated", changed);
+    return () => window.removeEventListener("bgm-source-updated", changed);
+  }, [current?.bgm_asset_id, stop]);
 
   useEffect(() => {
     if (source?.type !== "upload" || !audio.current) return;
@@ -74,14 +79,4 @@ export function BgmPlayerProvider({ access, children }: { access: Access; childr
 export function BgmPlayButton({ item, className = "" }: { item: PageBgmItem; className?: string }) {
   const player = useBgmPlayer();
   return <button className={`bgm-play-button ${className}`} onClick={() => void player.play(item)} title={`${displayBgmTitle(item)} 재생`} aria-label={`${displayBgmTitle(item)} 재생`}>{player.currentId === item.id ? <Pause size={14} /> : <Play size={14} />}</button>;
-}
-
-export function BgmLibraryAddButton({ item, publicationToken }: { item: PageBgmItem; publicationToken?: string }) {
-  async function add() {
-    const response = await fetch("/api/bgm/library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId: item.bgm_asset_id, ...(publicationToken ? { publicationToken } : {}), title: item.custom_title }) });
-    const result = await response.json().catch(() => ({}));
-    if (response.status === 401) return window.alert("로그인한 뒤 내 BGM 보관함에 추가할 수 있습니다.");
-    window.alert(response.ok ? "내 BGM 보관함에 추가했습니다." : result.error ?? "BGM을 추가하지 못했습니다.");
-  }
-  return <button className="bgm-library-add" onClick={() => void add()} title="내 BGM에 추가" aria-label="내 BGM에 추가"><Library size={13} /></button>;
 }

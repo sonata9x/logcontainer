@@ -179,7 +179,11 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(pageExtrasBgmMarker) + pageExtrasBgmMarker.length, schema.indexOf(extrasWriteFixMarker))), normalizedSql(pageExtrasBgmMigration.replace(/^-- Optional page extras, reusable BGM assets, personal libraries and playlists\.\s*/, "")));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(extrasWriteFixMarker) + extrasWriteFixMarker.length, schema.indexOf(singleWaitingMarker))), normalizedSql(extrasWriteFixMigration));
   assert.equal(normalizedSql(schema.slice(schema.indexOf(singleWaitingMarker) + singleWaitingMarker.length, schema.indexOf(systemFontMarker))), normalizedSql(singleWaitingMigration));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(systemFontMarker) + systemFontMarker.length)), normalizedSql(systemFontMigration));
+  const adminBgmMarker = "-- 202609180001_admin_bgm_and_trash.sql";
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(systemFontMarker) + systemFontMarker.length, schema.indexOf(adminBgmMarker))), normalizedSql(systemFontMigration));
+  const bgmEditMarker = "-- 202609180002_bgm_edit_and_neutral_theme.sql";
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(adminBgmMarker) + adminBgmMarker.length, schema.indexOf(bgmEditMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180001_admin_bgm_and_trash.sql", import.meta.url), "utf8")));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmEditMarker) + bgmEditMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8")));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

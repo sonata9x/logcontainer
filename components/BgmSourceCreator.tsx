@@ -1,25 +1,24 @@
 "use client";
 
 import { Plus, Upload } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { BgmUploadDialog } from "@/components/BgmUploadDialog";
+import { BgmDetailsDialog } from "@/components/BgmDetailsDialog";
 
 export function BgmSourceCreator({ onCreated }: { onCreated: () => void | Promise<void> }) {
   const [pending, setPending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  async function addYoutube(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const element = event.currentTarget;
-    const form = new FormData(element);
+  async function addYoutube(values: { title: string; youtubeUrl?: string }) {
     setPending(true);
     try {
-      const response = await fetch("/api/bgm/library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: form.get("title"), youtubeUrl: form.get("youtubeUrl") }) });
+      const response = await fetch("/api/bgm/library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error ?? "YouTube BGM을 추가하지 못했습니다.");
-      element.reset(); await onCreated();
-    } catch (error) { window.alert(error instanceof Error ? error.message : "BGM을 저장하지 못했습니다."); }
+      await onCreated();
+    }
     finally { setPending(false); }
   }
   async function uploadFile(file: File, title: string) {
@@ -36,5 +35,5 @@ export function BgmSourceCreator({ onCreated }: { onCreated: () => void | Promis
       setSelectedFile(null);
     } finally { setPending(false); }
   }
-  return <div className="bgm-source-creator"><button className="button" onClick={() => input.current?.click()} disabled={pending}><Upload size={14} />새 MP3</button><input ref={input} className="visually-hidden" type="file" accept="audio/mpeg,.mp3" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) setSelectedFile(file); }} /><form className="bgm-youtube-form" onSubmit={addYoutube}><input name="title" placeholder="YouTube BGM 제목" maxLength={200} required /><input name="youtubeUrl" placeholder="YouTube 주소" required /><button className="button" disabled={pending}><Plus size={14} />추가</button></form>{selectedFile && <BgmUploadDialog key={selectedFile.name + selectedFile.lastModified} file={selectedFile} pending={pending} onUpload={(title) => uploadFile(selectedFile, title)} onClose={() => setSelectedFile(null)} />}</div>;
+  return <div className="bgm-source-creator"><button className="button" onClick={() => input.current?.click()} disabled={pending}><Upload size={14} />새 MP3</button><input ref={input} className="visually-hidden" type="file" accept="audio/mpeg,.mp3" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) setSelectedFile(file); }} /><button className="button" onClick={() => setYoutubeOpen(true)} disabled={pending}><Plus size={14} />새 YouTube BGM</button>{selectedFile && <BgmUploadDialog key={selectedFile.name + selectedFile.lastModified} file={selectedFile} pending={pending} onUpload={(title) => uploadFile(selectedFile, title)} onClose={() => setSelectedFile(null)} />}{youtubeOpen && <BgmDetailsDialog heading="YouTube BGM 추가" initialUrl="" onSave={addYoutube} onClose={() => setYoutubeOpen(false)} />}</div>;
 }

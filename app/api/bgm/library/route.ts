@@ -5,14 +5,14 @@ import { databaseErrorResponse } from "@/lib/api-error";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPublicationAccess, PUBLICATION_SESSION_COOKIE } from "@/lib/publication-auth";
 
-const SELECT = `id, bgm_asset_id, custom_title, created_at, asset:bgm_assets(${BGM_ASSET_SELECT})`;
+const SELECT = `id, bgm_asset_id, custom_title, created_at, asset:bgm_assets(${BGM_ASSET_SELECT}, owner_user_id)`;
 
 export async function GET() {
   const context = await getApprovedApiContext();
   if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const { data, error } = await context.supabase.from("bgm_library_items").select(SELECT).eq("user_id", context.user.id).order("created_at", { ascending: false });
   if (error) return databaseErrorResponse(error, "BGM 보관함을 불러오지 못했습니다.");
-  return NextResponse.json({ items: (data ?? []).map((item) => ({ ...item, asset: oneBgmAsset(item.asset) })).filter((item) => item.asset) });
+  return NextResponse.json({ items: (data ?? []).map((item) => { const asset = oneBgmAsset(item.asset); return { ...item, asset, can_edit_source: Boolean(asset?.owner_user_id === context.user.id || context.isSiteAdmin) }; }).filter((item) => item.asset) });
 }
 
 export async function POST(request: NextRequest) {
@@ -46,9 +46,12 @@ export async function PATCH(request: Request) {
   if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const body = await request.json().catch(() => ({}));
   const id = typeof body.id === "string" ? body.id : "";
-  const customTitle = typeof body.title === "string" ? body.title.trim().slice(0, 200) || null : null;
-  const { error } = await context.supabase.from("bgm_library_items").update({ custom_title: customTitle }).eq("id", id).eq("user_id", context.user.id);
-  return error ? databaseErrorResponse(error, "BGM 이름을 바꾸지 못했습니다.") : NextResponse.json({ ok: true });
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!id || !title || title.length > 200) return NextResponse.json({ error: "BGM과 1~200자 이름을 확인해주세요." }, { status: 400 });
+  const videoId = body.youtubeUrl !== undefined ? parseYouTubeVideoId(body.youtubeUrl) : null;
+  if (body.youtubeUrl !== undefined && !videoId) return NextResponse.json({ error: "올바른 YouTube 링크를 입력해주세요." }, { status: 400 });
+  const { data, error } = await context.supabase.rpc("update_bgm_library_details", { target_library_id: id, next_title: title, next_video_id: videoId });
+  return error ? databaseErrorResponse(error, "BGM을 수정하지 못했습니다.") : NextResponse.json(data);
 }
 
 export async function DELETE(request: Request) {

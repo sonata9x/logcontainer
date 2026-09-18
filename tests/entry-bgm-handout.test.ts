@@ -4,13 +4,13 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-test("BGM controls stay outside paint containment and have a narrow-screen control row", () => {
+test("BGM controls stay outside paint containment and public logs have a narrow-screen row", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.entry-wrap > \.log-entry, \.public-log \.log-entry \{ content-visibility: auto/);
   assert.doesNotMatch(css, /\.entry-wrap\s*[,\{][^}]*content-visibility/);
   assert.match(css, /\.entry-bgm-button \{[^}]*left: -58px/);
-  assert.match(css, /\.entry-wrap:has\(> \.entry-bgm-button\) \{ padding-top: 34px/);
-  assert.match(css, /\.entry-sortable:has\(\.entry-bgm-button\) > \.log-entry-drag-handle \{ top: 41px/);
+  assert.match(css, /\.public-log \.entry-wrap:has\(> \.entry-bgm-button\) \{ padding-top: 34px/);
+  assert.match(css, /@media \(max-width: 1100px\)[\s\S]*\.workspace-content \.entry-bgm-button, \.guest-log.is-editing \.entry-bgm-button \{ display: none/);
 });
 
 test("entry BGM follows stable entry identity, not its ordered index", () => {
