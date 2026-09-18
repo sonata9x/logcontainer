@@ -295,7 +295,8 @@ test("authentication abuse protection keeps four-character compatibility without
   assert.match(loginRoute, /enforceRateLimit/);
   assert.match(signupRoute, /enforceRateLimit/);
   assert.match(passwordRoute, /currentPassword/);
-  assert.match(passwordRoute, /signInWithPassword/);
+  assert.match(passwordRoute, /verifyAccountPassword/);
+  assert.match(readFileSync(new URL("../lib/account-security.ts", import.meta.url), "utf8"), /signInWithPassword/);
   assert.match(setupRoute, /SETUP_SECRET/);
   assert.match(setupRoute, /timingSafeEqual/);
   assert.match(rateLimitHelper, /createHmac\("sha256"/);

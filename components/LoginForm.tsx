@@ -30,6 +30,7 @@ export function LoginForm() {
       {error && <p className="error">{error}</p>}
       <button className="button button-primary" type="submit" disabled={pending}>{pending ? "로그인 중…" : "로그인"}</button>
       <p className="auth-footnote">계정이 없나요? <Link href="/signup">회원가입</Link></p>
+      <p className="auth-footnote"><Link href="/recover">비밀번호를 잊었나요?</Link></p>
     </form>
   );
 }

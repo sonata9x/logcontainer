@@ -8,6 +8,7 @@ type RateLimitOptions = {
   windowSeconds: number;
   blockSeconds: number;
   identity?: string;
+  identityOnly?: boolean;
 };
 
 function requestAddress(request: Request) {
@@ -29,7 +30,8 @@ export async function enforceRateLimit(request: Request, options: RateLimitOptio
     return NextResponse.json({ error: "보안 설정을 확인해주세요." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 
-  const identity = `${requestAddress(request)}\0${options.identity ?? ""}`;
+  if (options.identityOnly && !options.identity) return NextResponse.json({ error: "요청 보호 설정을 확인해주세요." }, { status: 503 });
+  const identity = options.identityOnly ? `account\0${options.identity}` : `${requestAddress(request)}\0${options.identity ?? ""}`;
   const keyHash = createHmac("sha256", secret).update(identity, "utf8").digest("hex");
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.rpc("consume_security_rate_limit", {

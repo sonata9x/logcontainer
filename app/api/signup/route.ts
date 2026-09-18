@@ -20,6 +20,9 @@ export async function POST(request: Request) {
   if (!users.users.length) return NextResponse.json({ error: "먼저 /setup에서 최초 관리자 계정을 만들어주세요." }, { status: 409 });
   const { data: existing } = await admin.from("profiles").select("id").eq("username", username).maybeSingle();
   if (existing) return NextResponse.json({ error: "이미 사용 중인 아이디입니다." }, { status: 409 });
+  const { data: reserved, error: reservationError } = await admin.from("account_username_history").select("username").eq("username", username).maybeSingle();
+  if (reservationError) return databaseErrorResponse(reservationError, "아이디 사용 가능 여부를 확인하지 못했습니다.");
+  if (reserved) return NextResponse.json({ error: "이전에 사용된 아이디는 다시 사용할 수 없습니다." }, { status: 409 });
   const { data, error } = await admin.auth.admin.createUser({
     email: createInternalAuthEmail(),
     password: deriveAuthPassword(password),
