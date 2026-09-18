@@ -14,7 +14,7 @@
 
 ## 검증
 
-- 자동 테스트 159개 통과.
+- 자동 테스트 162개 통과.
 - ESLint 통과, production build 및 TypeScript 통과.
 - 운영 도밍시 1부에서 문제 패턴의 스타일과 경계 좌표를 읽기 전용으로 확인했다.
 - 개인 로그 대신 동일한 CSS/공백 패턴을 익명 예제로 재현한 로컬 브라우저 비교: 이전 위치 기준에서는 본문 글자가 상단 제목 영역과 11.45px 겹쳤고, 수정 후 10.23px 간격이 생겼다. CSS top/padding 수치는 동일하다.
@@ -45,5 +45,7 @@ GPT 사이드탭에서 기존 폴더 이름 변경의 `prompt()` 역시 지원�
 사용자가 `202609170002` SQL 적용을 완료했다. 실제 미리보기에서 기존 복수 대기 BGM이 최신 MP3 한 곡으로 정리됐으며, MP3→YouTube→MP3 교체 및 새로고침 후 한 곡 유지가 확인됐다. 재생 버튼 border 0px, 투명 배경도 확인했다. 음악 파일 및 보관함 항목은 유지했다.
 
 추가 요청: 페이지 폰트는 글 제목/본문/개요에만 적용한다. `[data-font]`는 이제 log font 변수를 지정할 뿐 시스템 UI에 font-family를 직접 전파하지 않는다. 날짜·편집 버튼은 시스템 폰트를 사용하고 Rich Content의 명시적 font-family는 보존한다. 시스템 UI 폰트는 계정의 `user_preferences.system_font_family`에 저장한다. 기존 자신의 설정에 대한 SELECT/UPDATE RLS를 재사용하고, 허용된 7종만 API 및 DB constraint에서 검증한다. 설정 저장 즉시 sidebar/status/buttons/menus와 body portal에 적용하며 workspace 이탈 시 body 스타일을 복구한다. 기존 사용자는 Pretendard 기본값으로 시작한다. 게시 및 손님 화면의 콘텐츠 폰트도 제목/본문에만 적용하고 시스템 UI는 기본 서비스 폰트를 사용한다.
+
+로컬 익명 브라우저 fixture에서 페이지 폰트=리디바탕, 시스템 폰트=고운 돋움으로 측정했다. 제목/개요/본문은 Ridibatang, 상태/날짜/편집 저장/팝업 메뉴·버튼은 GowoonDodum으로 분리됐다. 원본 사용자 CSS의 monospace 지정도 그대로 유지됐다. 이는 CSS 렌더링 검증이며 계정 설정의 실제 DB 저장 검증을 대신하지 않는다.
 
 `202609170003_system_font_preferences.sql` 적용 후 계정 설정 저장 및 두 폰트 분리를 실제 미리보기에서 검증하고 main 병합·push한다. 핸드아웃의 모든 모바일 화면 크기 및 원본 전체 visual parity를 완료했다고 주장하지 않는다.
