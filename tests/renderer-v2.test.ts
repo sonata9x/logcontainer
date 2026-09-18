@@ -75,13 +75,14 @@ test("Roll20 theme preserves user CSS positioning inside the block context", () 
   assert.match(themeCss, /\.log-rich-context \{[^}]*position: relative/);
 });
 
-test("styled content panels get only a small outer vertical gap, not changes to their authored layout", () => {
-  assert.match(themeCss, /\.r20-message:has\(\.r20-rich-context--block \[style\]\) \{ margin-block: 6px; \}/);
+test("styled content panels use the common timeline gap without changing authored layout", () => {
+  assert.match(themeCss, /\.log-timeline > \* \+ \* \{ margin-block-start: 12px; \}/);
   const result = importRoll20HtmlV2('<div class="message desc"><div style="display:block;padding:12px 9px;position:relative;top:-5px;text-align:center">panel</div></div>');
   const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
   assert.match(html, /style="display:block;padding:12px 9px;position:relative;top:-5px;text-align:center"/);
   assert.match(html, /r20-rich-context--block/);
   assert.doesNotMatch(themeCss, /\.r20-message:has\(\.r20-rich-context--inline/);
+  assert.doesNotMatch(themeCss, /\.r20-message:has\(\.r20-rich-context--block/);
 });
 
 test("image alt remains alternative text and is not rendered as a caption", () => {
