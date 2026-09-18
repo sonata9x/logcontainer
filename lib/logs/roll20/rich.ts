@@ -38,6 +38,8 @@ export function parseRichHtml(html: string, seed: string): RichParseResult {
     }
     if (tagName === "br") return [{ id: stableRoll20Id("break", seed, path), type: "break" }];
     const classValue = wrapped.attr("class") ?? "";
+    // Roll20's message action menu is UI, never authored Rich content.
+    if (classValue.split(/\s+/).includes("flyout")) return [];
     if (/(?:^|\s)inlinerollresult(?:\s|$)/.test(classValue)) {
       const value = wrapped.text().trim();
       const index = Number(wrapped.attr("data-roll-index") ?? 0);
