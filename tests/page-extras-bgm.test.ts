@@ -65,7 +65,7 @@ test("library and playlist APIs preserve legacy linkage but new page imports are
   assert.match(playlistRoute, /export async function PATCH/);
   assert.match(playlistRoute, /export async function DELETE/);
   assert.match(playlistItemRoute, /custom_title/);
-  assert.match(playlistItemRoute, /sort_order: index/);
+  assert.match(playlistItemRoute, /rpc\("reorder_bgm_playlist_items"/);
   assert.match(linkedPlaylistRoute, /uniquePagePlaylistUsages/);
   assert.doesNotMatch(linkedPlaylistRoute, /source_page_id: id/);
   assert.match(linkedPlaylistRoute, /ignoreDuplicates: true/);

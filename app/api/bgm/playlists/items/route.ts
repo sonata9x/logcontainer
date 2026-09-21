@@ -12,11 +12,10 @@ export async function POST(request: Request) {
   if (!context) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const body = await request.json().catch(() => ({}));
   const playlistId = typeof body.playlistId === "string" ? body.playlistId : "";
-  const assetId = typeof body.assetId === "string" ? body.assetId : "";
-  if (!playlistId || !assetId || !(await ownsPlaylist(context, playlistId))) return NextResponse.json({ error: "플레이리스트를 찾지 못했습니다." }, { status: 404 });
-  const { data: last } = await context.supabase.from("bgm_playlist_items").select("sort_order").eq("playlist_id", playlistId).order("sort_order", { ascending: false }).limit(1).maybeSingle();
-  const { error } = await context.supabase.from("bgm_playlist_items").upsert({ playlist_id: playlistId, bgm_asset_id: assetId, custom_title: typeof body.customTitle === "string" ? body.customTitle.trim().slice(0, 200) || null : null, sort_order: (last?.sort_order ?? -1) + 1 }, { onConflict: "playlist_id,bgm_asset_id", ignoreDuplicates: true });
-  return error ? databaseErrorResponse(error, "곡을 추가하지 못했습니다.") : NextResponse.json({ ok: true }, { status: 201 });
+  const assetIds = [...new Set((Array.isArray(body.assetIds) ? body.assetIds : [body.assetId]).filter((id: unknown): id is string => typeof id === "string" && Boolean(id)))];
+  if (!playlistId || !assetIds.length || assetIds.length > 500 || !(await ownsPlaylist(context, playlistId))) return NextResponse.json({ error: "플레이리스트와 곡을 확인해주세요." }, { status: 400 });
+  const { data, error } = await context.supabase.rpc("add_bgm_playlist_items", { target_playlist_id: playlistId, target_asset_ids: assetIds });
+  return error ? databaseErrorResponse(error, "곡을 추가하지 못했습니다.") : NextResponse.json({ ok: true, ...data }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
@@ -26,9 +25,8 @@ export async function PATCH(request: Request) {
   const playlistId = typeof body.playlistId === "string" ? body.playlistId : "";
   if (!playlistId || !(await ownsPlaylist(context, playlistId))) return NextResponse.json({ error: "플레이리스트를 찾지 못했습니다." }, { status: 404 });
   if (Array.isArray(body.itemIds)) {
-    const ids = body.itemIds.filter((id: unknown): id is string => typeof id === "string");
-    const results = await Promise.all(ids.map((id: string, index: number) => context.supabase.from("bgm_playlist_items").update({ sort_order: index }).eq("id", id).eq("playlist_id", playlistId)));
-    const error = results.find((result) => result.error)?.error;
+    const ids = body.itemIds.filter((id: unknown): id is string => typeof id === "string" && Boolean(id));
+    const { error } = await context.supabase.rpc("reorder_bgm_playlist_items", { target_playlist_id: playlistId, target_item_ids: ids });
     return error ? databaseErrorResponse(error, "곡 순서를 저장하지 못했습니다.") : NextResponse.json({ ok: true });
   }
   const id = typeof body.id === "string" ? body.id : "";

@@ -72,6 +72,7 @@ export type BgmAsset = {
   owner_user_id?: string;
   source_type: BgmSourceType;
   canonical_title: string;
+  original_filename?: string | null;
   youtube_video_id?: string | null;
   duration_seconds?: number | null;
   mime_type?: string | null;

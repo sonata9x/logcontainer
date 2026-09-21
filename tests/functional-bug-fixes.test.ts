@@ -37,10 +37,10 @@ test("YouTube creation uses in-page dialogs and releases pending on failure", ()
 
 test("MP3 upload uses an accessible in-page title dialog instead of browser prompt", () => {
   const dialog = read("components/BgmUploadDialog.tsx");
-  assert.match(dialog, /role="dialog" aria-modal="true" aria-label="MP3 업로드"/);
-  assert.match(dialog, /role="alert"/);
-  assert.match(dialog, /await onUpload\(title.trim\(\)\)/);
-  assert.match(dialog, /pending \|\| !title.trim\(\)/);
+  assert.match(dialog, /role="dialog" aria-modal="true" aria-label="MP3 일괄 업로드"/);
+  assert.match(dialog, /failure instanceof Error/);
+  assert.match(dialog, /await onUpload\(rows\[index\]\.file, rows\[index\]\.title\.trim\(\)\)/);
+  assert.match(dialog, /pending \|\| !remaining/);
   for (const file of ["BgmManager", "BgmSourceCreator"]) {
     const ui = read(`components/${file}.tsx`);
     assert.match(ui, /<BgmUploadDialog/);

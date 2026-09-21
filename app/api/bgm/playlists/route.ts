@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getApprovedApiContext } from "@/lib/api-auth";
 import { databaseErrorResponse } from "@/lib/api-error";
-import { BGM_ASSET_SELECT, oneBgmAsset } from "@/lib/bgm";
+import { BGM_MANAGEMENT_ASSET_SELECT, oneBgmAsset } from "@/lib/bgm";
 
-const ITEM_SELECT = `id, playlist_id, bgm_asset_id, custom_title, sort_order, asset:bgm_assets(${BGM_ASSET_SELECT})`;
+const ITEM_SELECT = `id, playlist_id, bgm_asset_id, custom_title, sort_order, asset:bgm_assets(${BGM_MANAGEMENT_ASSET_SELECT})`;
 
 export async function GET() {
   const context = await getApprovedApiContext();
