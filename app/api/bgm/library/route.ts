@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApprovedApiContext } from "@/lib/api-auth";
-import { BGM_ASSET_SELECT, oneBgmAsset, parseYouTubeVideoId } from "@/lib/bgm";
+import { BGM_MANAGEMENT_ASSET_SELECT, oneBgmAsset, parseYouTubeVideoId } from "@/lib/bgm";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPublicationAccess, PUBLICATION_SESSION_COOKIE } from "@/lib/publication-auth";
 
-const SELECT = `id, bgm_asset_id, custom_title, created_at, asset:bgm_assets(${BGM_ASSET_SELECT}, owner_user_id)`;
+const SELECT = `id, bgm_asset_id, custom_title, created_at, asset:bgm_assets(${BGM_MANAGEMENT_ASSET_SELECT}, owner_user_id)`;
 
 export async function GET() {
   const context = await getApprovedApiContext();

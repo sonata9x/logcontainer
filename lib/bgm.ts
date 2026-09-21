@@ -32,11 +32,18 @@ export function validBgmUpload(mimeType: unknown, byteSize: unknown) {
     && byteSize > 0 && byteSize <= BGM_AUDIO_MAX_BYTES;
 }
 
+export function normalizeBgmOriginalFilename(value: unknown) {
+  if (typeof value !== "string") return null;
+  const filename = value.split(/[\\/]/).at(-1)?.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 255) ?? "";
+  return filename && /\.mp3$/i.test(filename) ? filename : null;
+}
+
 export function displayBgmTitle(item: { custom_title?: string | null; asset: Pick<BgmAsset, "canonical_title"> }) {
   return item.custom_title?.trim() || item.asset.canonical_title;
 }
 
 export const BGM_ASSET_SELECT = "id, source_type, canonical_title, youtube_video_id, duration_seconds, mime_type, byte_size";
+export const BGM_MANAGEMENT_ASSET_SELECT = `${BGM_ASSET_SELECT}, original_filename`;
 
 type AssetLike = BgmAsset | BgmAsset[] | null | undefined;
 export function oneBgmAsset(value: AssetLike): BgmAsset | null {
