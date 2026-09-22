@@ -66,6 +66,30 @@ export type PageExtras = {
   sessionCardSize: number | null;
 };
 
+export type SpeakerAvatarVariant = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  imageUrl: string;
+  originalFilename: string | null;
+  sortOrder: number;
+};
+
+export type SpeakerAvatarProfile = {
+  id: string | null;
+  speakerKey: string;
+  speakerName: string;
+  messageCount: number;
+  variants: SpeakerAvatarVariant[];
+};
+
+export type SpeakerAvatarBundle = {
+  enabled: boolean;
+  platform: LogPlatform;
+  profiles: SpeakerAvatarProfile[];
+  entryOverrides: Record<string, string>;
+};
+
 export type BgmSourceType = "upload" | "youtube";
 export type BgmAsset = {
   id: string;

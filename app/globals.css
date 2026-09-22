@@ -208,6 +208,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 /* One inter-message gap, based on the current visible order in every log view. */
 .log-timeline > * + * { margin-block-start: 12px; }
 .log-timeline > [data-compact-spacing="true"] { margin-block-start: 0; }
+.log-timeline > [data-compact-spacing="true"]:has(.r20-message__avatar) { margin-block-start: 12px; }
 .log-timeline > [data-compact-spacing="true"] .r20-message { min-height: 0; padding-top: 1px; padding-bottom: 1px; }
 /* Keep the speaker column, but an absent avatar must not force a 32px row. */
 .log-timeline > [data-compact-spacing="true"] .r20-message__avatar-slot:empty { height: 0; }
@@ -221,6 +222,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .r20-message--system { color: #7c493b; }
 .r20-message__avatar-slot { width: 32px; min-width: 32px; height: 32px; align-self: start; }
 .r20-message__avatar { display: block; flex: none; width: 32px; height: 32px; aspect-ratio: 1 / 1; align-self: start; border: 0; border-radius: 0; object-fit: cover; }
+.r20-message__avatar--editable { cursor: context-menu; }
 .r20-message__body { min-width: 0; }
 .r20-message__content-flow { position: relative; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .r20-message__content-flow--speaker-template { display: flex; align-items: flex-start; gap: 6px; white-space: normal; }
@@ -393,6 +395,28 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .waiting-bgm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .waiting-bgm > span { display: inline-flex; align-items: center; gap: 5px; }
 .page-extras-editor, .bgm-attach-modal { width: min(560px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; }
+.speaker-avatar-manager { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.speaker-avatar-manager h3 { margin: 0 0 6px; }
+.speaker-avatar-list { display: grid; gap: 7px; }
+.speaker-avatar-list details { border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.speaker-avatar-list summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; }
+.speaker-avatar-list summary small { color: var(--muted); }
+.speaker-avatar-profile { display: grid; gap: 11px; padding: 0 12px 12px; }
+.speaker-avatar-default, .speaker-expression-create { display: flex; align-items: center; gap: 8px; }
+.speaker-avatar-default img, .speaker-avatar-placeholder, .speaker-expression-list img { width: 32px; height: 32px; flex: none; object-fit: cover; background: #eee; }
+.speaker-expression-create input { min-width: 0; flex: 1; }
+.speaker-expression-list { display: grid; gap: 5px; }
+.speaker-expression-list > div { display: grid; grid-template-columns: 32px minmax(0, 1fr) 28px; align-items: center; gap: 8px; }
+.icon-button-plain { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.icon-button-plain.danger { color: var(--danger); }
+.avatar-menu-scrim { position: fixed; inset: 0; z-index: 149; border: 0; background: transparent; }
+.avatar-expression-menu { position: fixed; z-index: 150; width: 180px; max-height: min(320px, calc(100dvh - 16px)); overflow-y: auto; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: #fff; box-shadow: 0 9px 28px rgb(0 0 0 / 18%); }
+.avatar-expression-menu__title { padding: 7px 9px; color: var(--muted); font-size: 11px; }
+.avatar-expression-menu > button:not(.avatar-expression-menu__close) { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; border-radius: 4px; padding: 7px 9px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.avatar-expression-menu > button[aria-checked="true"] { background: var(--hover); font-weight: 700; }
+.avatar-expression-menu img { width: 24px; height: 24px; object-fit: cover; }
+.avatar-expression-menu p { margin: 5px 9px 8px; font-size: 12px; }
+.avatar-expression-menu__close { position: absolute; top: 5px; right: 5px; display: grid; width: 24px; height: 24px; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .page-extras-editor .field textarea { min-height: 130px; }
 .page-extra-card-row { display: flex; gap: 8px; margin: 12px 0 22px; }
 .bgm-picker-list { display: grid; gap: 7px; max-height: 260px; overflow-y: auto; }

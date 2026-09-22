@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createContext, FormEvent, memo, useCallback, useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Archive, Download, EllipsisVertical, GripVertical, History, Info, MoreHorizontal, Music, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
 import { changedReorderRange } from "@/lib/logs/reorder";
-import type { LogEntry, LogEntryRevision, PageBgmItem, PageExtras, Publication, ResourcePermissions, WorkspacePage } from "@/lib/types";
+import type { LogEntry, LogEntryRevision, PageBgmItem, PageExtras, Publication, ResourcePermissions, SpeakerAvatarBundle, WorkspacePage } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
@@ -28,6 +28,8 @@ import { BgmPlaylistDialog } from "@/components/BgmPlaylistDialog";
 import { TrashDialog } from "@/components/TrashDialog";
 import { ImportPlatformHelp } from "@/components/ImportPlatformHelp";
 import { BgmAttachDialog, PageExtrasDisplay, PageExtrasEditor } from "@/components/PageExtrasPanel";
+import { SpeakerAvatarDialog, SpeakerExpressionMenu, type AvatarMenuState } from "@/components/SpeakerAvatarControls";
+import { resolveEntryAvatar } from "@/lib/speaker-avatars";
 
 export type ImportSummary = {
   provider?: string;
@@ -43,6 +45,7 @@ export type ImportSummary = {
   casualMessageCount?: number;
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
+const SpeakerAvatarContext = createContext<{ avatars: SpeakerAvatarBundle | null; setAvatars: React.Dispatch<React.SetStateAction<SpeakerAvatarBundle | null>> }>({ avatars: null, setAvatars: () => undefined });
 
 type ImportUploadTarget = {
   uploadId: string;
@@ -76,7 +79,7 @@ function uploadRoll20File(file: File, target: ImportUploadTarget, accessToken: s
   });
 }
 
-export function LogEditor({ page, permissions, logId, entries, totalEntryCount, publication, importReport }: { page: WorkspacePage; permissions: ResourcePermissions; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null }) {
+export function LogEditor({ page, permissions, logId, entries, totalEntryCount, publication, importReport, initialAvatars = null }: { page: WorkspacePage; permissions: ResourcePermissions; logId: string; entries: LogEntry[]; totalEntryCount: number; publication: Publication | null; importReport: ImportSummary | null; initialAvatars?: SpeakerAvatarBundle | null }) {
   const router = useRouter();
   const [liveEntries, setLiveEntries] = useState(entries);
   const [totalCount, setTotalCount] = useState(totalEntryCount);
@@ -119,13 +122,15 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [reorderPending, setReorderPending] = useState(false);
   const [pageExtras, setPageExtras] = useState<PageExtras | null>(null);
   const [bgmItems, setBgmItems] = useState<PageBgmItem[]>([]);
+  const [speakerAvatars, setSpeakerAvatars] = useState<SpeakerAvatarBundle | null>(initialAvatars);
 
   useEffect(() => { totalCountRef.current = totalCount; }, [totalCount]);
   useEffect(() => {
     void Promise.all([
       fetch(`/api/pages/${page.id}/extras`, { cache: "no-store" }).then((response) => response.json()),
-      fetch(`/api/pages/${page.id}/bgm`, { cache: "no-store" }).then((response) => response.json())
-    ]).then(([extrasResult, bgmResult]) => { if (extrasResult.extras) setPageExtras(extrasResult.extras); if (bgmResult.items) setBgmItems(bgmResult.items); });
+      fetch(`/api/pages/${page.id}/bgm`, { cache: "no-store" }).then((response) => response.json()),
+      fetch(`/api/pages/${page.id}/speaker-avatars`, { cache: "no-store" }).then((response) => response.json())
+    ]).then(([extrasResult, bgmResult, avatarResult]) => { if (extrasResult.extras) setPageExtras(extrasResult.extras); if (bgmResult.items) setBgmItems(bgmResult.items); if (avatarResult.avatars) setSpeakerAvatars(avatarResult.avatars); });
   }, [page.id]);
   useEffect(() => () => {
     pointerDragCleanupRef.current?.();
@@ -144,6 +149,11 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     };
     const channel = supabase.channel(`log-${logId}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "log_change_events", filter: `log_id=eq.${logId}` }, async (payload) => {
       const change = payload.new as { entry_id?: string | null; event_type?: string };
+      if (change.event_type === "speaker_avatars_changed") {
+        const result = await fetch(`/api/pages/${page.id}/speaker-avatars`, { cache: "no-store" }).then((response) => response.json());
+        if (result.avatars) setSpeakerAvatars(result.avatars);
+        return;
+      }
       if (change.event_type === "log_replaced") {
         if (ignoreNextLocalReorderEventRef.current) {
           ignoreNextLocalReorderEventRef.current = false;
@@ -493,8 +503,8 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   }
 
   return (
-    <BgmPlayerProvider access={{ pageId: page.id }}>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} fontFamily={pageExtras?.fontFamily} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setPlaylistOpen(true); setOverflowOpen(false); }}><Music size={13} />로그 BGM 전체 담기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
+    <SpeakerAvatarContext.Provider value={{ avatars: speakerAvatars, setAvatars: setSpeakerAvatars }}><BgmPlayerProvider access={{ pageId: page.id }}>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} fontFamily={pageExtras?.fontFamily} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canEdit && <SpeakerAvatarDialog pageId={page.id} avatars={speakerAvatars} onChange={setSpeakerAvatars} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setPlaylistOpen(true); setOverflowOpen(false); }}><Music size={13} />로그 BGM 전체 담기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content" data-font={pageExtras?.fontFamily ?? page.font_family ?? "pretendard"}>
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         <PageExtrasDisplay extras={pageExtras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />
@@ -510,7 +520,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
       {exportOpen && <ExportDialog endpoint={`/api/pages/${page.id}/export`} title={title} usePersonalDefaults onClose={() => setExportOpen(false)} />}
       {entryDragPreview && <div className="pointer-drag-preview pointer-drag-preview--log" style={{ left: entryDragPreview.x, top: entryDragPreview.y }}><GripVertical className="pointer-drag-preview__grip" size={17} /><strong>{entryDragPreview.label}</strong></div>}
-    </BgmPlayerProvider>
+    </BgmPlayerProvider></SpeakerAvatarContext.Provider>
   );
 }
 
@@ -553,6 +563,8 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
 }
 
 const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canEdit, onBgmChange, onChange, onInsert, onDelete }: { pageId: string; entry: LogEntry; bgmItem: PageBgmItem | null; canEdit: boolean; onBgmChange: (item: PageBgmItem | null) => void; onChange: (entry: LogEntry) => void; onInsert: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
+  const { avatars, setAvatars } = useContext(SpeakerAvatarContext);
+  const avatar = resolveEntryAvatar(entry, avatars);
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(null);
@@ -566,6 +578,8 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [editingVersion, setEditingVersion] = useState(entry.updated_at);
   const [saving, setSaving] = useState(false);
+  const [avatarMenu, setAvatarMenu] = useState<AvatarMenuState | null>(null);
+  const [avatarPending, setAvatarPending] = useState(false);
   useEscapeClose(() => { setShowCss(false); setShowHistory(false); }, saving || (!showCss && !showHistory));
 
   useEffect(() => {
@@ -573,6 +587,33 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     setContent(entry.content);
     setDocument(null);
   }, [editing, entry.content, entry.document]);
+
+  async function chooseExpression(variantId: string | null) {
+    if (avatarPending) return;
+    setAvatarPending(true);
+    try {
+      const response = await fetch(`/api/pages/${pageId}/speaker-avatars/override`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entryId: entry.id, variantId }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "표정을 변경하지 못했습니다.");
+      setAvatars((current) => {
+        if (!current) return current;
+        const entryOverrides = { ...current.entryOverrides };
+        if (variantId) entryOverrides[entry.id] = variantId;
+        else delete entryOverrides[entry.id];
+        return { ...current, entryOverrides };
+      });
+      setAvatarMenu(null);
+    } catch (error) { window.alert(error instanceof Error ? error.message : "표정을 변경하지 못했습니다."); }
+    finally { setAvatarPending(false); }
+  }
+
+  function openAvatarMenu(event: React.MouseEvent<HTMLImageElement>) {
+    if (!canEdit || !avatar.profile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu(null);
+    setAvatarMenu({ x: event.clientX, y: event.clientY, entryId: entry.id, profile: avatar.profile, selectedVariantId: avatar.selectedVariantId });
+  }
 
   function startEditing() {
     if (!canEdit) return;
@@ -692,12 +733,13 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     : editing
       ? <article className="log-entry"><label className="field">{entry.speaker_name ?? "내용"}<textarea value={content} onChange={(event) => setContent(event.target.value)} autoFocus /></label><button className="button button-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button> <button className="button" onClick={cancelEditing} disabled={saving}>취소</button></article>
       : <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={canEdit ? startEditing : undefined} onContextMenu={canEdit ? (event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } : undefined} title={canEdit ? "더블클릭: 내용 수정 · 우클릭: 부가 기능" : undefined}>
-        {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
+        {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} avatarCandidates={avatar.candidates} managedAvatar={avatar.managed} onAvatarContextMenu={avatar.profile ? openAvatarMenu : undefined} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
       </article>;
   return <div className="entry-wrap">
     <EntryPlaybackAnchor item={bgmItem}>{entryBody}</EntryPlaybackAnchor>
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
     {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {avatarMenu && <SpeakerExpressionMenu menu={avatarMenu} pending={avatarPending} onChoose={(variantId) => void chooseExpression(variantId)} onClose={() => setAvatarMenu(null)} />}
     {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
     {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}
     {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}

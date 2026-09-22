@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const BUCKETS = new Set(["session-cards", "handout-images", "roll20-source-archives", "log-generation-archives", "roll20-import-staging"]);
+const BUCKETS = new Set(["session-cards", "handout-images", "roll20-source-archives", "log-generation-archives", "roll20-import-staging", "speaker-avatars"]);
 
 export async function drainStorageDeletionQueue(admin: SupabaseClient) {
   const { data, error } = await admin.from("storage_deletion_queue").select("id, bucket, storage_path").order("created_at").order("id").limit(100);

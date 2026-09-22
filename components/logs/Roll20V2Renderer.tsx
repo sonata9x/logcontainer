@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element -- imported Roll20 URLs are arbitrary HTTPS resources and cannot use a fixed Next image allowlist */
-import React, { type CSSProperties, type ReactNode } from "react";
+import React, { useEffect, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { InlineRollBlock, LogBlock, LogEntryDocument, RichNode, RichStyle, RollTemplateBlock, RollTemplateField } from "@/lib/logs/model/types";
 
 type TextEditor = { onChange: (id: string, text: string) => void };
@@ -126,7 +126,16 @@ function BlockView({ block, editor, speakerTemplate = false }: { block: LogBlock
   );
 }
 
-export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryDocument; textEditor?: TextEditor }) {
+function AvatarImage({ candidates, onContextMenu }: { candidates: string[]; onContextMenu?: (event: ReactMouseEvent<HTMLImageElement>) => void }) {
+  const [index, setIndex] = useState(0);
+  const candidateKey = candidates.join("\n");
+  useEffect(() => setIndex(0), [candidateKey]);
+  const source = candidates[index];
+  if (!source) return null;
+  return <img className={`r20-message__avatar${onContextMenu ? " r20-message__avatar--editable" : ""}`} src={source} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setIndex((current) => current + 1)} onContextMenu={onContextMenu} />;
+}
+
+export function Roll20V2Renderer({ document, textEditor, avatarCandidates, managedAvatar = false, onAvatarContextMenu }: { document: LogEntryDocument; textEditor?: TextEditor; avatarCandidates?: string[]; managedAvatar?: boolean; onAvatarContextMenu?: (event: ReactMouseEvent<HTMLImageElement>) => void }) {
   const presentation = document.presentation ?? {
     speakerExplicit: Boolean(document.speaker?.name),
     avatarExplicit: Boolean(document.speaker?.avatarUrl),
@@ -134,12 +143,13 @@ export function Roll20V2Renderer({ document, textEditor }: { document: LogEntryD
     continuation: false
   };
   const showSpeaker = document.kind === "dialogue" && presentation.speakerExplicit && Boolean(document.speaker?.name);
-  const showAvatar = document.kind === "dialogue" && presentation.avatarExplicit && Boolean(document.speaker?.avatarUrl);
+  const candidates = avatarCandidates?.length ? avatarCandidates : document.speaker?.avatarUrl ? [document.speaker.avatarUrl] : [];
+  const showAvatar = document.kind === "dialogue" && Boolean(candidates.length) && (managedAvatar ? presentation.speakerExplicit : presentation.avatarExplicit);
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
   const speakerTemplate = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "roll-template";
   return (
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
-      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <img className="r20-message__avatar" src={document.speaker!.avatarUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</div>}
+      {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <AvatarImage candidates={candidates} onContextMenu={onAvatarContextMenu} />}</div>}
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
         <div className={`r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}`}>
