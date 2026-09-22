@@ -611,8 +611,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   .r20-message { padding-right: 3px; padding-left: 3px; }
   .log-entry-drag-handle { left: -13px; opacity: .5; }
   /* Reserve an inside gutter on narrow published views, still vertically centered. */
-  .public-log .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 34px; }
-  .public-log .entry-bgm-button { left: 0; top: 50%; }
+  .public-log:not(.workspace-read-mode) .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 34px; }
+  .public-log:not(.workspace-read-mode) .entry-bgm-button { left: 0; top: 50%; }
+  .workspace-read-mode .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 0; }
+  .workspace-read-mode .entry-bgm-button { left: -24px; top: 50%; }
   .entry-more { opacity: .72; }
   .styled-segment, .inline-add-row { grid-template-columns: 1fr; }
   .entry-context-menu { width: 190px; }
