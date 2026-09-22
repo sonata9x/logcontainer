@@ -395,8 +395,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .waiting-bgm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .waiting-bgm > span { display: inline-flex; align-items: center; gap: 5px; }
 .page-extras-editor, .bgm-attach-modal { width: min(560px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; }
-.speaker-avatar-manager { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
-.speaker-avatar-manager h3 { margin: 0 0 6px; }
+.speaker-avatar-manager { margin-top: 8px; }
 .speaker-avatar-list { display: grid; gap: 7px; }
 .speaker-avatar-list details { border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .speaker-avatar-list summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; }
