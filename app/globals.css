@@ -596,6 +596,8 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   .live-status { font-size: 11px; }
   .toolbar-actions { gap: 5px; }
   .toolbar-actions .button { min-height: 38px; padding: 7px 10px; }
+  .workspace-mode-toggle { width: 38px; padding: 7px; font-size: 0; }
+  .workspace-mode-toggle svg { width: 18px; height: 18px; }
   .handout-trigger { font-size: 0; }
   .handout-trigger svg { width: 18px; height: 18px; }
   .move-scope-options { grid-template-columns: 1fr; }
