@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedApiContext } from "@/lib/api-auth";
-import { createManualLogEntryDocument, createManualStyledLogEntryDocument } from "@/lib/logs/model/factory";
+import { createManualImageLogEntryDocument, createManualLogEntryDocument, createManualStyledLogEntryDocument } from "@/lib/logs/model/factory";
 import { projectDocumentText } from "@/lib/logs/model/projection";
+import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
@@ -31,6 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const entryType = body.entryType === "system" ? "description" : "dialogue";
   const afterEntryId = typeof body.afterEntryId === "string" ? body.afterEntryId : null;
   const rawSegments: unknown[] = Array.isArray(body.segments) ? body.segments : [];
+  const rawImage = body.image && typeof body.image === "object" ? body.image as Record<string, unknown> : null;
   if (rawSegments.length > 20) return NextResponse.json({ error: "한 블록에는 CSS 구간을 최대 20개까지 추가할 수 있습니다." }, { status: 400 });
   const styleWarnings: string[] = [];
   const segments = rawSegments.flatMap((value) => {
@@ -43,9 +45,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     styleWarnings.push(...sanitized.warnings);
     return text ? [{ text, style: sanitized.style }] : [];
   });
-  if (!content && !segments.length) return NextResponse.json({ error: "내용을 입력해주세요." }, { status: 400 });
+  if (!content && !segments.length && !rawImage) return NextResponse.json({ error: "내용을 입력해주세요." }, { status: 400 });
 
-  const document = segments.length
+  let document;
+  if (rawImage) {
+    const src = safeImageUrl(rawImage.src);
+    const href = rawImage.href ? safeHttpsUrl(rawImage.href) : null;
+    if (!src) return NextResponse.json({ error: "HTTPS 이미지 링크를 입력해주세요." }, { status: 400 });
+    if (rawImage.href && !href) return NextResponse.json({ error: "클릭 링크는 HTTPS 주소만 사용할 수 있습니다." }, { status: 400 });
+    const align = ["left", "center", "right"].includes(String(rawImage.align)) ? rawImage.align as "left" | "center" | "right" : null;
+    document = createManualImageLogEntryDocument(entryType, speakerName || null, {
+      src, href,
+      alt: typeof rawImage.alt === "string" ? rawImage.alt.slice(0, 500) || null : null,
+      caption: typeof rawImage.caption === "string" ? rawImage.caption.slice(0, 500) || null : null,
+      align
+    });
+  } else document = segments.length
     ? createManualStyledLogEntryDocument(entryType, speakerName || null, segments)
     : createManualLogEntryDocument(entryType, speakerName || null, content);
   const { data, error } = await context.supabase.rpc("create_log_entry_v3", {

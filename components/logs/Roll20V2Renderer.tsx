@@ -147,12 +147,13 @@ export function Roll20V2Renderer({ document, textEditor, avatarCandidates, manag
   const showAvatar = document.kind === "dialogue" && Boolean(candidates.length) && (managedAvatar ? presentation.speakerExplicit : presentation.avatarExplicit);
   const showTimestamp = presentation.timestampExplicit && Boolean(document.timestamp.raw);
   const speakerTemplate = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "roll-template";
+  const speakerImage = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "image";
   return (
     <article className={`r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}`}>
       {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <AvatarImage candidates={candidates} onContextMenu={onAvatarContextMenu} />}</div>}
       <div className="r20-message__body">
         {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
-        <div className={`r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}`}>
+        <div className={`r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}${speakerImage ? " r20-message__content-flow--speaker-image" : ""}`}>
           {showSpeaker && <strong className="r20-message__speaker">{document.speaker!.name}:</strong>}
           {document.blocks.map((block) => <BlockView key={block.id} block={block} editor={textEditor} speakerTemplate={speakerTemplate} />)}
         </div>

@@ -132,3 +132,15 @@ test("speaker and a sole roll template share one inline flow", () => {
   assert.match(html, /r20-template--speaker-inline/);
   assert.ok(html.indexOf("r20-message__speaker") < html.indexOf("r20-template--"));
 });
+
+test("speaker images render inside the body column after the avatar and speaker label", () => {
+  const result = importRoll20HtmlV2('<div class="message general"><img class="avatar" src="https://example.com/avatar.png"><span class="by">GM:</span><a href="https://example.com/full"><img src="https://example.com/image.png" alt="scene"></a></div>');
+  const html = renderToStaticMarkup(createElement(Roll20V2Renderer, { document: result.documents[0] }));
+  assert.ok(html.indexOf("r20-message__body") < html.indexOf("r20-image-block"));
+  assert.ok(html.indexOf("r20-message__speaker") < html.indexOf("r20-image-block"));
+  assert.match(html, /r20-message__content-flow--speaker-image/);
+  assert.match(themeCss, /\.r20-message--dialogue \{[^}]*grid-template-columns: 32px minmax\(0, 1fr\)/);
+  assert.match(themeCss, /\.r20-message__body \{ min-width: 0; \}/);
+  assert.match(themeCss, /\.r20-message__content-flow--speaker-image \.r20-image-block \{[^}]*flex: 1 1 auto;[^}]*min-width: 0;[^}]*margin: 0;/);
+  assert.match(themeCss, /\.r20-image \{[^}]*max-width: min\(100%, 680px\)/);
+});

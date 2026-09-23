@@ -12,7 +12,7 @@ import { Roll20V2Renderer } from "@/components/logs/Roll20V2Renderer";
 import { InlineContentEditor } from "@/components/logs/InlineContentEditor";
 import { EntryContextMenu } from "@/components/logs/EntryContextMenu";
 import { cloneLogDocument } from "@/lib/logs/model/editor";
-import { editableTextSegments, hasStyledContent } from "@/lib/logs/model/user-edit";
+import { editableImageTargets, editableTextSegments, hasStyledContent } from "@/lib/logs/model/user-edit";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 import { MAX_STAGED_ROLL20_SOURCE_SIZE, SUPABASE_TUS_CHUNK_SIZE } from "@/lib/logs/import-limits";
 import { ShareDialog } from "@/components/WorkspaceSidebar";
@@ -48,6 +48,17 @@ export type ImportSummary = {
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
 const SpeakerAvatarContext = createContext<{ avatars: SpeakerAvatarBundle | null; setAvatars: React.Dispatch<React.SetStateAction<SpeakerAvatarBundle | null>> }>({ avatars: null, setAvatars: () => undefined });
+
+function manualEntryRequestBody(data: FormData, afterEntryId?: string) {
+  const base = { ...(afterEntryId ? { afterEntryId } : {}), entryType: data.get("entryType"), speakerName: data.get("speakerName") };
+  if (data.get("contentType") === "image") return {
+    ...base,
+    image: { src: data.get("imageSrc"), href: data.get("imageHref"), alt: data.get("imageAlt"), caption: data.get("imageCaption"), align: data.get("imageAlign") }
+  };
+  const texts = data.getAll("segmentText").map(String);
+  const css = data.getAll("segmentCss").map(String);
+  return { ...base, segments: texts.map((text, index) => ({ text, css: css[index] ?? "" })) };
+}
 
 type ImportUploadTarget = {
   uploadId: string;
@@ -487,14 +498,11 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     event.preventDefault();
     if (addingEntryPending) return;
     const data = new FormData(event.currentTarget);
-    const texts = data.getAll("segmentText").map(String);
-    const css = data.getAll("segmentCss").map(String);
     setAddingEntryPending(true);
     try {
       const response = await fetch(`/api/pages/${page.id}/entries`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ entryType: data.get("entryType"), speakerName: data.get("speakerName"),
-          segments: texts.map((text, index) => ({ text, css: css[index] ?? "" })) })
+        body: JSON.stringify(manualEntryRequestBody(data))
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "블록을 추가하지 못했습니다.");
@@ -577,13 +585,13 @@ function ImportHistoryPanel({ pageId }: { pageId: string }) {
 const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canEdit, onBgmChange, onChange, onInsert, onDelete }: { pageId: string; entry: LogEntry; bgmItem: PageBgmItem | null; canEdit: boolean; onBgmChange: (item: PageBgmItem | null) => void; onChange: (entry: LogEntry) => void; onInsert: (entry: LogEntry) => void; onDelete: (entryId: string) => void }) {
   const { avatars, setAvatars } = useContext(SpeakerAvatarContext);
   const avatar = resolveEntryAvatar(entry, avatars);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<"content" | "image" | null>(null);
   const [content, setContent] = useState(entry.content);
   const [document, setDocument] = useState<LogEntryDocument | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showCss, setShowCss] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"text" | "image" | null>(null);
   const [editingBgm, setEditingBgm] = useState(false);
   const [cssDrafts, setCssDrafts] = useState<Array<{ id: string; label: string; css: string }>>([]);
   const [revisions, setRevisions] = useState<LogEntryRevision[]>([]);
@@ -632,7 +640,15 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     setContent(entry.content);
     setDocument(entry.document ? cloneLogDocument(entry.document) : null);
     setEditingVersion(entry.updated_at);
-    setEditing(true);
+    setEditing("content");
+  }
+
+  function startImageEditing() {
+    if (!canEdit || !entry.document || !editableImageTargets(entry.document).length) return;
+    setContent(entry.content);
+    setDocument(cloneLogDocument(entry.document));
+    setEditingVersion(entry.updated_at);
+    setEditing("image");
   }
 
   async function save() {
@@ -640,8 +656,13 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     if (entry.document_version === 2 && document && entry.document) {
       const before = new Map(editableTextSegments(entry.document).map((segment) => [segment.id, segment.text]));
       const contentEdits = editableTextSegments(document).filter((segment) => before.get(segment.id) !== segment.text);
-      if (!contentEdits.length) { setEditing(false); return; }
-      body = { contentEdits, expectedUpdatedAt: editingVersion };
+      const beforeImages = new Map(editableImageTargets(entry.document).map((image) => [image.id, image]));
+      const imageEdits = editableImageTargets(document).filter((image) => {
+        const beforeImage = beforeImages.get(image.id);
+        return beforeImage && ["src", "href", "alt", "caption", "align"].some((key) => beforeImage[key as keyof typeof beforeImage] !== image[key as keyof typeof image]);
+      }).map(({ id, src, href, alt, caption, align }) => ({ id, src, href, alt, caption, align }));
+      if (!contentEdits.length && !imageEdits.length) { setEditing(null); return; }
+      body = { contentEdits, imageEdits, expectedUpdatedAt: editingVersion };
     } else body = { content, expectedUpdatedAt: editingVersion };
     setSaving(true);
     const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -650,13 +671,13 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     if (!response.ok) return window.alert(result.error ?? "블록을 저장하지 못했습니다.");
     if (result.entry) onChange(result.entry);
     setDocument(null);
-    setEditing(false);
+    setEditing(null);
   }
 
   function cancelEditing() {
     setContent(entry.content);
     setDocument(null);
-    setEditing(false);
+    setEditing(null);
   }
 
   async function remove() {
@@ -670,23 +691,16 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const segmentTexts = data.getAll("segmentText").map(String);
-    const segmentCss = data.getAll("segmentCss").map(String);
     const response = await fetch(`/api/pages/${pageId}/entries`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        afterEntryId: entry.id,
-        entryType: data.get("entryType"),
-        speakerName: data.get("speakerName"),
-        segments: segmentTexts.map((text, index) => ({ text, css: segmentCss[index] ?? "" }))
-      })
+      body: JSON.stringify(manualEntryRequestBody(data, entry.id))
     });
     const result = await response.json();
     if (!response.ok) return window.alert(result.error ?? "블록을 추가하지 못했습니다.");
     if (result.styleWarnings?.length) window.alert("허용되지 않거나 잘못된 CSS 선언은 제외하고 추가했습니다.");
     if (result.entry) onInsert(result.entry);
-    setAdding(false);
+    setAdding(null);
   }
 
   async function loadHistory() {
@@ -740,20 +754,21 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
 
   const hasRoll20Original = entry.document?.source.platform === "roll20";
   const canEditCss = Boolean(entry.document && hasStyledContent(entry.document));
+  const canEditImage = Boolean(entry.document && editableImageTargets(entry.document).length);
   const entryBody = editing && entry.document_version === 2 && document
-    ? <InlineContentEditor document={document} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />
+    ? <InlineContentEditor document={document} imagesOnly={editing === "image"} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />
     : editing
       ? <article className="log-entry"><label className="field">{entry.speaker_name ?? "내용"}<textarea value={content} onChange={(event) => setContent(event.target.value)} autoFocus /></label><button className="button button-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button> <button className="button" onClick={cancelEditing} disabled={saving}>취소</button></article>
-      : <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={canEdit ? startEditing : undefined} onContextMenu={canEdit ? (event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } : undefined} title={canEdit ? "더블클릭: 내용 수정 · 우클릭: 부가 기능" : undefined}>
+      : <article className={`log-entry entry-${entry.entry_type} ${entry.document_version === 2 ? "log-entry-v2" : ""}`} onDoubleClick={canEdit && !canEditImage ? startEditing : undefined} onContextMenu={canEdit ? (event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); } : undefined} title={canEdit ? canEditImage ? "우클릭: 이미지 수정 및 부가 기능" : "더블클릭: 내용 수정 · 우클릭: 부가 기능" : undefined}>
         {entry.document_version === 2 && entry.document ? <Roll20V2Renderer document={entry.document} avatarCandidates={avatar.candidates} managedAvatar={avatar.managed} onAvatarContextMenu={avatar.profile ? openAvatarMenu : undefined} /> : entry.raw_html ? <div className="preserved-roll20-entry" dangerouslySetInnerHTML={{ __html: entry.raw_html }} /> : <>{entry.speaker_name && <div className="log-entry-speaker" style={{ color: entry.speaker_color ?? undefined }}>{entry.speaker_name}</div>}<div className="log-entry-content">{entry.content}</div></>}
       </article>;
   return <div className="entry-wrap">
     <EntryPlaybackAnchor item={bgmItem}>{entryBody}</EntryPlaybackAnchor>
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
-    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onAdd={() => setAdding(true)} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canEditImage={canEditImage} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditImage={startImageEditing} onAdd={() => setAdding("text")} onAddImage={() => setAdding("image")} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {avatarMenu && <SpeakerExpressionMenu menu={avatarMenu} pending={avatarPending} onChoose={(variantId) => void chooseExpression(variantId)} onClose={() => setAvatarMenu(null)} />}
     {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
-    {adding && <InlineAddForm onSubmit={add} onCancel={() => setAdding(false)} />}
+    {adding && <InlineAddForm initialContentType={adding} fixedContentType onSubmit={add} onCancel={() => setAdding(null)} />}
     {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}
     {showHistory && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div></ModalPortal>}
   </div>;
@@ -763,22 +778,30 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 
-function InlineAddForm({ onSubmit, onCancel }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function InlineAddForm({ initialContentType = "text", fixedContentType = false, onSubmit, onCancel }: { initialContentType?: "text" | "image"; fixedContentType?: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const [segments, setSegments] = useState([{ key: 1 }]);
   const [entryType, setEntryType] = useState<"dialogue" | "system">("dialogue");
+  const [contentType, setContentType] = useState<"text" | "image">(initialContentType);
   return <form className="inline-add-form" onSubmit={onSubmit}>
     <div className="inline-add-row">
       <label className="field">형식<select name="entryType" value={entryType} onChange={(event) => setEntryType(event.target.value as "dialogue" | "system")}><option value="dialogue">대화</option><option value="system">지문</option></select></label>
       {entryType === "dialogue" && <label className="field">화자명 (선택)<input name="speakerName" maxLength={100} /></label>}
+      {fixedContentType ? <input type="hidden" name="contentType" value={contentType} /> : <label className="field">내용 종류<select name="contentType" value={contentType} onChange={(event) => setContentType(event.target.value as "text" | "image")}><option value="text">텍스트</option><option value="image">이미지</option></select></label>}
     </div>
-    <div className="styled-segment-list">
+    {contentType === "text" ? <div className="styled-segment-list">
       {segments.map((segment, index) => <div className="styled-segment" key={segment.key}>
         <label className="field">텍스트 {segments.length > 1 ? index + 1 : ""}<input name="segmentText" required placeholder="한 줄에 이어질 내용" /></label>
         <label className="field">이 구간의 CSS (선택)<textarea name="segmentCss" spellCheck={false} placeholder="color: #c2200e; font-weight: 700;" /></label>
         {segments.length > 1 && <button className="button button-danger" type="button" aria-label={`${index + 1}번 CSS 구간 삭제`} onClick={() => setSegments((current) => current.filter((item) => item.key !== segment.key))}>삭제</button>}
       </div>)}
-    </div>
-    <div className="inline-add-actions"><button className="button" type="button" onClick={() => setSegments((current) => current.length >= 20 ? current : [...current, { key: Math.max(...current.map((item) => item.key)) + 1 }])} disabled={segments.length >= 20}><Plus size={13} /> 같은 줄 CSS 구간 추가</button><span><button className="button" type="button" onClick={onCancel}>취소</button> <button className="button button-primary">로그 블록 추가</button></span></div>
+    </div> : <div className="inline-image-add-fields">
+      <label className="field">이미지 링크<input type="url" name="imageSrc" required placeholder="https://example.com/image.png" /></label>
+      <label className="field">클릭 링크 (선택)<input type="url" name="imageHref" placeholder="https://example.com" /></label>
+      <label className="field">대체 텍스트 (선택)<input name="imageAlt" maxLength={500} placeholder="이미지 설명" /></label>
+      <label className="field">캡션 (선택)<input name="imageCaption" maxLength={500} /></label>
+      <label className="field">정렬<select name="imageAlign" defaultValue=""><option value="">기본 ({entryType === "system" ? "가운데" : "왼쪽"})</option><option value="left">왼쪽</option><option value="center">가운데</option><option value="right">오른쪽</option></select></label>
+    </div>}
+    <div className="inline-add-actions">{contentType === "text" ? <button className="button" type="button" onClick={() => setSegments((current) => current.length >= 20 ? current : [...current, { key: Math.max(...current.map((item) => item.key)) + 1 }])} disabled={segments.length >= 20}><Plus size={13} /> 같은 줄 CSS 구간 추가</button> : <span /> }<span><button className="button" type="button" onClick={onCancel}>취소</button> <button className="button button-primary">로그 블록 추가</button></span></div>
   </form>;
 }
 

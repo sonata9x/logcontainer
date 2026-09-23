@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { appendBlock, cloneLogDocument, duplicateBlock, editorTextToStyle, moveBlock, removeBlock, replaceBlock } from "../lib/logs/model/editor";
 import { projectDocumentText } from "../lib/logs/model/projection";
-import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets } from "../lib/logs/model/user-edit";
+import { applyEditableImageChanges, applyEditableTextChanges, applyRichStyleChanges, editableImageTargets, editableTextSegments, styledContentTargets } from "../lib/logs/model/user-edit";
 import { sanitizeRichStyle } from "../lib/logs/rich/style";
 import { validateLogEntryDocument } from "../lib/logs/model/validate";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
-import { createManualStyledLogEntryDocument } from "../lib/logs/model/factory";
+import { createManualImageLogEntryDocument, createManualStyledLogEntryDocument } from "../lib/logs/model/factory";
 
 const fixture = readFileSync(new URL("./fixtures/roll20/real-msgdata-anonymized.html", import.meta.url), "utf8");
 const topologyFixture = readFileSync(new URL("./fixtures/roll20/rendered-topology-v2.html", import.meta.url), "utf8");
@@ -87,6 +87,9 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(editorSource, /<InlineAddForm/);
   assert.match(inlineEditorSource, /r20-editable-text/);
   assert.match(contextMenuSource, /아래에 로그 블록 추가/);
+  assert.match(contextMenuSource, /canEditImage &&/);
+  assert.match(contextMenuSource, /이미지 수정/);
+  assert.match(contextMenuSource, /아래에 이미지 블록 추가/);
   assert.match(contextMenuSource, /CSS 수정/);
   assert.match(contextMenuSource, /수정 이력/);
   assert.match(contextMenuSource, /원본 상태로 복원/);
@@ -94,6 +97,9 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(contextMenuSource, /createPortal\(menu, document\.body\)/);
   assert.match(editorSource, /createPortal\(children, document\.body\)/);
   assert.match(editorSource, /entryType === "dialogue"/);
+  assert.match(editorSource, /onDoubleClick=\{canEdit && !canEditImage \? startEditing/);
+  assert.match(editorSource, /imagesOnly=\{editing === "image"\}/);
+  assert.match(editorSource, /fixedContentType/);
   assert.match(updateRoute, /contentEdits/);
   assert.match(updateRoute, /styleEdits/);
   assert.match(updateRoute, /styledContentTargets\(targetDocument\)/);
@@ -113,4 +119,32 @@ test("manual blocks can contain multiple independently styled inline segments", 
   assert.equal(projectDocumentText(document), "빨강굵게");
   assert.deepEqual(styledContentTargets(document).map((target) => target.label), ["빨강", "굵게"]);
   assert.equal(document.blocks[0].type, "rich");
+});
+
+test("manual images support dialogue and description entries with context-aware alignment", () => {
+  const dialogue = createManualImageLogEntryDocument("dialogue", "GM", { src: "https://example.com/dialogue.png", alt: "대화 이미지" });
+  const description = createManualImageLogEntryDocument("description", null, { src: "https://example.com/description.png", alt: "지문 이미지" });
+  assert.equal(dialogue.blocks[0].type, "image");
+  assert.equal(description.blocks[0].type, "image");
+  if (dialogue.blocks[0].type !== "image" || description.blocks[0].type !== "image") return;
+  assert.equal(dialogue.blocks[0].display?.align, "left");
+  assert.equal(description.blocks[0].display?.align, "center");
+  assert.equal(dialogue.speaker?.name, "GM");
+});
+
+test("image edits change imported image fields without changing message metadata", () => {
+  const original = createManualImageLogEntryDocument("dialogue", "GM", { src: "https://example.com/old.png", alt: "old" });
+  const target = editableImageTargets(original)[0];
+  const edited = applyEditableImageChanges(original, [{ id: target.id, src: "https://example.com/new.png", href: "https://example.com/full", alt: "new", caption: "caption", align: "center" }]);
+  assert.deepEqual(editableImageTargets(edited)[0], { ...target, src: "https://example.com/new.png", href: "https://example.com/full", alt: "new", caption: "caption", align: "center" });
+  assert.deepEqual(edited.speaker, original.speaker);
+  assert.deepEqual(edited.presentation, original.presentation);
+});
+
+test("image editing and addition are wired through the editor and API", () => {
+  assert.match(editorSource, /data\.get\("contentType"\) === "image"/);
+  assert.match(editorSource, /editableImageTargets/);
+  assert.match(inlineEditorSource, /inline-image-editor/);
+  assert.match(updateRoute, /imageEdits/);
+  assert.match(updateRoute, /safeImageUrl/);
 });

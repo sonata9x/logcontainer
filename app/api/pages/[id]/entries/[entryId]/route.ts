@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedApiContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
 import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
-import { applyEditableTextChanges, applyRichStyleChanges, editableTextSegments, styledContentTargets, type EditableTextChange } from "@/lib/logs/model/user-edit";
+import { applyEditableImageChanges, applyEditableTextChanges, applyRichStyleChanges, editableImageTargets, editableTextSegments, styledContentTargets, type EditableImageChange, type EditableTextChange } from "@/lib/logs/model/user-edit";
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { validateLogEntryDocument } from "@/lib/logs/model/validate";
+import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
 
@@ -26,17 +27,38 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     let revisionAction: "edit" | "restore" | "revert" = "edit";
     const styleWarnings: string[] = [];
 
-    if (Array.isArray(body.contentEdits)) {
-      const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));
-      const changes: EditableTextChange[] = [];
-      for (const value of body.contentEdits) {
-        if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.text !== "string" || !allowed.has(value.id)) {
-          return NextResponse.json({ error: "수정할 수 없는 내용 영역입니다." }, { status: 400 });
+    if (Array.isArray(body.contentEdits) || Array.isArray(body.imageEdits)) {
+      if (Array.isArray(body.contentEdits)) {
+        const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));
+        const changes: EditableTextChange[] = [];
+        for (const value of body.contentEdits) {
+          if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.text !== "string" || !allowed.has(value.id)) {
+            return NextResponse.json({ error: "수정할 수 없는 내용 영역입니다." }, { status: 400 });
+          }
+          if (value.text.length > 200_000) return NextResponse.json({ error: "메시지 내용이 너무 깁니다." }, { status: 400 });
+          changes.push({ id: value.id, text: value.text });
         }
-        if (value.text.length > 200_000) return NextResponse.json({ error: "메시지 내용이 너무 깁니다." }, { status: 400 });
-        changes.push({ id: value.id, text: value.text });
+        nextDocument = applyEditableTextChanges(nextDocument, changes);
       }
-      nextDocument = applyEditableTextChanges(current.document, changes);
+      if (Array.isArray(body.imageEdits)) {
+        const allowed = new Set(editableImageTargets(current.document).map((image) => image.id));
+        const changes: EditableImageChange[] = [];
+        for (const value of body.imageEdits) {
+          const item = value && typeof value === "object" ? value as Record<string, unknown> : null;
+          if (!item || typeof item.id !== "string" || !allowed.has(item.id) || typeof item.src !== "string") return NextResponse.json({ error: "수정할 수 없는 이미지 영역입니다." }, { status: 400 });
+          const src = safeImageUrl(item.src);
+          const href = item.href ? safeHttpsUrl(item.href) : null;
+          if (!src) return NextResponse.json({ error: "HTTPS 이미지 링크를 입력해주세요." }, { status: 400 });
+          if (item.href && !href) return NextResponse.json({ error: "클릭 링크는 HTTPS 주소만 사용할 수 있습니다." }, { status: 400 });
+          changes.push({
+            id: item.id, src, href,
+            alt: typeof item.alt === "string" ? item.alt.slice(0, 500) || null : null,
+            caption: typeof item.caption === "string" ? item.caption.slice(0, 500) || null : null,
+            align: ["left", "center", "right"].includes(String(item.align)) ? item.align as "left" | "center" | "right" : null
+          });
+        }
+        nextDocument = applyEditableImageChanges(nextDocument, changes);
+      }
     } else if (Array.isArray(body.styleEdits)) {
       const original = validateLogEntryDocument(entry.original_document ?? entry.document);
       const targetDocument = original.ok && original.document.source.platform === "roll20" ? original.document : current.document;
