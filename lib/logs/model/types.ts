@@ -158,6 +158,7 @@ export type Roll20ImportReportV2 = {
   structuralDuplicateCount: number;
   errorDuplicateCount: number;
   hiddenRemovedCount: number;
+  syncRemovedCount?: number;
   unknownFallbackCount: number;
   sanitizedStyleCount: number;
   droppedStyleCount: number;

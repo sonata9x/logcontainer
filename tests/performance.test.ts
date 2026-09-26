@@ -30,6 +30,7 @@ const scopedMoveMigration = readFileSync(new URL("../supabase/migrations/2026090
 const handoutMigration = readFileSync(new URL("../supabase/migrations/202609090002_handout_library.sql", import.meta.url), "utf8");
 const sidebarReliabilityMigration = readFileSync(new URL("../supabase/migrations/202609090003_sidebar_drag_reliability.sql", import.meta.url), "utf8");
 const pageExtrasBgmMigration = readFileSync(new URL("../supabase/migrations/202609140001_page_extras_bgm.sql", import.meta.url), "utf8");
+const htmlImportModesMigration = readFileSync(new URL("../supabase/migrations/202609260001_html_import_modes.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -187,7 +188,9 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmEditMarker) + bgmEditMarker.length, schema.indexOf(accountSecurityMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180002_bgm_edit_and_neutral_theme.sql", import.meta.url), "utf8")));
   const bgmManagementMarker = "-- 202609210001_bgm_management_ux.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(accountSecurityMarker) + accountSecurityMarker.length, schema.indexOf(bgmManagementMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180003_account_security.sql", import.meta.url), "utf8")));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmManagementMarker) + bgmManagementMarker.length)), normalizedSql(readFileSync(new URL("../supabase/migrations/202609210001_bgm_management_ux.sql", import.meta.url), "utf8")));
+  const htmlImportModesMarker = "-- 202609260001_html_import_modes.sql";
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmManagementMarker) + bgmManagementMarker.length, schema.indexOf(htmlImportModesMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609210001_bgm_management_ux.sql", import.meta.url), "utf8")));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(htmlImportModesMarker) + htmlImportModesMarker.length)), normalizedSql(htmlImportModesMigration));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {
@@ -213,7 +216,7 @@ test("large Roll20 imports upload directly to private staging storage", () => {
   assert.match(editor, /authorization: `Bearer \$\{accessToken\}`/);
   assert.match(editor, /auth\.getSession\(\)/);
   assert.match(editor, /chunkSize: SUPABASE_TUS_CHUNK_SIZE/);
-  assert.match(editor, /requestBody = \{ uploadId, removeHiddenMessages, separateCasual, platform: importPlatform \}/);
+  assert.match(editor, /requestBody = \{ uploadId, mode: importMode, separateCasual, platform: importPlatform \}/);
   assert.match(proxy, /contentLength > 4 \* 1024 \* 1024/);
   assert.match(purgeRoute, /purgeExpiredImportUploads/);
   assert.match(importsRoute, /context\.canReimport/);

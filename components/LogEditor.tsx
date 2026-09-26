@@ -43,8 +43,13 @@ export type ImportSummary = {
   structuralDuplicateCount?: number;
   errorDuplicateCount?: number;
   hiddenRemovedCount?: number;
+  syncRemovedCount?: number;
   warningCount?: number;
   casualMessageCount?: number;
+  importMode?: "refresh" | "append";
+  baselineMessageCount?: number;
+  appendedCount?: number;
+  cleanedLegacyCount?: number;
 };
 type ImportSnapshot = { id: string; created_at: string; report: ImportSummary | null };
 const SpeakerAvatarContext = createContext<{ avatars: SpeakerAvatarBundle | null; setAvatars: React.Dispatch<React.SetStateAction<SpeakerAvatarBundle | null>> }>({ avatars: null, setAvatars: () => undefined });
@@ -108,8 +113,8 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [pending, setPending] = useState(false);
   const [importStatus, setImportStatus] = useState("");
   const [summary, setSummary] = useState<ImportSummary | null>(importReport);
-  const [removeHiddenMessages, setRemoveHiddenMessages] = useState(false);
-  const [separateCasual, setSeparateCasual] = useState(false);
+  const [importMode, setImportMode] = useState<"refresh" | "append">("refresh");
+  const [separateCasual, setSeparateCasual] = useState((importReport?.casualMessageCount ?? 0) > 0);
   const [activeStream, setActiveStream] = useState<LogStream>("main");
   const [importPlatform, setImportPlatform] = useState<SupportedImportPlatform | "ccfolia" | "">("");
   const [liveConnected, setLiveConnected] = useState(false);
@@ -278,19 +283,21 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
 
   async function importLog(event: FormEvent) {
     event.preventDefault();
-    if (!page.is_original_owner || (!sourceFile && !source.trim())) return;
+    const requiresUploadedSource = totalCount === 0 || importMode === "append";
+    if (!page.is_original_owner || (requiresUploadedSource && !sourceFile && !source.trim())) return;
     if (!importPlatform) return window.alert("업로드할 로그의 플랫폼을 선택해주세요.");
     if (importPlatform === "ccfolia") return window.alert("CCFOLIA 가져오기는 아직 지원하지 않습니다.");
-    if (sourceFile && (sourceFile.size < 1 || sourceFile.size > MAX_STAGED_ROLL20_SOURCE_SIZE)) {
+    if (requiresUploadedSource && sourceFile && (sourceFile.size < 1 || sourceFile.size > MAX_STAGED_ROLL20_SOURCE_SIZE)) {
       return window.alert("로그 HTML 파일은 최대 12MB까지 업로드할 수 있습니다.");
     }
-    if (totalCount && !window.confirm("현재 편집 블록을 새 로그로 교체할까요? 기존 원본은 가져오기 이력에 보존됩니다.")) return;
+    if (totalCount && importMode === "refresh" && !window.confirm("현재 편집·추가된 블록을 가장 최근 원본 HTML 기준으로 갱신할까요? 기존 상태는 가져오기 이력에 보관됩니다.")) return;
+    if (totalCount && importMode === "append" && !window.confirm("기존 앞부분을 모두 포함한 전체 HTML에서 새로 이어진 블록만 추가합니다. 계속할까요?")) return;
     setPending(true);
     let uploadId: string | null = null;
     let completed = false;
     try {
-      let requestBody: { source?: string; uploadId?: string; removeHiddenMessages: boolean; separateCasual: boolean; platform: SupportedImportPlatform } = { source, removeHiddenMessages, separateCasual, platform: importPlatform };
-      if (sourceFile) {
+      let requestBody: { source?: string; uploadId?: string; mode: "refresh" | "append"; separateCasual: boolean; platform: SupportedImportPlatform } = { ...(requiresUploadedSource ? { source } : {}), mode: importMode, separateCasual, platform: importPlatform };
+      if (requiresUploadedSource && sourceFile) {
         setImportStatus("안전한 업로드 주소를 준비하는 중…");
         const targetResponse = await fetch(`/api/pages/${page.id}/import/upload`, {
           method: "POST",
@@ -306,7 +313,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         setImportStatus("파일 업로드 중… 0%");
         await uploadRoll20File(sourceFile, target, session.access_token, (percentage) => setImportStatus(`파일 업로드 중… ${percentage}%`));
         setImportStatus("HTML 분석 및 저장 중…");
-        requestBody = { uploadId, removeHiddenMessages, separateCasual, platform: importPlatform };
+        requestBody = { uploadId, mode: importMode, separateCasual, platform: importPlatform };
       } else {
         setImportStatus("HTML 분석 및 저장 중…");
       }
@@ -528,7 +535,16 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         <PageExtrasDisplay extras={pageExtras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />
         {totalCount === 0 && permissions.canEdit && <div className="empty-log-actions"><p>HTML을 가져오거나 직접 내용을 등록할 수 있습니다. 세션 카드·개요·BGM은 상단의 페이지 꾸미기에서 추가하세요.</p>{addingFirstEntry ? <fieldset disabled={addingEntryPending} style={{ border: 0, padding: 0 }}><InlineAddForm onSubmit={addFirstEntry} onCancel={() => setAddingFirstEntry(false)} /></fieldset> : <button className="button" onClick={() => setAddingFirstEntry(true)}><Plus size={14} />내용 블록 추가</button>}</div>}
-       {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form"><label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as SupportedImportPlatform | "ccfolia" | "")} disabled={pending} required><option value="" disabled>플랫폼을 선택해주세요</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label><ImportPlatformHelp />{importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}<label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="작은 로그 HTML은 여기에 붙여넣을 수 있습니다. 기존 블록이 있으면 교체됩니다." disabled={pending || importPlatform === "ccfolia"} /></label>{importPlatform === "roll20" && <div className="import-options"><label><input type="checkbox" checked={removeHiddenMessages} onChange={(event) => setRemoveHiddenMessages(event.target.checked)} disabled={pending} /> hidden message 삭제</label><label><input type="checkbox" checked={separateCasual} onChange={(event) => setSeparateCasual(event.target.checked)} disabled={pending} /> 사담 탭 분리</label><span>{separateCasual ? "사담(casual)을 같은 글의 별도 탭에 보관합니다." : "사담(casual)은 제외됩니다."} 구조 반복과 명백한 오류 중복은 자동 정규화됩니다.</span></div>}{importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}<button className="button button-primary" disabled={pending || !importPlatform || importPlatform === "ccfolia" || (!sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : "가져오기"}</button></form>}
+       {showImport && permissions.canReimport && <form onSubmit={importLog} className="roll20-import-form">
+         {totalCount > 0 && <fieldset className="import-options import-mode-options"><legend>가져오기 방식</legend><label><input type="radio" name="importMode" checked={importMode === "refresh"} onChange={() => setImportMode("refresh")} disabled={pending} /> HTML 갱신</label><label><input type="radio" name="importMode" checked={importMode === "append"} onChange={() => setImportMode("append")} disabled={pending} /> HTML 로그 추가</label><span>{importMode === "refresh" ? "전체 HTML을 다시 분석해 현재 로그를 갱신합니다." : "기존 앞부분을 포함한 전체 HTML을 올리면 새로 이어진 블록만 추가합니다. 기존 편집과 직접 추가 블록은 유지됩니다."}</span></fieldset>}
+         <label className="field">플랫폼<select value={importPlatform} onChange={(event) => setImportPlatform(event.target.value as SupportedImportPlatform | "ccfolia" | "")} disabled={pending} required><option value="" disabled>플랫폼을 선택해주세요</option><option value="roll20">Roll20</option><option value="takoyaki-box">Takoyaki Box</option><option value="ccfolia">CCFOLIA (준비 중)</option></select></label>
+         <ImportPlatformHelp />
+         {importPlatform === "ccfolia" && <p className="error">CCFOLIA 가져오기는 아직 지원하지 않습니다.</p>}
+         {totalCount > 0 && importMode === "refresh" ? <p className="muted">가장 최근에 저장한 원본 HTML을 다시 분석해 현재 사이트 패치를 적용합니다. 파일을 다시 올릴 필요가 없습니다.</p> : <><label className="field">백업 HTML 파일 (최대 12MB)<input ref={importFileInput} type="file" accept=".html,.htm,text/html" disabled={pending || importPlatform === "ccfolia"} onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)} /></label><div className="import-divider"><span>또는 4MB 이하 HTML 붙여넣기</span></div><label className="field">로그 HTML<textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder={importMode === "append" ? "기존 앞부분과 새 뒷부분을 모두 포함한 전체 HTML을 넣어주세요." : "작은 로그 HTML은 여기에 붙여넣을 수 있습니다."} disabled={pending || importPlatform === "ccfolia"} /></label></>}
+         {importPlatform === "roll20" && <div className="import-options"><label><input type="checkbox" checked={separateCasual} onChange={(event) => setSeparateCasual(event.target.checked)} disabled={pending} /> 사담 탭 분리</label><span>{separateCasual ? "사담(casual)을 같은 글의 별도 탭에 보관합니다." : "사담(casual)은 제외됩니다."} hidden message, 수정 동기화 로그, 구조 반복과 명백한 오류 중복은 자동으로 정리됩니다.</span></div>}
+         {importStatus && <p className="import-status" role="status" aria-live="polite">{importStatus}</p>}
+         <button className="button button-primary" disabled={pending || !importPlatform || importPlatform === "ccfolia" || ((totalCount === 0 || importMode === "append") && !sourceFile && !source.trim())}>{pending ? importStatus || "가져오는 중…" : importMode === "append" ? "새 로그 추가" : "HTML 갱신"}</button>
+       </form>}
         {((summary?.casualMessageCount ?? 0) > 0 || liveEntries.some(isCasualEntry)) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
         <section className="log-timeline">{visibleStreamEntries(liveEntries, activeStream).map((entry, index, visibleEntries) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} bgmItem={bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id) ?? null} canEdit={Boolean(page.can_edit)} onBgmChange={(item) => setBgmItems((current) => [...current.filter((value) => value.entry_id !== entry.id), ...(item ? [item] : [])])} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
@@ -548,7 +564,7 @@ function LogInfoDialog({ pageId, totalCount, summary, isOwner, canEdit, onRestor
   const [info, setInfo] = useState<{ platform?: string; latestImportAt?: string | null } | null>(null);
   useEscapeClose(onClose);
   useEffect(() => { void fetch(`/api/pages/${pageId}/info`).then((response) => response.json()).then(setInfo).catch(() => setInfo({})); }, [pageId]);
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card log-info-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>로그 정보</h2><dl className="log-info-grid"><dt>현재 총 메시지 수</dt><dd>{totalCount.toLocaleString()}</dd><dt>Platform</dt><dd>{info?.platform ?? summary?.provider ?? "불러오는 중…"}</dd><dt>최신 import 날짜</dt><dd>{info?.latestImportAt ? new Date(info.latestImportAt).toLocaleString("ko-KR") : "없음"}</dd><dt>원본 source message count</dt><dd>{summary?.sourceMessageCount ?? 0}</dd><dt>logical/imported count</dt><dd>{summary?.logicalMessageCount ?? summary?.importedMessageCount ?? 0}</dd><dt>structural duplicate count</dt><dd>{summary?.structuralDuplicateCount ?? 0}</dd><dt>error duplicate count</dt><dd>{summary?.errorDuplicateCount ?? summary?.duplicateMessageCount ?? 0}</dd><dt>hidden removed</dt><dd>{summary?.hiddenRemovedCount ?? summary?.hiddenMessageCount ?? 0}</dd><dt>warning count</dt><dd>{summary?.warningCount ?? 0}</dd></dl><div className="log-info-actions">{isOwner && <ImportHistoryPanel pageId={pageId} />}{canEdit && <TrashPanel pageId={pageId} onRestore={onRestore} canEmpty={isOwner} />}</div></section></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card log-info-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>로그 정보</h2><dl className="log-info-grid"><dt>현재 총 메시지 수</dt><dd>{totalCount.toLocaleString()}</dd><dt>Platform</dt><dd>{info?.platform ?? summary?.provider ?? "불러오는 중…"}</dd><dt>최신 import 날짜</dt><dd>{info?.latestImportAt ? new Date(info.latestImportAt).toLocaleString("ko-KR") : "없음"}</dd><dt>원본 source message count</dt><dd>{summary?.sourceMessageCount ?? 0}</dd><dt>logical/imported count</dt><dd>{summary?.logicalMessageCount ?? summary?.importedMessageCount ?? 0}</dd><dt>structural duplicate count</dt><dd>{summary?.structuralDuplicateCount ?? 0}</dd><dt>error duplicate count</dt><dd>{summary?.errorDuplicateCount ?? summary?.duplicateMessageCount ?? 0}</dd><dt>hidden removed</dt><dd>{summary?.hiddenRemovedCount ?? summary?.hiddenMessageCount ?? 0}</dd><dt>edit sync removed</dt><dd>{summary?.syncRemovedCount ?? 0}</dd>{summary?.importMode === "append" && <><dt>appended count</dt><dd>{summary.appendedCount ?? 0}</dd></>}<dt>warning count</dt><dd>{summary?.warningCount ?? 0}</dd></dl><div className="log-info-actions">{isOwner && <ImportHistoryPanel pageId={pageId} />}{canEdit && <TrashPanel pageId={pageId} onRestore={onRestore} canEmpty={isOwner} />}</div></section></div>;
 }
 
 function PublicationDialog({ pageId, publication, onChange, onClose }: { pageId: string; publication: Publication | null; onChange: (publication: Publication | null) => void; onClose: () => void }) {

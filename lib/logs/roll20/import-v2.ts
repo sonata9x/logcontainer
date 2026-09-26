@@ -6,8 +6,9 @@ import { parseRoll20Blocks } from "./blocks";
 import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
+import { ROLL20_EDIT_SYNC_PREFIX } from "@/lib/logs/import/append";
 
-export type Roll20ImportOptionsV2 = { removeHiddenMessages?: boolean; separateCasual?: boolean };
+export type Roll20ImportOptionsV2 = { separateCasual?: boolean };
 
 function kind(record: Roll20SourceRecord): LogEntryDocument["kind"] {
   if (["desc", "emote"].includes(record.type)) return "description";
@@ -27,6 +28,11 @@ function plainSourceText(record: Roll20SourceRecord) {
 
 function semanticMatchKey(value: string) {
   return value.toLocaleLowerCase().replace(/\d+(?:\.\d+)?/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function isEditSyncRecord(record: Roll20SourceRecord) {
+  const values = [record.content, record.htmlContent, record.semanticPayload, record.renderedHtml];
+  return values.some((value) => typeof value === "string" && value.includes(ROLL20_EDIT_SYNC_PREFIX));
 }
 
 function enrichMsgdataRecords(msgdata: Roll20SourceRecord[], rendered: Roll20SourceRecord[], warnings: ParserWarning[]) {
@@ -83,10 +89,12 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     ? enrichMsgdataRecords(primaryNormalization.records, renderedNormalization.records, parserWarnings)
     : primaryNormalization.records;
   let hiddenRemovedCount = 0;
+  let syncRemovedCount = 0;
   const visible = normalizedRecords.filter((record) => {
     if (record.streamId === "casual" && !options.separateCasual) { hiddenRemovedCount += 1; return false; }
     const hidden = record.type === "hidden" || record.type === "hidden-message";
-    if (options.removeHiddenMessages && hidden) { hiddenRemovedCount += 1; return false; }
+    if (hidden) { hiddenRemovedCount += 1; return false; }
+    if (isEditSyncRecord(record)) { syncRemovedCount += 1; return false; }
     return true;
   });
   let unknownFallbackCount = 0;
@@ -144,7 +152,7 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
   const report: Roll20ImportReportV2 = {
     provider: "roll20", parserVersion: 2, sourceFormat: detected.format, importedAt: new Date().toISOString(), sourceMessageCount,
     logicalMessageCount: documents.length, structuralDuplicateCount: primaryNormalization.structuralDuplicateCount + (renderedNormalization?.structuralDuplicateCount ?? 0),
-    errorDuplicateCount: duplicates.errorDuplicateCount, hiddenRemovedCount, unknownFallbackCount, sanitizedStyleCount,
+    errorDuplicateCount: duplicates.errorDuplicateCount, hiddenRemovedCount, syncRemovedCount, unknownFallbackCount, sanitizedStyleCount,
     droppedStyleCount, casualMessageCount: documents.filter((document) => document.source.stream?.id === "casual").length,
     warningCount: warnings.length, warnings
   };
@@ -153,13 +161,13 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     documents,
     entries: documents.map((document, orderIndex) => ({
       order_index: orderIndex,
-      entry_type: document.kind === "dialogue" ? "dialogue" : "system",
+      entry_type: document.kind === "dialogue" ? "dialogue" as const : "system" as const,
       speaker_name: document.speaker?.name ?? null,
       speaker_color: document.speaker?.color ?? null,
       content: projectDocumentText(document),
       original_content: null,
       raw_html: null,
-      document_version: 2,
+      document_version: 2 as const,
       document,
       original_document: null,
       sort_key: (orderIndex + 1) * 1_000_000,

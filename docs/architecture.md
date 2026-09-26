@@ -31,7 +31,7 @@
 ## Roll20 가져오기 정리 규칙
 
 - 현재 가져오기는 Roll20 `msgdata` 백업과 `.message` 요소가 있는 Roll20 HTML만 받는다.
-- hidden message 삭제와 중복 message 삭제는 사용자가 선택한 경우에만 실행한다.
+- hidden message와 `R20CE_SYNC_V1:` 수정 동기화 로그는 항상 자동으로 삭제한다. 구조 반복과 명백한 오류 중복도 자동 정규화한다.
 - 중복은 본문 유사도가 아니라 `data-messageid` 또는 msgdata의 `messageId`/객체 키가 정확히 같은 경우만 판정한다.
 - 같은 ID는 정렬된 원본 순서에서 첫 항목을 남긴다.
 - ID가 없는 메시지는 내용이 같아도 삭제하지 않는다.
