@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { normalizeSpeakerKey, resolveEntryAvatar, SPEAKER_AVATAR_PLATFORMS } from "../lib/speaker-avatars";
+import { assignSpeakerToDocument, normalizeSpeakerKey, resolveEntryAvatar, SPEAKER_AVATAR_PLATFORMS } from "../lib/speaker-avatars";
 import type { LogEntry, SpeakerAvatarBundle } from "../lib/types";
 
 function entry(id = "entry-1"): LogEntry {
@@ -45,6 +45,23 @@ test("expression, default, original priority never mutates canonical data", () =
   assert.deepEqual(expression.candidates, ["https://private.example/happy", "https://private.example/default", "https://roll20.example/original.png"]);
   assert.equal(source.document!.speaker!.avatarUrl, "https://roll20.example/original.png");
   assert.deepEqual(resolveEntryAvatar(source, { ...bundle, profiles: [] }).candidates, ["https://roll20.example/original.png"]);
+});
+
+test("speaker assignment turns an orphan message into explicit dialogue using the managed default avatar", () => {
+  const source = entry("orphan");
+  const original = source.document!;
+  const assigned = assignSpeakerToDocument({
+    ...original,
+    kind: "description",
+    speaker: null,
+    presentation: { speakerExplicit: false, avatarExplicit: false, timestampExplicit: true, continuation: true, private: true }
+  }, " GM: ");
+  assert.equal(assigned.kind, "dialogue");
+  assert.deepEqual(assigned.speaker, { name: "GM", color: null, avatarUrl: null });
+  assert.deepEqual(assigned.presentation, { speakerExplicit: true, avatarExplicit: false, timestampExplicit: true, continuation: false, private: true });
+  const assignedEntry = { ...source, document: assigned, speaker_name: "GM" };
+  assert.deepEqual(resolveEntryAvatar(assignedEntry, bundle).candidates, ["https://private.example/default"]);
+  assert.equal(original.speaker?.name, " GM ");
 });
 
 test("migration keeps avatar storage private and canonical documents separate", () => {

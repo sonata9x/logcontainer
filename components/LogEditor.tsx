@@ -28,8 +28,8 @@ import { BgmPlaylistDialog } from "@/components/BgmPlaylistDialog";
 import { TrashDialog } from "@/components/TrashDialog";
 import { ImportPlatformHelp } from "@/components/ImportPlatformHelp";
 import { BgmAttachDialog, PageExtrasDisplay, PageExtrasEditor } from "@/components/PageExtrasPanel";
-import { SpeakerAvatarDialog, SpeakerExpressionMenu, type AvatarMenuState } from "@/components/SpeakerAvatarControls";
-import { resolveEntryAvatar } from "@/lib/speaker-avatars";
+import { SpeakerAssignmentDialog, SpeakerAvatarDialog, SpeakerExpressionMenu, type AvatarMenuState } from "@/components/SpeakerAvatarControls";
+import { resolveEntryAvatar, speakerNameForEntry } from "@/lib/speaker-avatars";
 import { LogEntryBlock, SpeakerAvatarProvider } from "@/components/LogEntryBlock";
 import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
 
@@ -616,7 +616,8 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
   const [saving, setSaving] = useState(false);
   const [avatarMenu, setAvatarMenu] = useState<AvatarMenuState | null>(null);
   const [avatarPending, setAvatarPending] = useState(false);
-  useEscapeClose(() => { setShowCss(false); setShowHistory(false); }, saving || (!showCss && !showHistory));
+  const [showSpeakerAssignment, setShowSpeakerAssignment] = useState(false);
+  useEscapeClose(() => { setShowCss(false); setShowHistory(false); setShowSpeakerAssignment(false); }, saving || (!showCss && !showHistory && !showSpeakerAssignment));
 
   useEffect(() => {
     if (editing) return;
@@ -768,9 +769,27 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     if (result.entry) onChange(result.entry);
   }
 
+  async function saveSpeaker(speakerName: string) {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ speakerName, expectedUpdatedAt: entry.updated_at }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return window.alert(result.error ?? "화자를 변경하지 못했습니다.");
+      if (result.entry) onChange(result.entry);
+      setAvatars((current) => current ? { ...current, entryOverrides: Object.fromEntries(Object.entries(current.entryOverrides).filter(([entryId]) => entryId !== entry.id)) } : current);
+      setShowSpeakerAssignment(false);
+      const avatarResult = await fetch(`/api/pages/${pageId}/speaker-avatars`, { cache: "no-store" }).then((response) => response.json()).catch(() => ({}));
+      if (avatarResult.avatars) setAvatars(avatarResult.avatars);
+    } catch {
+      window.alert("화자를 변경하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.");
+    } finally { setSaving(false); }
+  }
+
   const hasRoll20Original = entry.document?.source.platform === "roll20";
   const canEditCss = Boolean(entry.document && hasStyledContent(entry.document));
   const canEditImage = Boolean(entry.document && editableImageTargets(entry.document).length);
+  const currentSpeaker = speakerNameForEntry(entry);
+  const canAssignSpeaker = Boolean(entry.document_version === 2 && entry.document && avatars?.enabled && avatars.profiles.length);
   const entryBody = editing && entry.document_version === 2 && document
     ? <InlineContentEditor document={document} imagesOnly={editing === "image"} saving={saving} onChange={setDocument} onSave={save} onCancel={cancelEditing} />
     : editing
@@ -781,10 +800,11 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
   return <div className="entry-wrap">
     <EntryPlaybackAnchor item={bgmItem}>{entryBody}</EntryPlaybackAnchor>
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
-    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canEditImage={canEditImage} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditImage={startImageEditing} onAdd={() => setAdding("text")} onAddImage={() => setAdding("image")} onEditCss={openCssEditor} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canEditImage={canEditImage} speakerActionLabel={currentSpeaker ? "화자 변경" : "화자 추가"} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditImage={startImageEditing} onAdd={() => setAdding("text")} onAddImage={() => setAdding("image")} onEditCss={openCssEditor} onEditSpeaker={canAssignSpeaker ? () => setShowSpeakerAssignment(true) : undefined} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {avatarMenu && <SpeakerExpressionMenu menu={avatarMenu} pending={avatarPending} onChoose={(variantId) => void chooseExpression(variantId)} onClose={() => setAvatarMenu(null)} />}
     {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
     {adding && <InlineAddForm initialContentType={adding} fixedContentType onSubmit={add} onCancel={() => setAdding(null)} />}
+    {showSpeakerAssignment && avatars && <SpeakerAssignmentDialog profiles={avatars.profiles} currentSpeaker={currentSpeaker} pending={saving} onSave={(speakerName) => void saveSpeaker(speakerName)} onClose={() => setShowSpeakerAssignment(false)} />}
     {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}
     {showHistory && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div></ModalPortal>}
   </div>;

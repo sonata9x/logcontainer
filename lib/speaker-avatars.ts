@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LogEntry, LogPlatform, SpeakerAvatarBundle, SpeakerAvatarProfile, SpeakerAvatarVariant } from "@/lib/types";
+import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export const SPEAKER_AVATAR_BUCKET = "speaker-avatars";
 export const SPEAKER_AVATAR_MAX_BYTES = 5_000_000;
@@ -68,6 +69,24 @@ export async function getSpeakerAvatarBundle(admin: SupabaseClient, pageId: stri
 
 export function speakerNameForEntry(entry: LogEntry) {
   return entry.document_version === 2 && entry.document ? entry.document.speaker?.name?.trim() || null : entry.speaker_name?.trim() || null;
+}
+
+export function assignSpeakerToDocument(document: LogEntryDocument, speakerName: string): LogEntryDocument {
+  const name = speakerName.trim().replace(/[:：]\s*$/, "").slice(0, 200);
+  if (!name) throw new Error("speaker name is required");
+  return {
+    ...document,
+    kind: "dialogue",
+    speaker: { name, color: null, avatarUrl: null },
+    presentation: {
+      speakerExplicit: true,
+      avatarExplicit: false,
+      timestampExplicit: document.presentation?.timestampExplicit ?? Boolean(document.timestamp.raw),
+      continuation: false,
+      ...(typeof document.presentation?.selfMessage === "boolean" ? { selfMessage: document.presentation.selfMessage } : {}),
+      ...(typeof document.presentation?.private === "boolean" ? { private: document.presentation.private } : {})
+    }
+  };
 }
 
 export function resolveEntryAvatar(entry: LogEntry, bundle: SpeakerAvatarBundle | null | undefined) {

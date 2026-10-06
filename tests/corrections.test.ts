@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCorrections, createReviewExport, normalizeEllipsis, normalizeQuotes, parseExportRequest, stripHtml } from "../lib/logs/corrections";
+import { applyCorrections, createReviewExport, defaultCorrectionSettings, normalizeEllipsis, normalizeQuotes, parseExportRequest, stripHtml } from "../lib/logs/corrections";
 import { EXPORT_PAGE_SIZE, fetchAllByRange } from "../lib/logs/export-all";
 import type { LogEntry } from "../lib/types";
 
@@ -38,7 +38,32 @@ test("review export preserves punctuation and multiline dialogue while using col
     entry({ order_index: 2, sort_key: 2, entry_type: "handout", content: "비밀 문서" })
   ];
   assert.equal(createReviewExport(source), '아키라: ..."그런 거 아니야?"\n둘째 줄\n\n[이미지 : map.png]\n\n[핸드아웃 : 비밀 문서]\n');
-  assert.deepEqual(parseExportRequest({ preset: "review" }), { preset: "review" });
+  assert.deepEqual(parseExportRequest({ preset: "review" }), { preset: "review", speakerMode: "every-message" });
+});
+
+test("TXT export uses the edited canonical speaker and can omit inherited speaker labels", () => {
+  const canonical = entry({
+    speaker_name: "변경 전",
+    document_version: 2,
+    document: {
+      version: 2, kind: "dialogue",
+      source: { platform: "roll20", messageId: "message-1", sourceKey: "source-1", sourceOrder: 1 },
+      speaker: { name: "변경 후", color: null, avatarUrl: null },
+      timestamp: { raw: null, iso: null },
+      presentation: { speakerExplicit: false, avatarExplicit: false, timestampExplicit: false, continuation: true },
+      blocks: [{ id: "text-1", type: "text", text: "이어지는 대사" }], warnings: []
+    },
+    content: "이어지는 대사"
+  });
+  assert.equal(createReviewExport([canonical], "every-message"), "변경 후: 이어지는 대사\n");
+  assert.equal(createReviewExport([canonical], "visible-only"), "이어지는 대사\n");
+  canonical.document!.presentation!.speakerExplicit = true;
+  assert.equal(createReviewExport([canonical], "visible-only"), "변경 후: 이어지는 대사\n");
+});
+
+test("invalid speaker export modes are rejected while older settings stay compatible", () => {
+  assert.equal(parseExportRequest({ preset: "review", speakerMode: "unknown" }), null);
+  assert.deepEqual(parseExportRequest({ preset: "custom", settings: defaultCorrectionSettings, speakerMode: "visible-only" }), { preset: "custom", settings: defaultCorrectionSettings, speakerMode: "visible-only" });
 });
 
 test("full export range reader is not truncated at the service row cap", async () => {

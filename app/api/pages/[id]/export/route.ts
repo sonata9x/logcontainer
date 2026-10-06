@@ -1,8 +1,8 @@
 import { getApiPageContext } from "@/lib/api-auth";
 import { applyCorrections, createReviewExport, defaultCorrectionSettings, parseCorrectionSettings, parseExportRequest } from "@/lib/logs/corrections";
 import { fetchAllByRange } from "@/lib/logs/export-all";
-import type { LogEntry } from "@/lib/types";
 import { databaseErrorResponse } from "@/lib/api-error";
+import { LOG_ENTRY_DTO_COLUMNS, toLogEntryDto } from "@/lib/logs/dto";
 
 async function exportLog(id: string, requestBody?: unknown) {
   const context = await getApiPageContext(id);
@@ -11,7 +11,7 @@ async function exportLog(id: string, requestBody?: unknown) {
   const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).single();
   if (!log) return new Response("Not found", { status: 404 });
   const [{ data: entries, error: entryError }, { data: preferences, error: preferenceError }] = await Promise.all([
-    fetchAllByRange((from, to) => context.supabase.from("log_entries").select("id, log_id, order_index, sort_key, entry_type, speaker_name, speaker_color, content, document_version, has_image_content, is_deleted, updated_at").eq("log_id", log!.id).eq("is_deleted", false).order("sort_key").order("order_index").range(from, to)),
+    fetchAllByRange((from, to) => context.supabase.from("log_entries").select(LOG_ENTRY_DTO_COLUMNS).eq("log_id", log!.id).eq("is_deleted", false).order("sort_key").order("order_index").range(from, to)),
     context.supabase.from("user_preferences").select("correction_settings").eq("user_id", context.user.id).maybeSingle()
   ]);
   if (entryError || preferenceError) return databaseErrorResponse(entryError ?? preferenceError!, "TXT를 만들지 못했습니다.");
@@ -21,7 +21,9 @@ async function exportLog(id: string, requestBody?: unknown) {
   const settings = exportRequest?.preset === "custom"
     ? exportRequest.settings
     : parseCorrectionSettings(preferences?.correction_settings) ?? defaultCorrectionSettings;
-  const text = isReview ? createReviewExport((entries ?? []) as LogEntry[]) : applyCorrections((entries ?? []) as LogEntry[], settings);
+  const speakerMode = exportRequest?.speakerMode ?? "every-message";
+  const exportEntries = (entries ?? []).map((entry) => toLogEntryDto(entry as Record<string, unknown>));
+  const text = isReview ? createReviewExport(exportEntries, speakerMode) : applyCorrections(exportEntries, settings, speakerMode);
   const safeTitle = (page?.title ?? "roll20-log").replace(/[\\/:*?"<>|]/g, "_").slice(0, 100);
   const filename = `${safeTitle}${isReview ? "_검수용" : ""}.txt`;
   return new Response(`\uFEFF${text}`, { headers: { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`, "Cache-Control": "private, no-store" } });

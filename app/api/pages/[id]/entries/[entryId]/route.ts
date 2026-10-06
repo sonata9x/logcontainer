@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedApiContext } from "@/lib/api-auth";
+import { getApiPageContext, getAuthenticatedApiContext } from "@/lib/api-auth";
 import { replaceTextPreservingMarkup } from "@/lib/logs/html";
 import { isImageOnlyDocument, projectDocumentText } from "@/lib/logs/model/projection";
 import { applyEditableImageChanges, applyEditableTextChanges, applyRichStyleChanges, editableImageTargets, editableTextSegments, styledContentTargets, type EditableImageChange, type EditableTextChange } from "@/lib/logs/model/user-edit";
@@ -8,6 +8,8 @@ import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { assignSpeakerToDocument, getSpeakerAvatarBundle, normalizeSpeakerKey } from "@/lib/speaker-avatars";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const startedAt = performance.now();
@@ -27,7 +29,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     let revisionAction: "edit" | "restore" | "revert" = "edit";
     const styleWarnings: string[] = [];
 
-    if (Array.isArray(body.contentEdits) || Array.isArray(body.imageEdits)) {
+    if (typeof body.speakerName === "string") {
+      const requestedName = body.speakerName.trim().slice(0, 200);
+      if (!requestedName) return NextResponse.json({ error: "변경할 화자를 선택해주세요." }, { status: 400 });
+      const pageContext = await getApiPageContext(id);
+      if (!pageContext?.canEdit || pageContext.page.page_type !== "log") return NextResponse.json({ error: "페이지 수정 권한이 없습니다." }, { status: 403 });
+      const admin = createSupabaseAdminClient();
+      const avatarBundle = await getSpeakerAvatarBundle(admin, id);
+      const targetProfile = avatarBundle.profiles.find((profile) => profile.speakerKey === normalizeSpeakerKey(requestedName));
+      if (!avatarBundle.enabled || !targetProfile) return NextResponse.json({ error: "이 로그에 존재하는 화자만 선택할 수 있습니다." }, { status: 400 });
+      nextDocument = assignSpeakerToDocument(current.document, targetProfile.speakerName);
+    } else if (Array.isArray(body.contentEdits) || Array.isArray(body.imageEdits)) {
       if (Array.isArray(body.contentEdits)) {
         const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));
         const changes: EditableTextChange[] = [];
@@ -100,6 +112,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     if (error?.code === "40001") return NextResponse.json({ error: "다른 멤버가 먼저 수정했습니다. 새로고침 후 다시 시도해주세요." }, { status: 409 });
     if (error) return databaseErrorResponse(error, "로그 블록을 수정하지 못했습니다.");
+    if (typeof body.speakerName === "string") {
+      await createSupabaseAdminClient().from("log_entry_avatar_overrides").delete().eq("entry_id", entryId);
+    }
     const completedAt = performance.now();
     return NextResponse.json({ entry: toLogEntryDto(data as Record<string, unknown>), styleWarnings }, { headers: { "Server-Timing": `auth;dur=${(authAt - startedAt).toFixed(1)}, source;dur=${(sourceAt - authAt).toFixed(1)}, write;dur=${(completedAt - sourceAt).toFixed(1)}` } });
   }

@@ -8,6 +8,7 @@ import { useEscapeClose } from "@/lib/use-escape-close";
 export function ExportDialog({ endpoint, title, usePersonalDefaults, onClose }: { endpoint: string; title: string; usePersonalDefaults: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<CorrectionSettings>(defaultCorrectionSettings);
   const [advanced, setAdvanced] = useState(false);
+  const [repeatSpeakers, setRepeatSpeakers] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   useEscapeClose(onClose, pending);
@@ -24,7 +25,8 @@ export function ExportDialog({ endpoint, title, usePersonalDefaults, onClose }: 
   async function download(preset: "review" | "custom") {
     setPending(true);
     setError("");
-    const body = preset === "review" ? { preset } : { preset, settings };
+    const speakerMode = repeatSpeakers ? "every-message" : "visible-only";
+    const body = preset === "review" ? { preset, speakerMode } : { preset, settings, speakerMode };
     const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
@@ -47,6 +49,7 @@ export function ExportDialog({ endpoint, title, usePersonalDefaults, onClose }: 
       <button className="modal-close" onClick={onClose} disabled={pending}><X size={17} /></button>
       <h2>리플레이북 검수용 TXT</h2>
       <p>맞춤법 및 내용 검수를 위한 원고입니다. 말줄임표, 따옴표 등의 최종 출판 표기는 변경하지 않습니다.</p>
+      <label className="export-speaker-option"><input type="checkbox" checked={repeatSpeakers} onChange={(event) => setRepeatSpeakers(event.target.checked)} disabled={pending} /><span><strong>모든 메시지 블록에 화자명 표시</strong><small>끄면 화면에서 ‘이름:’이 표시되는 블록에만 화자명을 붙입니다.</small></span></label>
       <button className="button button-primary export-primary" onClick={() => download("review")} disabled={pending}><Download size={15} />{pending ? "TXT 만드는 중…" : "검수용 TXT 다운로드"}</button>
       <button className="button export-advanced-toggle" aria-expanded={advanced} onClick={() => setAdvanced((value) => !value)} disabled={pending}><ChevronDown size={15} className={advanced ? "rotated" : ""} />고급 내보내기</button>
       {advanced && <div className="export-advanced-panel">

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
-import { createPublicationToken } from "@/lib/publication-token";
+import { publicationTokenForConfiguration } from "@/lib/publication-token";
 import { hashPassword, verifyPassword } from "@/lib/secure-credentials";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -22,7 +22,7 @@ async function configure(request: Request, id: string) {
   if (!visibility) return NextResponse.json({ error: "공개 범위를 선택해주세요." }, { status: 400 });
   const admin = createSupabaseAdminClient();
   const { data: existing, error: existingError } = await admin.from("publications")
-    .select("id, is_active, visibility, password_hash").eq("page_id", id).maybeSingle();
+    .select("id, token, is_active, visibility, password_hash").eq("page_id", id).maybeSingle();
   if (existingError) return databaseErrorResponse(existingError, "현재 게시 설정을 확인하지 못했습니다.");
   const hasExistingPassword = existing?.visibility === "password" && typeof existing.password_hash === "string";
   if (hasExistingPassword) {
@@ -43,7 +43,7 @@ async function configure(request: Request, id: string) {
     }
   }
   const { data, error } = await context.supabase.rpc("configure_publication", {
-    target_page_id: id, next_token: createPublicationToken(),
+    target_page_id: id, next_token: publicationTokenForConfiguration(existing),
     next_visibility: visibility, next_password_hash: passwordHash
   });
   return error ? databaseErrorResponse(error, "게시 설정을 저장하지 못했습니다.") : NextResponse.json(data, { status: 201 });

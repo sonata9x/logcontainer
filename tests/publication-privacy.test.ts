@@ -16,6 +16,7 @@ test("admin and owner can manage public or password publications", () => {
   assert.match(manageRoute, /hashPassword/);
   assert.match(manageRoute, /verifyPassword\(currentPassword, existing\.password_hash/);
   assert.match(manageRoute, /hasExistingPassword && !nextPassword/);
+  assert.match(manageRoute, /publicationTokenForConfiguration\(existing\)/);
   assert.match(editor, /현재 비밀번호/);
   assert.match(editor, /새 비밀번호 \(변경하지 않으면 비워두기\)/);
   assert.doesNotMatch(editor, /비밀번호 확인/);

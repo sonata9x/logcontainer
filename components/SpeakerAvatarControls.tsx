@@ -56,6 +56,14 @@ export function SpeakerAvatarDialog({ pageId, avatars, onChange }: { pageId: str
 
 export type AvatarMenuState = { x: number; y: number; entryId: string; profile: SpeakerAvatarProfile; selectedVariantId: string | null };
 
+export function SpeakerAssignmentDialog({ profiles, currentSpeaker, pending, onSave, onClose }: { profiles: SpeakerAvatarProfile[]; currentSpeaker: string | null; pending: boolean; onSave: (speakerName: string) => void; onClose: () => void }) {
+  const currentKey = currentSpeaker ? currentSpeaker.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR") : null;
+  const [selectedKey, setSelectedKey] = useState(currentKey ?? "");
+  const selected = profiles.find((profile) => profile.speakerKey === selectedKey) ?? null;
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="modal-backdrop" onMouseDown={pending ? undefined : onClose}><section className="modal-card speaker-assignment-modal" role="dialog" aria-modal="true" aria-labelledby="speaker-assignment-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" aria-label="화자 선택 닫기" disabled={pending} onClick={onClose}><X size={18} /></button><h2 id="speaker-assignment-title">{currentSpeaker ? "화자 변경" : "화자 추가"}</h2><p>이 로그에 이미 등장한 화자를 선택합니다. 등록된 기본 아바타가 있으면 함께 적용됩니다.</p><div className="speaker-assignment-list" role="radiogroup" aria-label="화자 선택">{profiles.map((profile) => { const defaultAvatar = profile.variants.find((variant) => variant.isDefault); return <button type="button" role="radio" aria-checked={selectedKey === profile.speakerKey} className={selectedKey === profile.speakerKey ? "selected" : ""} key={profile.speakerKey} disabled={pending} onClick={() => setSelectedKey(profile.speakerKey)}>{defaultAvatar ? <img src={defaultAvatar.imageUrl} alt="" /> : <span className="speaker-avatar-placeholder" />}<span><strong>{profile.speakerName}</strong><small>{profile.messageCount.toLocaleString()}개 메시지</small></span></button>; })}</div>{!profiles.length && <p className="muted">선택할 수 있는 화자가 없습니다.</p>}<div className="modal-actions"><button className="button" type="button" onClick={onClose} disabled={pending}>취소</button><button className="button button-primary" type="button" onClick={() => selected && onSave(selected.speakerName)} disabled={pending || !selected || selected.speakerKey === currentKey}>{pending ? "저장 중…" : "저장"}</button></div></section></div>, document.body);
+}
+
 export function SpeakerExpressionMenu({ menu, pending, onChoose, onClose }: { menu: AvatarMenuState; pending: boolean; onChoose: (variantId: string | null) => void; onClose: () => void }) {
   useEffect(() => { const close = () => onClose(); window.addEventListener("resize", close); window.addEventListener("scroll", close, true); return () => { window.removeEventListener("resize", close); window.removeEventListener("scroll", close, true); }; }, [onClose]);
   if (typeof document === "undefined") return null;
