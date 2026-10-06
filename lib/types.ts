@@ -80,6 +80,7 @@ export type SpeakerAvatarProfile = {
   speakerKey: string;
   speakerName: string;
   messageCount: number;
+  originalAvatarUrl?: string | null;
   variants: SpeakerAvatarVariant[];
 };
 

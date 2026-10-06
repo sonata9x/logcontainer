@@ -64,10 +64,25 @@ test("speaker assignment turns an orphan message into explicit dialogue using th
   assert.equal(original.speaker?.name, " GM ");
 });
 
+test("speaker assignment prefers the immutable imported avatar over a registered default", () => {
+  const source = entry("reassigned");
+  const assigned = assignSpeakerToDocument({ ...source.document!, speaker: null }, "GM", "https://roll20.example/imported.png");
+  const assignedEntry = { ...source, document: assigned, speaker_name: "GM" };
+  assert.equal(assigned.speaker?.avatarUrl, "https://roll20.example/imported.png");
+  assert.equal(assigned.presentation?.avatarExplicit, true);
+  assert.ok(assigned.warnings.some((warning) => warning.code === "speaker-manually-assigned"));
+  assert.deepEqual(resolveEntryAvatar(assignedEntry, bundle).candidates, ["https://roll20.example/imported.png", "https://private.example/default"]);
+  const expression = resolveEntryAvatar(assignedEntry, { ...bundle, entryOverrides: { [assignedEntry.id]: "happy" } });
+  assert.deepEqual(expression.candidates, ["https://private.example/happy", "https://roll20.example/imported.png", "https://private.example/default"]);
+});
+
 test("migration keeps avatar storage private and canonical documents separate", () => {
   const sql = readFileSync(new URL("../supabase/migrations/202609220001_speaker_avatar_expressions.sql", import.meta.url), "utf8");
   assert.match(sql, /'speaker-avatars',[\s\S]*false/);
   assert.match(sql, /create table if not exists public\.log_entry_avatar_overrides/);
   assert.doesNotMatch(sql, /alter table public\.log_entries add column/);
   assert.match(sql, /speaker_avatars_changed/);
+  const originalAvatarSql = readFileSync(new URL("../supabase/migrations/202610060001_speaker_original_avatars.sql", import.meta.url), "utf8");
+  assert.match(originalAvatarSql, /coalesce\([\s\S]*original_document #>> '\{speaker,avatarUrl\}'/);
+  assert.match(originalAvatarSql, /grant execute[\s\S]*to service_role/);
 });

@@ -417,8 +417,13 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .speaker-avatar-list summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; }
 .speaker-avatar-list summary small { color: var(--muted); }
 .speaker-avatar-profile { display: grid; gap: 11px; padding: 0 12px 12px; }
-.speaker-avatar-default, .speaker-expression-create { display: flex; align-items: center; gap: 8px; }
+.speaker-avatar-default, .speaker-expression-create, .speaker-avatar-imported { display: flex; align-items: center; gap: 8px; }
 .speaker-avatar-default img, .speaker-avatar-placeholder, .speaker-expression-list img { width: 32px; height: 32px; flex: none; object-fit: cover; background: #eee; }
+.speaker-avatar-imported { padding: 8px; border: 1px solid var(--line); border-radius: 7px; }
+.speaker-avatar-imported img { width: 36px; height: 36px; flex: none; object-fit: cover; background: #eee; }
+.speaker-avatar-imported > span { min-width: 0; flex: 1; }
+.speaker-avatar-imported strong, .speaker-avatar-imported small { display: block; }
+.speaker-avatar-imported small { margin-top: 2px; color: var(--muted); font-size: 11px; }
 .speaker-assignment-modal { width: min(480px, 100%); max-height: min(82dvh, 680px); overflow-y: auto; }
 .speaker-assignment-list { display: grid; gap: 6px; max-height: min(48dvh, 420px); margin: 18px 0; overflow-y: auto; }
 .speaker-assignment-list > button { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--text); text-align: left; cursor: pointer; }

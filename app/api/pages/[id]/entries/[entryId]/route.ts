@@ -38,7 +38,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const avatarBundle = await getSpeakerAvatarBundle(admin, id);
       const targetProfile = avatarBundle.profiles.find((profile) => profile.speakerKey === normalizeSpeakerKey(requestedName));
       if (!avatarBundle.enabled || !targetProfile) return NextResponse.json({ error: "이 로그에 존재하는 화자만 선택할 수 있습니다." }, { status: 400 });
-      nextDocument = assignSpeakerToDocument(current.document, targetProfile.speakerName);
+      nextDocument = assignSpeakerToDocument(current.document, targetProfile.speakerName, targetProfile.originalAvatarUrl ?? null);
     } else if (Array.isArray(body.contentEdits) || Array.isArray(body.imageEdits)) {
       if (Array.isArray(body.contentEdits)) {
         const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));

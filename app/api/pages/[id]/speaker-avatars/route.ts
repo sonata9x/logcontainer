@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getApiPageContext } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSpeakerAvatarBundle, normalizeSpeakerKey, normalizeVariantKey, SPEAKER_AVATAR_BUCKET, SPEAKER_AVATAR_PLATFORMS, speakerAvatarExtension, validSpeakerAvatar } from "@/lib/speaker-avatars";
+import { downloadImportedSpeakerAvatar } from "@/lib/speaker-avatar-import";
 
 async function pageLog(admin: ReturnType<typeof createSupabaseAdminClient>, pageId: string) {
   return (await admin.from("logs").select("id, platform").eq("page_id", pageId).maybeSingle()).data;
@@ -18,6 +19,21 @@ async function emitChange(admin: ReturnType<typeof createSupabaseAdminClient>, l
   await admin.from("log_change_events").insert({ log_id: logId, entry_id: entryId, event_type: "speaker_avatars_changed" });
 }
 
+async function saveImportedDefault(admin: ReturnType<typeof createSupabaseAdminClient>, pageId: string, speakerName: string, sourceUrl: string, userId: string) {
+  const image = await downloadImportedSpeakerAvatar(sourceUrl);
+  const path = `${pageId}/${randomUUID()}.${image.extension}`;
+  const { error: uploadError } = await admin.storage.from(SPEAKER_AVATAR_BUCKET).upload(path, image.bytes, { contentType: image.mimeType, cacheControl: "31536000", upsert: false });
+  if (uploadError) throw new Error("가져온 기본 아바타를 저장하지 못했습니다.");
+  const speakerKey = normalizeSpeakerKey(speakerName);
+  const { data: profile, error: profileError } = await admin.from("page_speaker_profiles").upsert({ page_id: pageId, speaker_key: speakerKey, speaker_name: speakerName, created_by: userId, updated_at: new Date().toISOString() }, { onConflict: "page_id,speaker_key" }).select("id").single();
+  if (profileError || !profile) { await admin.storage.from(SPEAKER_AVATAR_BUCKET).remove([path]); throw new Error("화자 정보를 저장하지 못했습니다."); }
+  const { data: previous } = await admin.from("speaker_avatar_variants").select("id, storage_path").eq("profile_id", profile.id).eq("name_key", "__default__").maybeSingle();
+  const values = { profile_id: profile.id, name: "기본", name_key: "__default__", is_default: true, storage_path: path, original_filename: "imported-avatar", mime_type: image.mimeType, byte_size: image.byteSize, created_by: userId, updated_at: new Date().toISOString() };
+  const result = previous ? await admin.from("speaker_avatar_variants").update(values).eq("id", previous.id).select("id").single() : await admin.from("speaker_avatar_variants").insert(values).select("id").single();
+  if (result.error) { await admin.storage.from(SPEAKER_AVATAR_BUCKET).remove([path]); throw new Error("가져온 기본 아바타를 연결하지 못했습니다."); }
+  if (previous?.storage_path && previous.storage_path !== path) await admin.storage.from(SPEAKER_AVATAR_BUCKET).remove([previous.storage_path]);
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const context = await getApiPageContext(id);
@@ -31,6 +47,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!context?.canEdit || context.page.page_type !== "log") return NextResponse.json({ error: "페이지 수정 권한이 없습니다." }, { status: 403 });
   const body = await request.json().catch(() => ({}));
   const speakerName = typeof body.speakerName === "string" ? body.speakerName.trim().slice(0, 200) : "";
+  if (body.importOriginal === true) {
+    if (!speakerName) return NextResponse.json({ error: "화자를 선택해주세요." }, { status: 400 });
+    const admin = createSupabaseAdminClient();
+    const log = await pageLog(admin, id);
+    const bundle = await getSpeakerAvatarBundle(admin, id);
+    const profile = bundle.profiles.find((item) => item.speakerKey === normalizeSpeakerKey(speakerName));
+    if (!log || !bundle.enabled || !profile?.originalAvatarUrl) return NextResponse.json({ error: "보관할 가져온 기본 아바타가 없습니다." }, { status: 400 });
+    try { await saveImportedDefault(admin, id, profile.speakerName, profile.originalAvatarUrl, context.user.id); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "가져온 기본 아바타를 보관하지 못했습니다." }, { status: 400 }); }
+    await emitChange(admin, log.id);
+    return NextResponse.json({ avatars: await getSpeakerAvatarBundle(admin, id) });
+  }
   if (!speakerName || !validSpeakerAvatar(body.mimeType, body.byteSize)) return NextResponse.json({ error: "아바타 업로드 정보가 올바르지 않습니다." }, { status: 400 });
   const admin = createSupabaseAdminClient();
   const log = await pageLog(admin, id);

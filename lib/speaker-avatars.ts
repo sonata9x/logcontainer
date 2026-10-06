@@ -29,9 +29,10 @@ type ProfileRow = { id: string; speaker_key: string; speaker_name: string };
 type VariantRow = { id: string; profile_id: string; name: string; is_default: boolean; storage_path: string; original_filename: string | null; sort_order: number };
 
 export async function getSpeakerAvatarBundle(admin: SupabaseClient, pageId: string): Promise<SpeakerAvatarBundle> {
-  const [{ data: log }, { data: speakers }, { data: profiles }] = await Promise.all([
+  const [{ data: log }, { data: speakers }, { data: originalAvatars }, { data: profiles }] = await Promise.all([
     admin.from("logs").select("id, platform").eq("page_id", pageId).maybeSingle(),
     admin.rpc("list_page_log_speakers", { target_page_id: pageId }),
+    admin.rpc("list_page_log_speaker_original_avatars", { target_page_id: pageId }),
     admin.from("page_speaker_profiles").select("id, speaker_key, speaker_name").eq("page_id", pageId)
   ]);
   const platform = (log?.platform ?? "other") as LogPlatform;
@@ -58,12 +59,14 @@ export async function getSpeakerAvatarBundle(admin: SupabaseClient, pageId: stri
     variantsByProfile.set(variant.profile_id, list);
   }
   const byKey = new Map(profileRows.map((profile) => [profile.speaker_key, profile]));
+  const originalAvatarRows = (originalAvatars ?? []) as Array<{ speaker_key: string; avatar_url: string | null }>;
+  const originalAvatarByKey = new Map<string, string | null>(originalAvatarRows.map((item) => [item.speaker_key, item.avatar_url]));
   const result: SpeakerAvatarProfile[] = (speakers ?? []).map((speaker: { speaker_name: string; message_count: number | string }) => {
     const speakerKey = normalizeSpeakerKey(speaker.speaker_name);
     const profile = byKey.get(speakerKey);
-    return { id: profile?.id ?? null, speakerKey, speakerName: speaker.speaker_name, messageCount: Number(speaker.message_count), variants: profile ? variantsByProfile.get(profile.id) ?? [] : [] };
+    return { id: profile?.id ?? null, speakerKey, speakerName: speaker.speaker_name, messageCount: Number(speaker.message_count), originalAvatarUrl: originalAvatarByKey.get(speakerKey) ?? null, variants: profile ? variantsByProfile.get(profile.id) ?? [] : [] };
   });
-  for (const profile of profileRows) if (!result.some((item) => item.speakerKey === profile.speaker_key)) result.push({ id: profile.id, speakerKey: profile.speaker_key, speakerName: profile.speaker_name, messageCount: 0, variants: variantsByProfile.get(profile.id) ?? [] });
+  for (const profile of profileRows) if (!result.some((item) => item.speakerKey === profile.speaker_key)) result.push({ id: profile.id, speakerKey: profile.speaker_key, speakerName: profile.speaker_name, messageCount: 0, originalAvatarUrl: originalAvatarByKey.get(profile.speaker_key) ?? null, variants: variantsByProfile.get(profile.id) ?? [] });
   return { enabled: true, platform, profiles: result, entryOverrides: Object.fromEntries((overrides ?? []).map((item: { entry_id: string; variant_id: string }) => [item.entry_id, item.variant_id])) };
 }
 
@@ -71,21 +74,22 @@ export function speakerNameForEntry(entry: LogEntry) {
   return entry.document_version === 2 && entry.document ? entry.document.speaker?.name?.trim() || null : entry.speaker_name?.trim() || null;
 }
 
-export function assignSpeakerToDocument(document: LogEntryDocument, speakerName: string): LogEntryDocument {
+export function assignSpeakerToDocument(document: LogEntryDocument, speakerName: string, originalAvatarUrl: string | null = null): LogEntryDocument {
   const name = speakerName.trim().replace(/[:：]\s*$/, "").slice(0, 200);
   if (!name) throw new Error("speaker name is required");
   return {
     ...document,
     kind: "dialogue",
-    speaker: { name, color: null, avatarUrl: null },
+    speaker: { name, color: null, avatarUrl: originalAvatarUrl },
     presentation: {
       speakerExplicit: true,
-      avatarExplicit: false,
+      avatarExplicit: Boolean(originalAvatarUrl),
       timestampExplicit: document.presentation?.timestampExplicit ?? Boolean(document.timestamp.raw),
       continuation: false,
       ...(typeof document.presentation?.selfMessage === "boolean" ? { selfMessage: document.presentation.selfMessage } : {}),
       ...(typeof document.presentation?.private === "boolean" ? { private: document.presentation.private } : {})
-    }
+    },
+    warnings: [...document.warnings.filter((warning) => warning.code !== "speaker-manually-assigned"), { code: "speaker-manually-assigned", message: "Speaker was assigned manually; the imported speaker avatar is preferred." }]
   };
 }
 
@@ -97,5 +101,7 @@ export function resolveEntryAvatar(entry: LogEntry, bundle: SpeakerAvatarBundle 
   const selected = profile?.variants.find((item) => item.id === selectedVariantId) ?? null;
   const defaultVariant = profile?.variants.find((item) => item.isDefault) ?? null;
   const original = entry.document_version === 2 && entry.document ? entry.document.speaker?.avatarUrl ?? null : null;
-  return { candidates: [...new Set([selected?.imageUrl, defaultVariant?.imageUrl, original].filter((value): value is string => Boolean(value)))], managed: Boolean(selected || defaultVariant), profile, selectedVariantId };
+  const manualAssignment = Boolean(entry.document_version === 2 && entry.document?.warnings.some((warning) => warning.code === "speaker-manually-assigned"));
+  const fallbackCandidates = manualAssignment ? [original, defaultVariant?.imageUrl] : [defaultVariant?.imageUrl, original];
+  return { candidates: [...new Set([selected?.imageUrl, ...fallbackCandidates].filter((value): value is string => Boolean(value)))], managed: Boolean(selected || defaultVariant), profile, selectedVariantId };
 }

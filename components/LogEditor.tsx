@@ -2,7 +2,7 @@
 
 import { createContext, FormEvent, memo, useCallback, useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Download, EllipsisVertical, Eye, GripVertical, History, Info, MoreHorizontal, Music, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
+import { Archive, Download, EllipsisVertical, Eye, GripVertical, History, Images, Info, MoreHorizontal, Music, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Upload } from "tus-js-client";
 import { changedReorderRange } from "@/lib/logs/reorder";
@@ -124,6 +124,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
   const [shareOpen, setShareOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [publicationOpen, setPublicationOpen] = useState(false);
+  const [speakerAvatarOpen, setSpeakerAvatarOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const loadingMoreRef = useRef(false);
   const loadMoreSentinel = useRef<HTMLDivElement>(null);
@@ -530,7 +531,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         <section className="log-timeline">{visibleStreamEntries(liveEntries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>
         {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </main></SpeakerAvatarProvider> : <>
-      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><button className="button workspace-mode-toggle" aria-label="읽기 모드로 전환" title="읽기 모드로 전환" onClick={() => setReadMode(true)}><Eye size={14} />읽기 모드</button><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} fontFamily={pageExtras?.fontFamily} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canEdit && <SpeakerAvatarDialog pageId={page.id} avatars={speakerAvatars} onChange={setSpeakerAvatars} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setPlaylistOpen(true); setOverflowOpen(false); }}><Music size={13} />로그 BGM 전체 담기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
+      <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><button className="button workspace-mode-toggle" aria-label="읽기 모드로 전환" title="읽기 모드로 전환" onClick={() => setReadMode(true)}><Eye size={14} />읽기 모드</button><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} fontFamily={pageExtras?.fontFamily} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canEdit && speakerAvatars?.enabled && <button onClick={() => { setSpeakerAvatarOpen(true); setOverflowOpen(false); }}><Images size={13} />화자·표정 관리</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setPlaylistOpen(true); setOverflowOpen(false); }}><Music size={13} />로그 BGM 전체 담기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content" data-font={pageExtras?.fontFamily ?? page.font_family ?? "pretendard"}>
         <input className="page-title-input" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={saveTitle} aria-label="로그 제목" readOnly={!page.can_edit} />
         <PageExtrasDisplay extras={pageExtras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />
@@ -554,6 +555,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
       {shareOpen && <ShareDialog page={page} onClose={() => setShareOpen(false)} />}
       {infoOpen && <LogInfoDialog pageId={page.id} totalCount={totalCount} summary={summary} isOwner={permissions.role === "owner"} canEdit={permissions.canEdit} onRestore={restoreEntry} onClose={() => setInfoOpen(false)} />}
       {publicationOpen && <PublicationDialog pageId={page.id} publication={activePublication} onChange={setActivePublication} onClose={() => setPublicationOpen(false)} />}
+      {speakerAvatarOpen && <SpeakerAvatarDialog pageId={page.id} avatars={speakerAvatars} onChange={setSpeakerAvatars} onClose={() => setSpeakerAvatarOpen(false)} />}
       {exportOpen && <ExportDialog endpoint={`/api/pages/${page.id}/export`} title={title} usePersonalDefaults onClose={() => setExportOpen(false)} />}
       {entryDragPreview && <div className="pointer-drag-preview pointer-drag-preview--log" style={{ left: entryDragPreview.x, top: entryDragPreview.y }}><GripVertical className="pointer-drag-preview__grip" size={17} /><strong>{entryDragPreview.label}</strong></div>}
     </BgmPlayerProvider></SpeakerAvatarContext.Provider>
@@ -778,6 +780,14 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
       if (result.entry) onChange(result.entry);
       setAvatars((current) => current ? { ...current, entryOverrides: Object.fromEntries(Object.entries(current.entryOverrides).filter(([entryId]) => entryId !== entry.id)) } : current);
       setShowSpeakerAssignment(false);
+      const selectedProfile = avatars?.profiles.find((profile) => profile.speakerKey === speakerName.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR"));
+      if (selectedProfile?.originalAvatarUrl && !selectedProfile.variants.some((variant) => variant.isDefault)) {
+        const preserveResponse = await fetch(`/api/pages/${pageId}/speaker-avatars`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ speakerName: selectedProfile.speakerName, importOriginal: true }) });
+        if (!preserveResponse.ok) {
+          const preserveResult = await preserveResponse.json().catch(() => ({}));
+          window.alert(`화자는 변경했지만 가져온 기본 아바타를 보관하지 못했습니다. 화자·표정 관리에서 직접 등록해주세요.\n${preserveResult.error ?? ""}`.trim());
+        }
+      }
       const avatarResult = await fetch(`/api/pages/${pageId}/speaker-avatars`, { cache: "no-store" }).then((response) => response.json()).catch(() => ({}));
       if (avatarResult.avatars) setAvatars(avatarResult.avatars);
     } catch {
