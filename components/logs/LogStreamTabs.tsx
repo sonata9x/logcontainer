@@ -1,6 +1,7 @@
 "use client";
 
 import type { LogEntry } from "@/lib/types";
+import { normalizeEntryTimestampDisplay } from "@/lib/logs/statistics";
 
 export type LogStream = "main" | "casual";
 
@@ -9,7 +10,7 @@ export function isCasualEntry(entry: LogEntry) {
 }
 
 export function visibleStreamEntries(entries: LogEntry[], stream: LogStream) {
-  return entries.filter((entry) => stream === "casual" ? isCasualEntry(entry) : !isCasualEntry(entry));
+  return normalizeEntryTimestampDisplay(entries).filter((entry) => stream === "casual" ? isCasualEntry(entry) : !isCasualEntry(entry));
 }
 
 export function LogStreamTabs({ active, onChange }: { active: LogStream; onChange: (stream: LogStream) => void }) {

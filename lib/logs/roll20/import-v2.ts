@@ -7,6 +7,7 @@ import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
 import { ROLL20_EDIT_SYNC_PREFIX } from "@/lib/logs/import/append";
+import { normalizeRoll20DocumentTimestamps } from "@/lib/logs/statistics";
 
 export type Roll20ImportOptionsV2 = { separateCasual?: boolean };
 
@@ -143,11 +144,11 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     else if (documentKind === "system") previousDialogueSpeaker = null;
   }
   const duplicates = filterErrorDuplicates(parsedDocuments);
-  const documents = duplicates.documents.map((document) => {
+  const documents = normalizeRoll20DocumentTimestamps(duplicates.documents.map((document) => {
     const validated = validateLogEntryDocument(document);
     if (!validated.ok) throw new Error(validated.error);
     return validated.document;
-  });
+  }));
   const warnings = [...parserWarnings, ...documents.flatMap((document) => document.warnings)].filter((warning, index, all) => all.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(warning)) === index);
   const report: Roll20ImportReportV2 = {
     provider: "roll20", parserVersion: 2, sourceFormat: detected.format, importedAt: new Date().toISOString(), sourceMessageCount,
