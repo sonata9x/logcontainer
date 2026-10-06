@@ -619,7 +619,9 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
   const [avatarMenu, setAvatarMenu] = useState<AvatarMenuState | null>(null);
   const [avatarPending, setAvatarPending] = useState(false);
   const [showSpeakerAssignment, setShowSpeakerAssignment] = useState(false);
-  useEscapeClose(() => { setShowCss(false); setShowHistory(false); setShowSpeakerAssignment(false); }, saving || (!showCss && !showHistory && !showSpeakerAssignment));
+  const [showTimestampEditor, setShowTimestampEditor] = useState(false);
+  const [timestampDraft, setTimestampDraft] = useState("");
+  useEscapeClose(() => { setShowCss(false); setShowHistory(false); setShowSpeakerAssignment(false); setShowTimestampEditor(false); }, saving || (!showCss && !showHistory && !showSpeakerAssignment && !showTimestampEditor));
 
   useEffect(() => {
     if (editing) return;
@@ -795,6 +797,24 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
     } finally { setSaving(false); }
   }
 
+  function openTimestampEditor() {
+    setTimestampDraft(entry.document?.timestamp.raw ?? "");
+    setShowTimestampEditor(true);
+  }
+
+  async function saveTimestamp() {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/pages/${pageId}/entries/${entry.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ timestampRaw: timestampDraft, expectedUpdatedAt: entry.updated_at }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) return window.alert(result.error ?? "시간을 수정하지 못했습니다.");
+      if (result.entry) onChange(result.entry);
+      setShowTimestampEditor(false);
+    } catch {
+      window.alert("시간을 수정하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.");
+    } finally { setSaving(false); }
+  }
+
   const hasRoll20Original = entry.document?.source.platform === "roll20";
   const canEditCss = Boolean(entry.document && hasStyledContent(entry.document));
   const canEditImage = Boolean(entry.document && editableImageTargets(entry.document).length);
@@ -810,11 +830,12 @@ const EditableEntry = memo(function EditableEntry({ pageId, entry, bgmItem, canE
   return <div className="entry-wrap">
     <EntryPlaybackAnchor item={bgmItem}>{entryBody}</EntryPlaybackAnchor>
     {canEdit && <button type="button" className="entry-more" aria-label="로그 블록 메뉴" title="로그 블록 메뉴" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right, y: rect.bottom }); }}><EllipsisVertical size={17} /></button>}
-    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canEditImage={canEditImage} speakerActionLabel={currentSpeaker ? "화자 변경" : "화자 추가"} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditImage={startImageEditing} onAdd={() => setAdding("text")} onAddImage={() => setAdding("image")} onEditCss={openCssEditor} onEditSpeaker={canAssignSpeaker ? () => setShowSpeakerAssignment(true) : undefined} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
+    {menu && <EntryContextMenu x={menu.x} y={menu.y} canEditCss={canEditCss} canEditImage={canEditImage} speakerActionLabel={currentSpeaker ? "화자 변경" : "화자 추가"} canRestoreOriginal={Boolean(entry.document_version === 2 && hasRoll20Original)} onEditImage={startImageEditing} onAdd={() => setAdding("text")} onAddImage={() => setAdding("image")} onEditCss={openCssEditor} onEditSpeaker={canAssignSpeaker ? () => setShowSpeakerAssignment(true) : undefined} onEditTimestamp={entry.document_version === 2 && entry.document ? openTimestampEditor : undefined} onEditBgm={() => setEditingBgm(true)} onHistory={loadHistory} onRestoreOriginal={restoreOriginal} onDelete={remove} onClose={() => setMenu(null)} />}
     {avatarMenu && <SpeakerExpressionMenu menu={avatarMenu} pending={avatarPending} onChoose={(variantId) => void chooseExpression(variantId)} onClose={() => setAvatarMenu(null)} />}
     {editingBgm && <BgmAttachDialog pageId={pageId} entryId={entry.id} current={bgmItem} onChange={onBgmChange} onClose={() => setEditingBgm(false)} />}
     {adding && <InlineAddForm initialContentType={adding} fixedContentType onSubmit={add} onCancel={() => setAdding(null)} />}
     {showSpeakerAssignment && avatars && <SpeakerAssignmentDialog profiles={avatars.profiles} currentSpeaker={currentSpeaker} pending={saving} onSave={(speakerName) => void saveSpeaker(speakerName)} onClose={() => setShowSpeakerAssignment(false)} />}
+    {showTimestampEditor && <ModalPortal><div className="modal-backdrop" onMouseDown={() => !saving && setShowTimestampEditor(false)}><section className="modal-card timestamp-editor-modal" role="dialog" aria-modal="true" aria-labelledby={`timestamp-editor-${entry.id}`} onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" aria-label="시간 수정 닫기" onClick={() => setShowTimestampEditor(false)} disabled={saving}><X size={17} /></button><h2 id={`timestamp-editor-${entry.id}`}>시간 수정</h2><p>로그에 표시할 시간을 원본 형식 그대로 입력하세요. 내용을 비우면 시간을 표시하지 않습니다.</p><label className="field">표시 시간<input value={timestampDraft} maxLength={200} placeholder="예: July 14, 2026 1:13AM" autoFocus onChange={(event) => setTimestampDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !saving) void saveTimestamp(); }} /></label><div className="modal-actions"><button className="button" onClick={() => setShowTimestampEditor(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={() => void saveTimestamp()} disabled={saving}>{saving ? "저장 중…" : "저장"}</button></div></section></div></ModalPortal>}
     {showCss && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowCss(false)}><section className="modal-card content-css-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowCss(false)}><X size={17} /></button><h2>CSS 수정</h2><p>가져온 CSS와 사용자가 추가한 CSS를 수정합니다. 허용되지 않은 선언은 저장할 때 안전하게 제외됩니다.</p><div className="content-css-list">{cssDrafts.map((target, index) => <label key={target.id}><strong>{target.label}</strong><textarea value={target.css} onChange={(event) => setCssDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, css: event.target.value } : item))} spellCheck={false} /></label>)}</div><div className="modal-actions"><button className="button" onClick={() => setShowCss(false)} disabled={saving}>취소</button><button className="button button-primary" onClick={saveCss} disabled={saving}>{saving ? "적용 중…" : "적용"}</button></div></section></div></ModalPortal>}
     {showHistory && <ModalPortal><div className="modal-backdrop" onMouseDown={() => setShowHistory(false)}><section className="modal-card entry-history-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHistory(false)}><X size={17} /></button><h2>수정 이력</h2>{loadingHistory ? <p>불러오는 중…</p> : revisions.length ? <div className="history-panel">{revisions.map((revision) => <div className="history-item" key={revision.id}><div><span>{revision.action === "edit" ? "수정" : revision.action === "revert" ? "이력 복원" : revision.action === "restore" ? "복원" : "삭제"}</span><time>{new Date(revision.created_at).toLocaleString("ko-KR")}</time></div><p>{revision.previous_content || "(빈 내용)"}</p>{(entry.document_version !== 2 || revision.action === "edit" || revision.action === "revert") && <button className="button" onClick={() => revert(revision)}><RotateCcw size={13} /> 이 상태로 복원</button>}</div>)}</div> : <p>아직 수정 이력이 없습니다.</p>}</section></div></ModalPortal>}
   </div>;

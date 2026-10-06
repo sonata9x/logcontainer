@@ -74,17 +74,24 @@ export function speakerNameForEntry(entry: LogEntry) {
   return entry.document_version === 2 && entry.document ? entry.document.speaker?.name?.trim() || null : entry.speaker_name?.trim() || null;
 }
 
-export function assignSpeakerToDocument(document: LogEntryDocument, speakerName: string, originalAvatarUrl: string | null = null): LogEntryDocument {
+export function assignSpeakerToDocument(
+  document: LogEntryDocument,
+  speakerName: string,
+  originalAvatarUrl: string | null = null,
+  fallbackTimestamp: LogEntryDocument["timestamp"] | null = null
+): LogEntryDocument {
   const name = speakerName.trim().replace(/[:：]\s*$/, "").slice(0, 200);
   if (!name) throw new Error("speaker name is required");
+  const timestamp = document.timestamp.raw ? document.timestamp : fallbackTimestamp?.raw ? fallbackTimestamp : document.timestamp;
   return {
     ...document,
     kind: "dialogue",
     speaker: { name, color: null, avatarUrl: originalAvatarUrl },
+    timestamp,
     presentation: {
       speakerExplicit: true,
       avatarExplicit: Boolean(originalAvatarUrl),
-      timestampExplicit: document.presentation?.timestampExplicit ?? Boolean(document.timestamp.raw),
+      timestampExplicit: Boolean(timestamp.raw) || Boolean(document.presentation?.timestampExplicit),
       continuation: false,
       ...(typeof document.presentation?.selfMessage === "boolean" ? { selfMessage: document.presentation.selfMessage } : {}),
       ...(typeof document.presentation?.private === "boolean" ? { private: document.presentation.private } : {})

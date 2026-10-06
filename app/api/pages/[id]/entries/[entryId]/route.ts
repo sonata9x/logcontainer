@@ -10,6 +10,41 @@ import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assignSpeakerToDocument, getSpeakerAvatarBundle, normalizeSpeakerKey } from "@/lib/speaker-avatars";
+import type { LogEntryDocument } from "@/lib/logs/model/types";
+
+function snapshotTimestamp(value: unknown): LogEntryDocument["timestamp"] | null {
+  const parsed = validateLogEntryDocument(value);
+  return parsed.ok && parsed.document.timestamp.raw ? parsed.document.timestamp : null;
+}
+
+async function nearestLogTimestamp(admin: ReturnType<typeof createSupabaseAdminClient>, entryId: string) {
+  const { data: position } = await admin.from("log_entries").select("log_id, sort_key").eq("id", entryId).maybeSingle();
+  if (!position) return null;
+  const { log_id: logId, sort_key: sortKey } = position;
+
+  async function search(direction: "previous" | "next") {
+    const batchSize = 100;
+    for (let page = 0; page < 10; page += 1) {
+      let query = admin.from("log_entries")
+        .select("document, original_document")
+        .eq("log_id", logId)
+        .eq("is_deleted", false);
+      query = direction === "previous"
+        ? query.lt("sort_key", sortKey).order("sort_key", { ascending: false })
+        : query.gt("sort_key", sortKey).order("sort_key", { ascending: true });
+      const { data, error } = await query.range(page * batchSize, (page + 1) * batchSize - 1);
+      if (error || !data?.length) return null;
+      for (const row of data) {
+        const timestamp = snapshotTimestamp(row.original_document) ?? snapshotTimestamp(row.document);
+        if (timestamp) return timestamp;
+      }
+      if (data.length < batchSize) return null;
+    }
+    return null;
+  }
+
+  return await search("previous") ?? await search("next");
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; entryId: string }> }) {
   const startedAt = performance.now();
@@ -38,7 +73,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const avatarBundle = await getSpeakerAvatarBundle(admin, id);
       const targetProfile = avatarBundle.profiles.find((profile) => profile.speakerKey === normalizeSpeakerKey(requestedName));
       if (!avatarBundle.enabled || !targetProfile) return NextResponse.json({ error: "이 로그에 존재하는 화자만 선택할 수 있습니다." }, { status: 400 });
-      nextDocument = assignSpeakerToDocument(current.document, targetProfile.speakerName, targetProfile.originalAvatarUrl ?? null);
+      const fallbackTimestamp = current.document.timestamp.raw ? null : await nearestLogTimestamp(admin, entryId);
+      nextDocument = assignSpeakerToDocument(current.document, targetProfile.speakerName, targetProfile.originalAvatarUrl ?? null, fallbackTimestamp);
+    } else if (typeof body.timestampRaw === "string") {
+      const raw = body.timestampRaw.trim().slice(0, 200);
+      const parsedTime = raw ? Date.parse(raw) : Number.NaN;
+      nextDocument = {
+        ...current.document,
+        timestamp: { raw: raw || null, iso: Number.isNaN(parsedTime) ? null : new Date(parsedTime).toISOString() },
+        presentation: {
+          speakerExplicit: current.document.presentation?.speakerExplicit ?? Boolean(current.document.speaker?.name),
+          avatarExplicit: current.document.presentation?.avatarExplicit ?? Boolean(current.document.speaker?.avatarUrl),
+          timestampExplicit: Boolean(raw),
+          continuation: current.document.presentation?.continuation ?? false,
+          ...(typeof current.document.presentation?.selfMessage === "boolean" ? { selfMessage: current.document.presentation.selfMessage } : {}),
+          ...(typeof current.document.presentation?.private === "boolean" ? { private: current.document.presentation.private } : {})
+        }
+      };
     } else if (Array.isArray(body.contentEdits) || Array.isArray(body.imageEdits)) {
       if (Array.isArray(body.contentEdits)) {
         const allowed = new Set(editableTextSegments(current.document).map((segment) => segment.id));

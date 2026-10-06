@@ -91,6 +91,7 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(contextMenuSource, /이미지 수정/);
   assert.match(contextMenuSource, /아래에 이미지 블록 추가/);
   assert.match(contextMenuSource, /CSS 수정/);
+  assert.match(contextMenuSource, /시간 수정/);
   assert.match(contextMenuSource, /수정 이력/);
   assert.match(contextMenuSource, /원본 상태로 복원/);
   assert.match(contextMenuSource, /삭제/);
@@ -102,6 +103,7 @@ test("v2 user UI exposes inline editing and the restored block action menu", () 
   assert.match(editorSource, /fixedContentType/);
   assert.match(updateRoute, /contentEdits/);
   assert.match(updateRoute, /styleEdits/);
+  assert.match(updateRoute, /timestampRaw/);
   assert.match(updateRoute, /styledContentTargets\(targetDocument\)/);
   assert.match(updateRoute, /restoreOriginal/);
   assert.match(updateRoute, /entry\.original_document/);

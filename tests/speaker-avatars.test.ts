@@ -76,6 +76,25 @@ test("speaker assignment prefers the immutable imported avatar over a registered
   assert.deepEqual(expression.candidates, ["https://private.example/happy", "https://roll20.example/imported.png", "https://private.example/default"]);
 });
 
+test("speaker assignment exposes an existing timestamp and fills a missing one from the nearest log header", () => {
+  const source = entry("timestamped");
+  const hiddenTimestamp = assignSpeakerToDocument({
+    ...source.document!,
+    timestamp: { raw: "July 14, 2026 1:13AM", iso: "2026-07-14T01:13:00.000Z" },
+    presentation: { speakerExplicit: false, avatarExplicit: false, timestampExplicit: false, continuation: true }
+  }, "GM");
+  assert.equal(hiddenTimestamp.presentation?.timestampExplicit, true);
+  assert.equal(hiddenTimestamp.timestamp.raw, "July 14, 2026 1:13AM");
+
+  const inheritedTimestamp = assignSpeakerToDocument({
+    ...source.document!,
+    timestamp: { raw: null, iso: null },
+    presentation: { speakerExplicit: false, avatarExplicit: false, timestampExplicit: false, continuation: true }
+  }, "GM", null, { raw: "July 14, 2026 1:13AM", iso: "2026-07-14T01:13:00.000Z" });
+  assert.deepEqual(inheritedTimestamp.timestamp, { raw: "July 14, 2026 1:13AM", iso: "2026-07-14T01:13:00.000Z" });
+  assert.equal(inheritedTimestamp.presentation?.timestampExplicit, true);
+});
+
 test("migration keeps avatar storage private and canonical documents separate", () => {
   const sql = readFileSync(new URL("../supabase/migrations/202609220001_speaker_avatar_expressions.sql", import.meta.url), "utf8");
   assert.match(sql, /'speaker-avatars',[\s\S]*false/);
