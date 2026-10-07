@@ -16,6 +16,7 @@ import { PageExtrasDisplay } from "@/components/PageExtrasPanel";
 import type { PageBgmItem, PageExtras, SpeakerAvatarBundle } from "@/lib/types";
 import { SpeakerExpressionMenu, type AvatarMenuState } from "@/components/SpeakerAvatarControls";
 import { resolveEntryAvatar } from "@/lib/speaker-avatars";
+import { useProgressiveLogPreload } from "@/components/logs/useProgressiveLogPreload";
 
 type GuestPayload = { page: { id: string; title: string }; participant: { id: string; nickname: string; accessLevel: "viewer" | "editor" }; entries: LogEntry[]; totalCount: number; canEdit: boolean; eventCursor: number; extras: PageExtras; bgmItems: PageBgmItem[]; avatars: SpeakerAvatarBundle };
 
@@ -24,12 +25,15 @@ export function GuestLog({ token }: { token: string }) {
   const [authRequired, setAuthRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [trash, setTrash] = useState<LogEntry[] | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [activeStream, setActiveStream] = useState<LogStream>("main");
   const [avatarMenu, setAvatarMenu] = useState<AvatarMenuState | null>(null);
   const cursor = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const loadMoreSentinel = useRef<HTMLDivElement>(null);
   useEscapeClose(() => setTrash(null), pending || !trash);
 
   const load = useCallback(async () => {
@@ -93,7 +97,35 @@ export function GuestLog({ token }: { token: string }) {
   async function remove(entry: LogEntry) { if (!window.confirm("이 메시지를 삭제할까요?")) return; const response = await fetch(`/api/share/${encodeURIComponent(token)}/entries/${entry.id}`, { method: "DELETE" }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "삭제하지 못했습니다."); setPayload((current) => current ? { ...current, entries: current.entries.filter((item) => item.id !== entry.id), totalCount: Math.max(0, current.totalCount - 1) } : current); }
   async function showTrash() { const response = await fetch(`/api/share/${encodeURIComponent(token)}/trash`); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "삭제 메시지를 불러오지 못했습니다."); setTrash(result.entries ?? []); }
   async function restore(entry: LogEntry) { const response = await fetch(`/api/share/${encodeURIComponent(token)}/trash`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entryId: entry.id }) }); const result = await response.json(); if (!response.ok) return window.alert(result.error ?? "복원하지 못했습니다."); setTrash((current) => current?.filter((item) => item.id !== entry.id) ?? null); setPayload((current) => current ? { ...current, entries: [...current.entries, result.entry].sort((a, b) => a.sort_key - b.sort_key), totalCount: current.totalCount + 1 } : current); }
-  async function loadMore() { if (!payload?.entries.length) return; setPending(true); const response = await fetch(`/api/share/${encodeURIComponent(token)}/log?after=${payload.entries.at(-1)?.sort_key}`); const result = await response.json(); setPending(false); if (response.ok) setPayload((current) => current ? { ...current, entries: [...current.entries, ...(result.entries ?? [])] } : current); }
+  const loadMore = useCallback(async () => {
+    if (!payload?.entries.length || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const response = await fetch(`/api/share/${encodeURIComponent(token)}/log?after=${payload.entries.at(-1)?.sort_key}`);
+      const result = await response.json();
+      if (!response.ok) return;
+      setPayload((current) => {
+        if (!current) return current;
+        const merged = new Map(current.entries.map((entry) => [entry.id, entry]));
+        for (const entry of result.entries ?? []) merged.set(entry.id, entry);
+        return { ...current, entries: [...merged.values()].sort((left, right) => left.sort_key - right.sort_key) };
+      });
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [payload?.entries, token]);
+  useEffect(() => {
+    const target = loadMoreSentinel.current;
+    if (!target || !payload || payload.entries.length >= payload.totalCount) return;
+    const observer = new IntersectionObserver((records) => {
+      if (records.some((record) => record.isIntersecting)) void loadMore();
+    }, { rootMargin: "400px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMore, payload]);
+  useProgressiveLogPreload(Boolean(payload && payload.entries.length < payload.totalCount), loadingMore, loadMore);
 
   function openAvatarMenu(entry: LogEntry, event: ReactMouseEvent<HTMLImageElement>) {
     if (!payload?.canEdit) return;
@@ -130,7 +162,7 @@ export function GuestLog({ token }: { token: string }) {
         <p className="page-meta">{payload.totalCount.toLocaleString()}개 메시지 · {payload.canEdit ? "편집 가능" : "읽기 전용"}</p>
         {payload.entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
         <section className="log-timeline">{visibleStreamEntries(payload.entries, activeStream).map((entry, index, visibleEntries) => { const bgm = (payload.bgmItems ?? []).find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor>{payload.canEdit && <div className="guest-entry-actions"><button className="button" onClick={() => edit(entry)} disabled={pending}><Pencil size={13} /> 수정</button>{entry.document && <button className="button" onClick={() => editCss(entry)} disabled={pending}>CSS</button>}<button className="button button-danger" onClick={() => remove(entry)} disabled={pending}><Trash2 size={13} /> 삭제</button></div>}</div>; })}</section>
-        {payload.entries.length < payload.totalCount && <button className="button load-more-entries" onClick={loadMore} disabled={pending}>{pending ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button>}
+        {payload.entries.length < payload.totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
         {trash && <div className="modal-backdrop" onMouseDown={() => setTrash(null)}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><h2>삭제 메시지</h2>{trash.map((entry) => <div className="trash-item" key={entry.id}><span>{entry.content.slice(0, 100)}</span><button className="button" onClick={() => restore(entry)}><RotateCcw size={13} /> 복원</button></div>)}<button className="button" onClick={() => setTrash(null)}>닫기</button></section></div>}
         {exportOpen && <ExportDialog endpoint={`/api/share/${encodeURIComponent(token)}/export`} title={payload.page.title} usePersonalDefaults={false} onClose={() => setExportOpen(false)} />}
         {avatarMenu && <SpeakerExpressionMenu menu={avatarMenu} pending={pending} onChoose={(variantId) => void chooseExpression(variantId)} onClose={() => setAvatarMenu(null)} />}

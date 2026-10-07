@@ -33,6 +33,7 @@ import { resolveEntryAvatar, speakerNameForEntry } from "@/lib/speaker-avatars";
 import { LogEntryBlock, SpeakerAvatarProvider } from "@/components/LogEntryBlock";
 import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
 import type { LogStatistics } from "@/lib/logs/statistics";
+import { useProgressiveLogPreload } from "@/components/logs/useProgressiveLogPreload";
 
 export type ImportSummary = {
   provider?: string;
@@ -244,7 +245,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     updateEntry(entry);
   }, [updateEntry]);
 
-  const loadMore = useCallback(async () => {
+  const loadMore = useCallback(async (silent = false) => {
     if (loadingMoreRef.current) return;
     const cursor = liveEntries.at(-1)?.sort_key;
     if (cursor == null) return;
@@ -253,19 +254,23 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     try {
       const response = await fetch(`/api/pages/${page.id}/entries?after=${cursor}`);
       const result = await response.json();
-      if (!response.ok) return window.alert(result.error ?? "다음 메시지를 불러오지 못했습니다.");
+      if (!response.ok) {
+        if (!silent) window.alert(result.error ?? "다음 메시지를 불러오지 못했습니다.");
+        return;
+      }
       setLiveEntries((current) => {
         const merged = new Map(current.map((entry) => [entry.id, entry]));
         for (const entry of result.entries ?? []) merged.set(entry.id, entry);
         return [...merged.values()].sort((left, right) => left.sort_key - right.sort_key);
       });
     } catch {
-      window.alert("다음 메시지를 불러오지 못했습니다.");
+      if (!silent) window.alert("다음 메시지를 불러오지 못했습니다.");
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
   }, [liveEntries, page.id]);
+  const preloadMore = useCallback(() => loadMore(true), [loadMore]);
 
   useEffect(() => {
     const target = loadMoreSentinel.current;
@@ -276,6 +281,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     observer.observe(target);
     return () => observer.disconnect();
   }, [liveEntries.length, loadMore, readMode, totalCount]);
+  useProgressiveLogPreload(liveEntries.length < totalCount, loadingMore, preloadMore);
 
   async function saveTitle() {
     if (title.trim() === page.title) return;
@@ -532,7 +538,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         <PageExtrasDisplay extras={pageExtras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />
         {((summary?.casualMessageCount ?? 0) > 0 || liveEntries.some(isCasualEntry)) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
         <section className="log-timeline">{visibleStreamEntries(liveEntries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>
-        {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
+        {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </main></SpeakerAvatarProvider> : <>
       <div className="workspace-toolbar"><span className="live-status"><i className={liveConnected ? "connected" : ""} />{liveConnected ? "공동 편집 연결됨" : "연결 중"}{!permissions.canEdit && " · 읽기 전용"}</span><div className="toolbar-actions"><button className="button workspace-mode-toggle" aria-label="읽기 모드로 전환" title="읽기 모드로 전환" onClick={() => setReadMode(true)}><Eye size={14} />읽기 모드</button><HandoutLibrary mode="editor" pageId={page.id} canEdit={permissions.canEdit} fontFamily={pageExtras?.fontFamily} />{permissions.canEdit && <PageExtrasEditor pageId={page.id} extras={pageExtras} bgmItems={bgmItems} onChange={(nextExtras, nextBgm) => { setPageExtras(nextExtras); if (nextBgm) setBgmItems(nextBgm); }} />}{permissions.canPublish && <button className="button" onClick={() => setPublicationOpen(true)} disabled={pending}>{activePublication?.is_active ? "게시 중" : "게시하기"}</button>}<div className="toolbar-overflow"><button className="button" aria-label="로그 메뉴" onClick={() => setOverflowOpen((value) => !value)}><MoreHorizontal size={16} /></button>{overflowOpen && <div className="toolbar-overflow-menu">{permissions.canManageShares && <button onClick={() => { setShareOpen(true); setOverflowOpen(false); }}><Share2 size={13} />공유하기</button>}{permissions.canEdit && speakerAvatars?.enabled && <button onClick={() => { setSpeakerAvatarOpen(true); setOverflowOpen(false); }}><Images size={13} />화자·표정 관리</button>}{permissions.canReimport && <button onClick={() => { setShowImport(true); setOverflowOpen(false); }}>HTML 다시 불러오기</button>}{permissions.canRestoreOriginal && <button onClick={restoreOriginalLog} disabled={pending}>{pending ? "복원 중…" : "원본으로 되돌리기"}</button>}<button onClick={() => { setExportOpen(true); setOverflowOpen(false); }}><Download size={13} />TXT 내보내기</button><button onClick={() => { setPlaylistOpen(true); setOverflowOpen(false); }}><Music size={13} />로그 BGM 전체 담기</button><button onClick={() => { setInfoOpen(true); setOverflowOpen(false); }}><Info size={13} />로그 정보</button>{(permissions.canTrashResource || permissions.canSelfRemove) && <><hr /><button className="danger" onClick={archivePage}><Archive size={13} />{permissions.canTrashResource ? "휴지통으로 이동" : "내 워크스페이스에서 제거"}</button></>}</div>}</div></div></div>
       <div className="workspace-content" data-font={pageExtras?.fontFamily ?? page.font_family ?? "pretendard"}>
@@ -551,7 +557,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
        </form>}
         {((summary?.casualMessageCount ?? 0) > 0 || liveEntries.some(isCasualEntry)) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
         <section className="log-timeline">{visibleStreamEntries(liveEntries, activeStream).map((entry, index, visibleEntries) => <div className={`entry-sortable${draggingEntryId === entry.id ? " is-dragging" : ""}`} data-entry-id={entry.id} key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><button className="log-entry-drag-handle" type="button" aria-label="메시지 순서 이동" title="끌어서 메시지 순서 이동" disabled={!page.can_edit || reorderPending} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()} onPointerDown={(event) => beginEntryPointerDrag(event, entry.id)} onPointerMove={updateEntryPointerDrag} onPointerUp={finishEntryPointerDrag} onPointerCancel={(event) => { if (pointerDragRef.current?.pointerId === event.pointerId) { pointerDragRef.current = null; endEntryDrag(); } }}><GripVertical size={17} /></button><EditableEntry pageId={page.id} entry={entry} bgmItem={bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id) ?? null} canEdit={Boolean(page.can_edit)} onBgmChange={(item) => setBgmItems((current) => [...current.filter((value) => value.entry_id !== entry.id), ...(item ? [item] : [])])} onChange={updateEntry} onInsert={restoreEntry} onDelete={removeEntry} /></div>)}</section>
-        {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
+        {liveEntries.length < totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
       </div>
       </>}
       {playlistOpen && <BgmPlaylistDialog pageId={page.id} pageTitle={title} onClose={() => setPlaylistOpen(false)} />}

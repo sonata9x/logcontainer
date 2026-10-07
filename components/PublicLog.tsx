@@ -11,6 +11,7 @@ import { EntryPlaybackAnchor } from "@/components/logs/EntryPlaybackAnchor";
 import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
 import { PageExtrasDisplay } from "@/components/PageExtrasPanel";
 import type { LogFontFamily, PageBgmItem, PageExtras, SpeakerAvatarBundle } from "@/lib/types";
+import { useProgressiveLogPreload } from "@/components/logs/useProgressiveLogPreload";
 
 export function PublicLog({ token, title, initialEntries, totalCount, initialFontFamily, initialAvatars }: { token: string; title: string; initialEntries: LogEntry[]; totalCount: number; initialFontFamily: LogFontFamily; initialAvatars?: SpeakerAvatarBundle }) {
   const [entries, setEntries] = useState(initialEntries);
@@ -50,6 +51,7 @@ export function PublicLog({ token, title, initialEntries, totalCount, initialFon
     observer.observe(target);
     return () => observer.disconnect();
   }, [entries.length, loadMore, totalCount]);
+  useProgressiveLogPreload(entries.length < totalCount, loading, loadMore);
   const content = <main className="public-log" data-font={extras?.fontFamily ?? initialFontFamily}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section className="log-timeline">{visibleStreamEntries(entries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
   const avatarContent = <SpeakerAvatarProvider avatars={speakerAvatars}>{content}</SpeakerAvatarProvider>;
   return pageId ? <BgmPlayerProvider access={{ pageId, publicationToken: token }}>{avatarContent}</BgmPlayerProvider> : avatarContent;
