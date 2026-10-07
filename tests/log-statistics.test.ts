@@ -71,6 +71,16 @@ test("time-only Roll20 labels use the latest date within 24 hours of local uploa
   assert.equal(normalized[1].timestamp.iso, "2026-07-23T00:10:00.000Z");
 });
 
+test("upload time wins for the recent time-only tail after a much older dated message", () => {
+  const uploadWallClock = localWallClockValue("2026-10-07T06:00:00.000Z", -540);
+  const normalized = normalizeRoll20DocumentTimestamps([
+    document("July 01, 2026 1:00PM", "old"),
+    document("2:30PM", "recent")
+  ], uploadWallClock);
+
+  assert.equal(normalized[1].timestamp.raw, "October 07, 2026 2:30PM");
+});
+
 test("log statistics count dialogue text and report both one-hour and three-hour break rules", () => {
   const entries = [
     entry("a", document("July 22, 2026 12:00AM", "가 나"), 1),

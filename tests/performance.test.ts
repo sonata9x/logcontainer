@@ -31,6 +31,7 @@ const handoutMigration = readFileSync(new URL("../supabase/migrations/2026090900
 const sidebarReliabilityMigration = readFileSync(new URL("../supabase/migrations/202609090003_sidebar_drag_reliability.sql", import.meta.url), "utf8");
 const pageExtrasBgmMigration = readFileSync(new URL("../supabase/migrations/202609140001_page_extras_bgm.sql", import.meta.url), "utf8");
 const htmlImportModesMigration = readFileSync(new URL("../supabase/migrations/202609260001_html_import_modes.sql", import.meta.url), "utf8");
+const timestampOverwriteMigration = readFileSync(new URL("../supabase/migrations/202610070001_timestamp_overwrite_import.sql", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
 const uploadRoute = readFileSync(new URL("../app/api/pages/[id]/import/upload/route.ts", import.meta.url), "utf8");
 const uploadHelper = readFileSync(new URL("../lib/logs/import-upload.ts", import.meta.url), "utf8");
@@ -189,8 +190,10 @@ test("public routes bypass auth refresh and stored documents use lightweight rea
   const bgmManagementMarker = "-- 202609210001_bgm_management_ux.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(accountSecurityMarker) + accountSecurityMarker.length, schema.indexOf(bgmManagementMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609180003_account_security.sql", import.meta.url), "utf8")));
   const htmlImportModesMarker = "-- 202609260001_html_import_modes.sql";
+  const timestampOverwriteMarker = "-- 202610070001_timestamp_overwrite_import.sql";
   assert.equal(normalizedSql(schema.slice(schema.indexOf(bgmManagementMarker) + bgmManagementMarker.length, schema.indexOf(htmlImportModesMarker))), normalizedSql(readFileSync(new URL("../supabase/migrations/202609210001_bgm_management_ux.sql", import.meta.url), "utf8")));
-  assert.equal(normalizedSql(schema.slice(schema.indexOf(htmlImportModesMarker) + htmlImportModesMarker.length)), normalizedSql(htmlImportModesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(htmlImportModesMarker) + htmlImportModesMarker.length, schema.indexOf(timestampOverwriteMarker))), normalizedSql(htmlImportModesMigration));
+  assert.equal(normalizedSql(schema.slice(schema.indexOf(timestampOverwriteMarker) + timestampOverwriteMarker.length)).replace(/\s+/g, ""), normalizedSql(timestampOverwriteMigration).replace(/\s+/g, ""));
 });
 
 test("large Roll20 imports upload directly to private staging storage", () => {

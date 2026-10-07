@@ -73,11 +73,31 @@ export function resolveDocumentTimestampValues(documents: LogEntryDocument[], re
   const parsed = documents.map((document) => document.timestamp.raw ? parseTimestamp(document.timestamp.raw, document.timestamp.iso) : null);
   const values: Array<number | null> = parsed.map((value) => value?.kind === "full" ? value.value : null);
   const dateAnchored = parsed.map((value) => value?.kind === "full");
+  const referenceAnchor = referenceValue !== null && Number.isFinite(referenceValue) ? referenceValue : null;
+
+  // Roll20's trailing time-only labels are always from the latest 24-hour
+  // window. Resolve that tail from the upload wall clock before an older dated
+  // label can incorrectly pull it forward by only one day.
+  if (referenceAnchor !== null) {
+    const lastFullIndex = parsed.findLastIndex((value) => value?.kind === "full");
+    let tailAnchor = referenceAnchor;
+    for (let index = parsed.length - 1; index > lastFullIndex; index -= 1) {
+      const value = parsed[index];
+      if (value?.kind !== "time") continue;
+      let candidate = sameUtcDateAt(tailAnchor, value.hour, value.minute);
+      while (candidate > tailAnchor) candidate -= DAY_MS;
+      values[index] = candidate;
+      dateAnchored[index] = true;
+      tailAnchor = candidate;
+    }
+  }
+
   let anchor: number | null = null;
   for (let index = 0; index < parsed.length; index += 1) {
     const value = parsed[index];
     if (!value) continue;
     if (value.kind === "full") { anchor = value.value; continue; }
+    if (values[index] !== null) { anchor = values[index]; continue; }
     if (anchor === null) continue;
     let candidate = sameUtcDateAt(anchor, value.hour, value.minute);
     while (candidate < anchor) candidate += DAY_MS;
@@ -101,7 +121,7 @@ export function resolveDocumentTimestampValues(documents: LogEntryDocument[], re
   // A Roll20 export created within 24 hours can contain only time labels. Use
   // the import wall clock as the upper bound and choose the latest matching
   // date in the preceding 24 hours, then resolve earlier labels backwards.
-  let floatingAnchor = referenceValue !== null && Number.isFinite(referenceValue) ? referenceValue : null;
+  let floatingAnchor = referenceAnchor;
   for (let index = parsed.length - 1; index >= 0; index -= 1) {
     const value = parsed[index];
     if (value?.kind !== "time" || values[index] !== null) continue;

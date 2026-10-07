@@ -12,6 +12,7 @@ import { consumeImportUpload, isImportUploadId } from "@/lib/logs/import-upload"
 import { MAX_DIRECT_ROLL20_SOURCE_SIZE, MAX_STAGED_ROLL20_SOURCE_SIZE } from "@/lib/logs/import-limits";
 import { persistTakoyakiAvatarAssets } from "@/lib/logs/takoyaki-box/assets";
 import { AppendImportError, calculateAppendedImport } from "@/lib/logs/import/append";
+import { calculateTimestampImport, type TimestampImportUpdate } from "@/lib/logs/import/timestamps";
 
 export const maxDuration = 60;
 
@@ -32,7 +33,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "업로드할 로그의 플랫폼을 선택해주세요." }, { status: 400 });
   }
   const requestedPlatform = body.platform as SupportedImportPlatform;
-  const importMode = body.mode === "append" ? "append" : "refresh";
+  const importMode = body.mode === "append" ? "append" : body.mode === "timestamps" ? "timestamps" : "refresh";
+  if (importMode === "timestamps" && requestedPlatform !== "roll20") {
+    return NextResponse.json({ error: "시간만 덮어쓰기는 Roll20 로그에서만 사용할 수 있습니다." }, { status: 400 });
+  }
   const { data: log } = await context.supabase.from("logs").select("id, content_version, visible_entry_count, platform").eq("page_id", id).maybeSingle();
   if (!log) return NextResponse.json({ error: "로그를 찾을 수 없습니다." }, { status: 404 });
   const admin = createSupabaseAdminClient();
@@ -100,6 +104,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   let entriesToWrite = imported.entries;
   let cleanupEntryIds: string[] = [];
+  let timestampUpdates: TimestampImportUpdate[] = [];
   let finalReport: Record<string, unknown> = { ...imported.report, importMode };
   if (importMode === "append") {
     if (log.platform && log.platform !== imported.platform) return NextResponse.json({ error: "기존 로그와 같은 플랫폼의 전체 HTML을 업로드해주세요." }, { status: 400 });
@@ -116,6 +121,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (error instanceof AppendImportError) return NextResponse.json({ error: error.message }, { status: 409 });
       throw error;
     }
+  } else if (importMode === "timestamps") {
+    const plan = calculateTimestampImport(previousEntries.map((entry) => ({
+      id: String(entry.id), is_added: entry.is_added === true, document: entry.document
+    })), imported.entries);
+    if (!plan.matchedCount) return NextResponse.json({ error: "동일한 Roll20 메시지 ID를 찾지 못했습니다. 같은 로그의 HTML인지 확인해주세요." }, { status: 400 });
+    if (!plan.changedCount) return NextResponse.json({ error: "덮어쓸 새로운 시간 정보가 없습니다." }, { status: 400 });
+    timestampUpdates = plan.updates;
+    finalReport = {
+      ...finalReport,
+      timestampMatchedCount: plan.matchedCount,
+      timestampUpdatedCount: plan.changedCount,
+      timestampAmbiguousCount: plan.ambiguousCount,
+      timestampUnmatchedCount: plan.unmatchedCount
+    };
   }
 
   const importId = randomUUID();
@@ -151,8 +170,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const archivedAt = performance.now();
 
-  const rpcName = importMode === "append" ? "append_log_entries_v1" : "replace_log_entries_v3";
-  const rpcArgs = {
+  const rpcName = importMode === "append" ? "append_log_entries_v1" : importMode === "timestamps" ? "overwrite_log_entry_timestamps_v1" : "replace_log_entries_v3";
+  const commonRpcArgs = {
     target_page_id: id,
     import_id: importId,
     source_storage_path: sourcePath,
@@ -161,11 +180,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     compressed_size_bytes: sourceArchive.compressedSizeBytes,
     source_platform: imported.platform,
     report: finalReport,
-    entries: entriesToWrite,
     expected_content_version: log.content_version,
-    previous_generation_storage_path: previousGenerationPath,
-    ...(importMode === "append" ? { cleanup_entry_ids: cleanupEntryIds } : {})
+    previous_generation_storage_path: previousGenerationPath
   };
+  const rpcArgs = importMode === "timestamps"
+    ? { ...commonRpcArgs, updates: timestampUpdates }
+    : { ...commonRpcArgs, entries: entriesToWrite, ...(importMode === "append" ? { cleanup_entry_ids: cleanupEntryIds } : {}) };
   const { data, error } = await context.supabase.rpc(rpcName, rpcArgs);
   if (error) {
     await removePrivateArchives(uploaded);

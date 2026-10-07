@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { AppendImportError, calculateAppendedImport, ROLL20_EDIT_SYNC_PREFIX } from "../lib/logs/import/append";
+import { calculateTimestampImport } from "../lib/logs/import/timestamps";
 import { importRoll20HtmlV2 } from "../lib/logs/roll20/import-v2";
 
 function message(id: string, content: string, classes = "general") {
@@ -57,12 +58,37 @@ test("cumulative append rejects a different or truncated HTML log", () => {
   assert.throws(() => calculateAppendedImport(existing, current.entries.slice(0, 1)), AppendImportError);
 });
 
+test("timestamp overwrite matches exact Roll20 message IDs and changes only timestamp fields", () => {
+  const current = importRoll20HtmlV2('<div class="message general" data-messageid="same"><span class="tstamp">July 07, 2026 12:05AM</span><span class="by">GM:</span><span>원문</span></div>');
+  const incoming = importRoll20HtmlV2('<div class="message general" data-messageid="same"><span class="tstamp">July 08, 2026 1:25AM</span><span class="by">다른 화자:</span><span>다른 내용</span></div>');
+  const edited = structuredClone(current.entries[0].document);
+  edited.speaker = { name: "사용자 화자", color: null, avatarUrl: null };
+  if (edited.blocks[0].type === "text") edited.blocks[0].text = "사용자 수정 내용";
+
+  const plan = calculateTimestampImport([
+    { id: "existing", is_added: false, document: edited },
+    { id: "manual", is_added: true, document: edited }
+  ], incoming.entries);
+
+  assert.equal(plan.matchedCount, 1);
+  assert.equal(plan.changedCount, 1);
+  assert.deepEqual(plan.updates, [{
+    entry_id: "existing",
+    message_id: "same",
+    next_timestamp: incoming.entries[0].document.timestamp,
+    next_timestamp_explicit: true
+  }]);
+  assert.equal(edited.speaker.name, "사용자 화자");
+  assert.equal(edited.blocks[0].type === "text" ? edited.blocks[0].text : "", "사용자 수정 내용");
+});
+
 test("HTML import UI and migration expose refresh and append modes", () => {
   const editor = readFileSync(new URL("../components/LogEditor.tsx", import.meta.url), "utf8");
   const route = readFileSync(new URL("../app/api/pages/[id]/import/route.ts", import.meta.url), "utf8");
   const migration = readFileSync(new URL("../supabase/migrations/202609260001_html_import_modes.sql", import.meta.url), "utf8");
   assert.match(editor, /HTML 갱신/);
   assert.match(editor, /HTML 로그 추가/);
+  assert.match(editor, /시간만 덮어쓰기/);
   assert.doesNotMatch(editor, /removeHiddenMessages/);
   assert.match(editor, /파일을 다시 올릴 필요가 없습니다/);
   assert.match(route, /downloadPrivateArchive\(ROLL20_SOURCE_BUCKET, latestImport\.source_storage_path\)/);
