@@ -640,9 +640,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   .log-entry { padding-right: 4px; padding-left: 4px; }
   .r20-message { padding-right: 3px; padding-left: 3px; }
   .log-entry-drag-handle { left: -13px; opacity: .5; }
-  /* Reserve an inside gutter on narrow published views, still vertically centered. */
-  .public-log:not(.workspace-read-mode) .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 34px; }
-  .public-log:not(.workspace-read-mode) .entry-bgm-button { left: 0; top: 50%; }
+  /* Every narrow published entry shares one end gutter, so a BGM button never
+     changes only its own message width or horizontal alignment. */
+  .public-log:not(.workspace-read-mode):not(.is-editing) .log-timeline { padding-right: 34px; }
+  .public-log:not(.workspace-read-mode):not(.is-editing) .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 0; }
+  .public-log:not(.workspace-read-mode):not(.is-editing) .entry-bgm-button { right: -34px; left: auto; top: 50%; }
   .workspace-read-mode .entry-playback-anchor:has(> .entry-bgm-button) { padding-left: 0; }
   .workspace-read-mode .entry-bgm-button { left: -24px; top: 50%; }
   .entry-more { opacity: .72; }

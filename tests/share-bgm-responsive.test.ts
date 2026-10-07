@@ -62,7 +62,8 @@ test("narrow-editor playback is hidden but public playback remains visible", () 
   const rule = css.match(/@media \(max-width: 1100px\) \{([^}]+)\}/)?.[1] ?? "";
   assert.match(rule, /\.workspace-content \.entry-bgm-button, \.guest-log.is-editing \.entry-bgm-button \{ display: none/);
   assert.doesNotMatch(rule, /\.public-log/);
-  assert.match(css, /\.public-log \.entry-bgm-button \{ left: 0; top: 50%/);
+  assert.match(css, /\.public-log:not\(\.workspace-read-mode\):not\(\.is-editing\) \.entry-bgm-button \{ right: -34px; left: auto; top: 50%/);
+  assert.match(css, /\.public-log:not\(\.workspace-read-mode\):not\(\.is-editing\) \.log-timeline \{ padding-right: 34px/);
   assert.doesNotMatch(css, /\.entry-wrap > \.bgm-library-add/);
   assert.match(css, /\.bgm-play-button \{ background: transparent; color: var\(--muted\)/);
   assert.match(css, /\.bgm-play-button:hover \{ background: transparent; color: var\(--text\)/);

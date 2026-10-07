@@ -4,12 +4,15 @@ import test from "node:test";
 
 const read = (path: string) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-test("BGM controls stay outside paint containment and public logs have a narrow-screen gutter", () => {
+test("BGM controls stay outside paint containment and narrow public logs use one shared end gutter", () => {
   const css = read("app/globals.css");
   assert.match(css, /\.entry-wrap > \.log-entry, \.public-log \.log-entry \{ content-visibility: auto/);
   assert.doesNotMatch(css, /\.entry-wrap\s*[,\{][^}]*content-visibility/);
   assert.match(css, /\.entry-bgm-button \{[^}]*left: -58px/);
-  assert.match(css, /\.public-log \.entry-playback-anchor:has\(> \.entry-bgm-button\) \{ padding-left: 34px/);
+  assert.match(css, /\.public-log:not\(\.workspace-read-mode\):not\(\.is-editing\) \.log-timeline \{ padding-right: 34px/);
+  assert.match(css, /\.public-log:not\(\.workspace-read-mode\):not\(\.is-editing\) \.entry-playback-anchor:has\(> \.entry-bgm-button\) \{ padding-left: 0/);
+  assert.match(css, /\.public-log:not\(\.workspace-read-mode\):not\(\.is-editing\) \.entry-bgm-button \{ right: -34px; left: auto/);
+  assert.doesNotMatch(css, /\.public-log:not\(\.workspace-read-mode\) \.entry-playback-anchor:has\(> \.entry-bgm-button\) \{ padding-left: 34px/);
   assert.match(css, /@media \(max-width: 1100px\)[\s\S]*\.workspace-content \.entry-bgm-button, \.guest-log.is-editing \.entry-bgm-button \{ display: none/);
 });
 
