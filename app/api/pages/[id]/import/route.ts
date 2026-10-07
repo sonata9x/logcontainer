@@ -13,6 +13,7 @@ import { MAX_DIRECT_ROLL20_SOURCE_SIZE, MAX_STAGED_ROLL20_SOURCE_SIZE } from "@/
 import { persistTakoyakiAvatarAssets } from "@/lib/logs/takoyaki-box/assets";
 import { AppendImportError, calculateAppendedImport } from "@/lib/logs/import/append";
 import { calculateTimestampImport, type TimestampImportUpdate } from "@/lib/logs/import/timestamps";
+import { fetchAllByRange } from "@/lib/logs/export-all";
 
 export const maxDuration = 60;
 
@@ -98,7 +99,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let previousEntries: Record<string, unknown>[] = [];
   if (importMode === "append" || (log.visible_entry_count ?? 0) > 0) {
-    const { data, error } = await admin.from("log_entries").select("id, log_id, order_index, sort_key, entry_type, speaker_name, speaker_color, content, original_content, raw_html, document_version, document, original_document, metadata, is_deleted, deleted_at, is_added, updated_by, created_at, updated_at").eq("log_id", log.id).order("sort_key");
+    const { data, error } = await fetchAllByRange((from, to) => admin.from("log_entries").select("id, log_id, order_index, sort_key, entry_type, speaker_name, speaker_color, content, original_content, raw_html, document_version, document, original_document, metadata, is_deleted, deleted_at, is_added, updated_by, created_at, updated_at").eq("log_id", log.id).order("sort_key").order("id").range(from, to));
     if (error) return databaseErrorResponse(error, "기존 로그 원본을 불러오지 못했습니다.");
     previousEntries = (data ?? []) as Record<string, unknown>[];
   }
@@ -142,23 +143,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const sourceArchive = gzipArchive(source);
   const uploaded: Array<{ bucket: string; path: string }> = [];
   let previousGenerationPath: string | null = null;
+  let archiveFailureMessage = "원본 HTML archive 저장에 실패했습니다.";
 
   try {
     uploaded.push(...await persistTakoyakiAvatarAssets(imported, log.id, importId));
     await uploadPrivateArchive(ROLL20_SOURCE_BUCKET, sourcePath, sourceArchive.compressed, "application/gzip");
     uploaded.push({ bucket: ROLL20_SOURCE_BUCKET, path: sourcePath });
     if ((log.visible_entry_count ?? 0) > 0) {
-      const entryIds = previousEntries.map((entry) => entry.id);
-      const revisionResult = entryIds.length
-        ? await admin.from("log_entry_revisions").select("id, entry_id, editor_id, action, previous_content, next_content, previous_snapshot, next_snapshot, revision_schema_version, created_at").in("entry_id", entryIds).order("created_at")
-        : { data: [], error: null };
+      archiveFailureMessage = "기존 로그와 수정 이력을 백업하지 못했습니다.";
+      const revisionResult = await fetchAllByRange((from, to) => admin.from("log_entry_revisions")
+        .select("id, entry_id, editor_id, action, previous_content, next_content, previous_snapshot, next_snapshot, revision_schema_version, created_at, log_entries!inner(log_id)")
+        .eq("log_entries.log_id", log.id).order("created_at").order("id").range(from, to));
       if (revisionResult.error) throw revisionResult.error;
+      const revisions = (revisionResult.data ?? []).map((revision) => {
+        const { log_entries: _relation, ...snapshot } = revision as Record<string, unknown>;
+        return snapshot;
+      });
       const generationArchive = gzipArchive(JSON.stringify({
         schemaVersion: 1,
         logId: log.id,
         contentVersion: log.content_version,
         entries: previousEntries,
-        revisions: revisionResult.data ?? []
+        revisions
       }));
       previousGenerationPath = `${log.id}/${importId}-previous.json.gz`;
       await uploadPrivateArchive(LOG_GENERATION_BUCKET, previousGenerationPath, generationArchive.compressed, "application/gzip");
@@ -166,7 +172,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   } catch (error) {
     await removePrivateArchives(uploaded);
-    return internalErrorResponse(error, "원본 archive 저장에 실패했습니다.");
+    return internalErrorResponse(error, archiveFailureMessage);
   }
   const archivedAt = performance.now();
 

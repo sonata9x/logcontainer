@@ -210,6 +210,9 @@ test("large Roll20 imports upload directly to private staging storage", () => {
   assert.match(uploadHelper, /expected_size_bytes/);
   assert.match(uploadHelper, /payload\.byteLength !== Number\(intent\.expected_size_bytes\)/);
   assert.match(importRoute, /consumeImportUpload/);
+  assert.match(importRoute, /fetchAllByRange\(\(from, to\) => admin\.from\("log_entries"\)/);
+  assert.match(importRoute, /fetchAllByRange[\s\S]*log_entry_revisions[\s\S]*log_entries!inner\(log_id\)/);
+  assert.doesNotMatch(importRoute, /\.in\("entry_id", entryIds\)/);
   assert.match(importLimits, /MAX_DIRECT_ROLL20_SOURCE_SIZE = 4 \* 1024 \* 1024/);
   assert.match(importLimits, /MAX_STAGED_ROLL20_SOURCE_SIZE = 12 \* 1024 \* 1024/);
   assert.match(importLimits, /SUPABASE_TUS_CHUNK_SIZE = 6 \* 1024 \* 1024/);
