@@ -7,9 +7,9 @@ import { filterErrorDuplicates } from "./duplicates";
 import { normalizeLogicalMessages, renderedSemanticPayload } from "./normalize";
 import { detectRoll20Source, type Roll20SourceRecord } from "./source";
 import { ROLL20_EDIT_SYNC_PREFIX } from "@/lib/logs/import/append";
-import { normalizeRoll20DocumentTimestamps } from "@/lib/logs/statistics";
+import { localWallClockValue, normalizeRoll20DocumentTimestamps } from "@/lib/logs/statistics";
 
-export type Roll20ImportOptionsV2 = { separateCasual?: boolean };
+export type Roll20ImportOptionsV2 = { separateCasual?: boolean; importedAt?: string; timezoneOffsetMinutes?: number };
 
 function kind(record: Roll20SourceRecord): LogEntryDocument["kind"] {
   if (["desc", "emote"].includes(record.type)) return "description";
@@ -81,6 +81,9 @@ function enrichMsgdataRecords(msgdata: Roll20SourceRecord[], rendered: Roll20Sou
 }
 
 export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV2 = {}) {
+  const importedAt = options.importedAt ?? new Date().toISOString();
+  const timezoneOffsetMinutes = Number.isInteger(options.timezoneOffsetMinutes) && options.timezoneOffsetMinutes! >= -840 && options.timezoneOffsetMinutes! <= 840 ? options.timezoneOffsetMinutes! : 0;
+  const importWallClock = localWallClockValue(importedAt, timezoneOffsetMinutes);
   const detected = detectRoll20Source(source);
   const sourceMessageCount = detected.records.length;
   const primaryNormalization = normalizeLogicalMessages(detected.records);
@@ -148,10 +151,10 @@ export function importRoll20HtmlV2(source: string, options: Roll20ImportOptionsV
     const validated = validateLogEntryDocument(document);
     if (!validated.ok) throw new Error(validated.error);
     return validated.document;
-  }));
+  }), importWallClock);
   const warnings = [...parserWarnings, ...documents.flatMap((document) => document.warnings)].filter((warning, index, all) => all.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(warning)) === index);
   const report: Roll20ImportReportV2 = {
-    provider: "roll20", parserVersion: 2, sourceFormat: detected.format, importedAt: new Date().toISOString(), sourceMessageCount,
+    provider: "roll20", parserVersion: 2, sourceFormat: detected.format, importedAt, timezoneOffsetMinutes, sourceMessageCount,
     logicalMessageCount: documents.length, structuralDuplicateCount: primaryNormalization.structuralDuplicateCount + (renderedNormalization?.structuralDuplicateCount ?? 0),
     errorDuplicateCount: duplicates.errorDuplicateCount, hiddenRemovedCount, syncRemovedCount, unknownFallbackCount, sanitizedStyleCount,
     droppedStyleCount, casualMessageCount: documents.filter((document) => document.source.stream?.id === "casual").length,

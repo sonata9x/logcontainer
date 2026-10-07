@@ -69,9 +69,10 @@ function sameUtcDateAt(anchor: number, hour: number, minute: number) {
 }
 
 /** Resolves Roll20's time-only labels against the nearest dated labels in source order. */
-export function resolveDocumentTimestampValues(documents: LogEntryDocument[]) {
+export function resolveDocumentTimestampValues(documents: LogEntryDocument[], referenceValue: number | null = null) {
   const parsed = documents.map((document) => document.timestamp.raw ? parseTimestamp(document.timestamp.raw, document.timestamp.iso) : null);
   const values: Array<number | null> = parsed.map((value) => value?.kind === "full" ? value.value : null);
+  const dateAnchored = parsed.map((value) => value?.kind === "full");
   let anchor: number | null = null;
   for (let index = 0; index < parsed.length; index += 1) {
     const value = parsed[index];
@@ -81,6 +82,7 @@ export function resolveDocumentTimestampValues(documents: LogEntryDocument[]) {
     let candidate = sameUtcDateAt(anchor, value.hour, value.minute);
     while (candidate < anchor) candidate += DAY_MS;
     values[index] = candidate;
+    dateAnchored[index] = true;
     anchor = candidate;
   }
   anchor = null;
@@ -92,9 +94,44 @@ export function resolveDocumentTimestampValues(documents: LogEntryDocument[]) {
     let candidate = sameUtcDateAt(anchor, value.hour, value.minute);
     while (candidate > anchor) candidate -= DAY_MS;
     values[index] = candidate;
+    dateAnchored[index] = true;
     anchor = candidate;
   }
-  return { parsed, values };
+
+  // A Roll20 export created within 24 hours can contain only time labels. Use
+  // the import wall clock as the upper bound and choose the latest matching
+  // date in the preceding 24 hours, then resolve earlier labels backwards.
+  let floatingAnchor = referenceValue !== null && Number.isFinite(referenceValue) ? referenceValue : null;
+  for (let index = parsed.length - 1; index >= 0; index -= 1) {
+    const value = parsed[index];
+    if (value?.kind !== "time" || values[index] !== null) continue;
+    if (floatingAnchor === null) continue;
+    let candidate = sameUtcDateAt(floatingAnchor, value.hour, value.minute);
+    while (candidate > floatingAnchor) candidate -= DAY_MS;
+    values[index] = candidate;
+    dateAnchored[index] = true;
+    floatingAnchor = candidate;
+  }
+
+  // Statistics can still use source order when old data has neither a dated
+  // label nor a recorded import reference. This synthetic date is never shown.
+  floatingAnchor = null;
+  for (let index = 0; index < parsed.length; index += 1) {
+    const value = parsed[index];
+    if (value?.kind !== "time" || values[index] !== null) continue;
+    let candidate = Date.UTC(2000, 0, 1, value.hour, value.minute);
+    if (floatingAnchor !== null) while (candidate < floatingAnchor) candidate += DAY_MS;
+    values[index] = candidate;
+    floatingAnchor = candidate;
+  }
+  return { parsed, values, dateAnchored };
+}
+
+/** Converts an absolute upload instant to the uploader's local wall clock. */
+export function localWallClockValue(instant: string | number | Date, timezoneOffsetMinutes: number) {
+  const value = instant instanceof Date ? instant.getTime() : typeof instant === "number" ? instant : Date.parse(instant);
+  if (!Number.isFinite(value) || !Number.isInteger(timezoneOffsetMinutes) || timezoneOffsetMinutes < -840 || timezoneOffsetMinutes > 840) return null;
+  return value - timezoneOffsetMinutes * 60_000;
 }
 
 function roll20TimestampLabel(value: number) {
@@ -106,11 +143,11 @@ function roll20TimestampLabel(value: number) {
   return `${MONTHS[date.getUTCMonth()]} ${String(date.getUTCDate()).padStart(2, "0")}, ${date.getUTCFullYear()} ${hour}:${String(date.getUTCMinutes()).padStart(2, "0")}${period}`;
 }
 
-export function normalizeRoll20DocumentTimestamps(documents: LogEntryDocument[]) {
-  const { parsed, values } = resolveDocumentTimestampValues(documents);
+export function normalizeRoll20DocumentTimestamps(documents: LogEntryDocument[], referenceValue: number | null = null) {
+  const { parsed, values, dateAnchored } = resolveDocumentTimestampValues(documents, referenceValue);
   return documents.map((document, index) => {
     const value = values[index];
-    if (document.source.platform !== "roll20" || parsed[index]?.kind !== "time" || value === null) return document;
+    if (document.source.platform !== "roll20" || parsed[index]?.kind !== "time" || value === null || !dateAnchored[index]) return document;
     return { ...document, timestamp: { raw: roll20TimestampLabel(value), iso: new Date(value).toISOString() } };
   });
 }
@@ -145,10 +182,10 @@ function sessionDuration(values: number[], gapHours: number): SessionDurationSum
   return { minutes: Math.max(0, Math.round(total / 60_000)), segments };
 }
 
-export function calculateLogStatistics(entries: LogEntry[]): LogStatistics {
+export function calculateLogStatistics(entries: LogEntry[], referenceValue: number | null = null): LogStatistics {
   const visible = entries.filter((entry) => !entry.is_deleted);
   const documents = visible.flatMap((entry) => entry.document_version === 2 && entry.document ? [entry.document] : []);
-  const resolvedValues = resolveDocumentTimestampValues(documents).values.filter((value): value is number => value !== null);
+  const resolvedValues = resolveDocumentTimestampValues(documents, referenceValue).values.filter((value): value is number => value !== null);
   const dialogueCharacterCount = visible.reduce((total, entry) => {
     if (entry.document_version === 2 && entry.document) return entry.document.kind === "dialogue" ? total + Array.from(projectDocumentText(entry.document)).length : total;
     return entry.entry_type === "dialogue" ? total + Array.from(entry.content).length : total;

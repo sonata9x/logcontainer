@@ -216,7 +216,7 @@ test("large Roll20 imports upload directly to private staging storage", () => {
   assert.match(editor, /authorization: `Bearer \$\{accessToken\}`/);
   assert.match(editor, /auth\.getSession\(\)/);
   assert.match(editor, /chunkSize: SUPABASE_TUS_CHUNK_SIZE/);
-  assert.match(editor, /requestBody = \{ uploadId, mode: importMode, separateCasual, platform: importPlatform \}/);
+  assert.match(editor, /requestBody = \{ uploadId, mode: importMode, separateCasual, platform: importPlatform, timezoneOffsetMinutes \}/);
   assert.match(proxy, /contentLength > 4 \* 1024 \* 1024/);
   assert.match(purgeRoute, /purgeExpiredImportUploads/);
   assert.match(importsRoute, /context\.canReimport/);

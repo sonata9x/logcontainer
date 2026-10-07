@@ -298,7 +298,8 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
     let uploadId: string | null = null;
     let completed = false;
     try {
-      let requestBody: { source?: string; uploadId?: string; mode: "refresh" | "append"; separateCasual: boolean; platform: SupportedImportPlatform } = { ...(requiresUploadedSource ? { source } : {}), mode: importMode, separateCasual, platform: importPlatform };
+      const timezoneOffsetMinutes = new Date().getTimezoneOffset();
+      let requestBody: { source?: string; uploadId?: string; mode: "refresh" | "append"; separateCasual: boolean; platform: SupportedImportPlatform; timezoneOffsetMinutes: number } = { ...(requiresUploadedSource ? { source } : {}), mode: importMode, separateCasual, platform: importPlatform, timezoneOffsetMinutes };
       if (requiresUploadedSource && sourceFile) {
         setImportStatus("안전한 업로드 주소를 준비하는 중…");
         const targetResponse = await fetch(`/api/pages/${page.id}/import/upload`, {
@@ -315,7 +316,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
         setImportStatus("파일 업로드 중… 0%");
         await uploadRoll20File(sourceFile, target, session.access_token, (percentage) => setImportStatus(`파일 업로드 중… ${percentage}%`));
         setImportStatus("HTML 분석 및 저장 중…");
-        requestBody = { uploadId, mode: importMode, separateCasual, platform: importPlatform };
+        requestBody = { uploadId, mode: importMode, separateCasual, platform: importPlatform, timezoneOffsetMinutes };
       } else {
         setImportStatus("HTML 분석 및 저장 중…");
       }
@@ -566,7 +567,7 @@ export function LogEditor({ page, permissions, logId, entries, totalEntryCount, 
 function LogInfoDialog({ pageId, totalCount, summary, isOwner, canEdit, onRestore, onClose }: { pageId: string; totalCount: number; summary: ImportSummary | null; isOwner: boolean; canEdit: boolean; onRestore: (entry: LogEntry) => void; onClose: () => void }) {
   const [info, setInfo] = useState<{ platform?: string; latestImportAt?: string | null; statistics?: LogStatistics } | null>(null);
   useEscapeClose(onClose);
-  useEffect(() => { void fetch(`/api/pages/${pageId}/info`).then((response) => response.json()).then(setInfo).catch(() => setInfo({})); }, [pageId]);
+  useEffect(() => { void fetch(`/api/pages/${pageId}/info?timezoneOffsetMinutes=${new Date().getTimezoneOffset()}`).then((response) => response.json()).then(setInfo).catch(() => setInfo({})); }, [pageId]);
   const duration = (minutes?: number) => minutes == null ? "계산 중…" : `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60).toLocaleString()}시간 ` : ""}${minutes % 60 ? `${minutes % 60}분` : minutes ? "" : "0분"}`.trim();
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal-card log-info-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={17} /></button><h2>로그 정보</h2><dl className="log-info-grid"><dt>현재 총 메시지 수</dt><dd>{totalCount.toLocaleString()}</dd><dt>대화 글자 수 (공백 포함)</dt><dd>{info?.statistics ? `${info.statistics.dialogueCharacterCount.toLocaleString()}자` : "계산 중…"}</dd><dt>총 세션 시간 (1시간 이상 휴식 제외)</dt><dd>{duration(info?.statistics?.oneHour.minutes)}{info?.statistics && ` · ${info.statistics.oneHour.segments.toLocaleString()}개 구간`}</dd><dt>총 세션 시간 (3시간 이상 휴식 제외)</dt><dd>{duration(info?.statistics?.threeHours.minutes)}{info?.statistics && ` · ${info.statistics.threeHours.segments.toLocaleString()}개 구간`}</dd><dt>Platform</dt><dd>{info?.platform ?? summary?.provider ?? "불러오는 중…"}</dd><dt>최신 import 날짜</dt><dd>{info?.latestImportAt ? new Date(info.latestImportAt).toLocaleString("ko-KR") : "없음"}</dd><dt>원본 source message count</dt><dd>{summary?.sourceMessageCount ?? 0}</dd><dt>logical/imported count</dt><dd>{summary?.logicalMessageCount ?? summary?.importedMessageCount ?? 0}</dd><dt>structural duplicate count</dt><dd>{summary?.structuralDuplicateCount ?? 0}</dd><dt>error duplicate count</dt><dd>{summary?.errorDuplicateCount ?? summary?.duplicateMessageCount ?? 0}</dd><dt>hidden removed</dt><dd>{summary?.hiddenRemovedCount ?? summary?.hiddenMessageCount ?? 0}</dd><dt>edit sync removed</dt><dd>{summary?.syncRemovedCount ?? 0}</dd>{summary?.importMode === "append" && <><dt>appended count</dt><dd>{summary.appendedCount ?? 0}</dd></>}<dt>warning count</dt><dd>{summary?.warningCount ?? 0}</dd></dl><p className="muted">세션 시간은 표시 시각 사이의 간격이 기준 이상이면 휴식으로 제외하고 각 구간의 시간을 합산합니다. 인식된 시간 표기 {info?.statistics?.timestampCount.toLocaleString() ?? "…"}개.</p><div className="log-info-actions">{isOwner && <ImportHistoryPanel pageId={pageId} />}{canEdit && <TrashPanel pageId={pageId} onRestore={onRestore} canEmpty={isOwner} />}</div></section></div>;
 }

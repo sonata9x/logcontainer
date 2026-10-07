@@ -153,6 +153,7 @@ export type Roll20ImportReportV2 = {
   parserVersion: 2;
   sourceFormat: "msgdata" | "rendered_html_fragment";
   importedAt: string;
+  timezoneOffsetMinutes?: number;
   sourceMessageCount: number;
   logicalMessageCount: number;
   structuralDuplicateCount: number;

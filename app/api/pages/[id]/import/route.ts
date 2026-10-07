@@ -15,6 +15,10 @@ import { AppendImportError, calculateAppendedImport } from "@/lib/logs/import/ap
 
 export const maxDuration = 60;
 
+function validTimezoneOffset(value: unknown) {
+  return Number.isInteger(value) && Number(value) >= -840 && Number(value) <= 840 ? Number(value) : 0;
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const startedAt = performance.now();
   const { id } = await params;
@@ -34,6 +38,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const admin = createSupabaseAdminClient();
 
   let source = typeof body.source === "string" ? body.source : "";
+  let importedAt = new Date().toISOString();
+  let timezoneOffsetMinutes = validTimezoneOffset(body.timezoneOffsetMinutes);
   if (isImportUploadId(body.uploadId)) {
     let staged;
     try {
@@ -49,9 +55,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "HTML 파일은 UTF-8 형식이어야 합니다." }, { status: 400 });
     }
   } else if (!source.trim() && importMode === "refresh") {
-    const { data: latestImport, error } = await admin.from("log_imports").select("source_html, source_storage_path, compression").eq("log_id", log.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: latestImport, error } = await admin.from("log_imports").select("source_html, source_storage_path, compression, report, created_at").eq("log_id", log.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (error) return databaseErrorResponse(error, "현재 원본 HTML을 찾지 못했습니다.");
     if (!latestImport) return NextResponse.json({ error: "갱신할 원본 HTML이 없습니다. HTML 파일을 먼저 업로드해주세요." }, { status: 400 });
+    importedAt = latestImport.created_at;
+    const previousReport = latestImport.report && typeof latestImport.report === "object" ? latestImport.report as Record<string, unknown> : null;
+    if (previousReport?.timezoneOffsetMinutes !== undefined) timezoneOffsetMinutes = validTimezoneOffset(previousReport.timezoneOffsetMinutes);
     try {
       if (latestImport.source_storage_path) {
         const archived = await downloadPrivateArchive(ROLL20_SOURCE_BUCKET, latestImport.source_storage_path);
@@ -72,7 +81,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let imported;
   try {
     imported = importLogHtml(source, requestedPlatform, {
-      separateCasual: body.separateCasual === true
+      separateCasual: body.separateCasual === true,
+      importedAt,
+      timezoneOffsetMinutes
     });
   } catch (error) {
     const message = error instanceof ImportPlatformError ? error.message : "선택한 플랫폼의 로그 구조를 HTML에서 찾지 못했습니다.";

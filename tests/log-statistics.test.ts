@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateLogStatistics, normalizeEntryTimestampDisplay, normalizeRoll20DocumentTimestamps } from "../lib/logs/statistics";
+import { calculateLogStatistics, localWallClockValue, normalizeEntryTimestampDisplay, normalizeRoll20DocumentTimestamps } from "../lib/logs/statistics";
 import type { LogEntryDocument } from "../lib/logs/model/types";
 import type { LogEntry } from "../lib/types";
 
@@ -42,6 +42,33 @@ test("time-only labels before the first dated label resolve backwards", () => {
   ];
   assert.deepEqual(normalizeEntryTimestampDisplay(entries).map((item) => item.document?.timestamp.raw), ["July 22, 2026 11:50PM", "July 23, 2026 12:10AM"]);
   assert.equal(entries[0].document?.timestamp.raw, "11:50PM");
+});
+
+test("time-only-only logs calculate duration without inventing a display date", () => {
+  const entries = [
+    entry("a", document("11:30PM", "a"), 1),
+    entry("b", document("11:50PM", "b"), 2),
+    entry("c", document("12:10AM", "c"), 3)
+  ];
+  const normalized = normalizeEntryTimestampDisplay(entries);
+  const statistics = calculateLogStatistics(entries);
+
+  assert.deepEqual(normalized.map((item) => item.document?.timestamp.raw), ["11:30PM", "11:50PM", "12:10AM"]);
+  assert.equal(statistics.timestampCount, 3);
+  assert.deepEqual(statistics.oneHour, { minutes: 40, segments: 1 });
+  assert.deepEqual(statistics.threeHours, { minutes: 40, segments: 1 });
+});
+
+test("time-only Roll20 labels use the latest date within 24 hours of local upload time", () => {
+  const uploadWallClock = localWallClockValue("2026-07-22T15:30:00.000Z", -540);
+  assert.notEqual(uploadWallClock, null);
+  const normalized = normalizeRoll20DocumentTimestamps([
+    document("11:50PM", "a"),
+    document("12:10AM", "b")
+  ], uploadWallClock);
+
+  assert.deepEqual(normalized.map((item) => item.timestamp.raw), ["July 22, 2026 11:50PM", "July 23, 2026 12:10AM"]);
+  assert.equal(normalized[1].timestamp.iso, "2026-07-23T00:10:00.000Z");
 });
 
 test("log statistics count dialogue text and report both one-hour and three-hour break rules", () => {
