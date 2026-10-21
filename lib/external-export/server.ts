@@ -155,3 +155,24 @@ export function renderExternalEntries(entries: LogEntry[], avatars: SpeakerAvata
     stream: entry.document_version === 2 && entry.document?.source.stream?.id === "casual" ? "casual" : "main"
   }));
 }
+
+export function currentManagedAvatarVariantId(entry: LogEntry, avatars: SpeakerAvatarBundle | null | undefined) {
+  if (entry.document_version !== 2 || !entry.document || entry.document.kind !== "dialogue") return null;
+  const presentation = entry.document.presentation ?? {
+    speakerExplicit: Boolean(entry.document.speaker?.name),
+    avatarExplicit: Boolean(entry.document.speaker?.avatarUrl),
+    timestampExplicit: Boolean(entry.document.timestamp.raw),
+    continuation: false
+  };
+  if (!presentation.speakerExplicit) return null;
+  const resolved = resolveEntryAvatar(entry, avatars);
+  if (!resolved.profile) return null;
+  const selected = resolved.selectedVariantId
+    ? resolved.profile.variants.find((variant) => variant.id === resolved.selectedVariantId) ?? null
+    : null;
+  if (selected) return selected.id;
+  const original = entry.document.speaker?.avatarUrl ?? null;
+  const manuallyAssigned = entry.document.warnings.some((warning) => warning.code === "speaker-manually-assigned");
+  if (manuallyAssigned && original) return null;
+  return resolved.profile.variants.find((variant) => variant.isDefault)?.id ?? null;
+}

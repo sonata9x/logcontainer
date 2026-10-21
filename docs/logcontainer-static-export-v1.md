@@ -27,7 +27,7 @@ session.logcontainer.zip
 
 ## manifest 필드
 
-- `page`: 제목, 원본 플랫폼, 본문 글꼴, 개요, 세션 카드의 ZIP 상대 경로
+- `page`: 제목, 원본 플랫폼, 본문 글꼴, 개요
 - `entries`: 표시 순서대로 정렬된 메시지 키, 정제된 읽기 전용 HTML, 간격 힌트
 - `tracks`: 중복 제거된 음원 목록
   - `upload`: ZIP 내부 MP3 상대 경로, MIME, 최초 파일명
@@ -36,6 +36,8 @@ session.logcontainer.zip
 - `handouts`: 제목, 내용, 이미지의 ZIP 상대 경로
 
 동일한 업로드 음원이 여러 메시지에서 쓰이면 `tracks` 및 실제 MP3는 하나만 존재하며 `bgm`의 여러 항목이 같은 `trackKey`를 참조한다. `entries[].key`는 가져오는 사이트에서 새 DB ID를 만든 뒤 BGM 위치를 연결하기 위한 외부 키다.
+
+핸드아웃 이미지와 현재 로그에서 실제 사용하는 관리형 화자 아바타만 ZIP에 포함한다. 세션 카드와 사용하지 않는 표정 아바타는 포함하지 않는다.
 
 ## 그누보드 importer 필수 검증
 

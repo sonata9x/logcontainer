@@ -43,7 +43,6 @@ export type ExternalLogExportManifest = {
     platform: LogPlatform;
     fontFamily: LogFontFamily;
     overview: string | null;
-    sessionCardFile: string | null;
   };
   entries: ExternalExportEntry[];
   tracks: ExternalExportTrack[];

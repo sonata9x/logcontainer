@@ -32,26 +32,29 @@ export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onCl
     try {
       const first = await loadBatch(pageId, 0);
       const entries = [...first.manifest.entries];
+      const assets = new Map(first.assets.map((asset) => [asset.path, asset]));
       let nextOffset = first.nextOffset;
       while (nextOffset !== null) {
         setStatus(`로그 메시지 불러오는 중… ${entries.length.toLocaleString("ko-KR")} / ${first.totalEntries.toLocaleString("ko-KR")}`);
         const batch = await loadBatch(pageId, nextOffset);
         entries.push(...batch.manifest.entries);
+        for (const asset of batch.assets) assets.set(asset.path, asset);
         nextOffset = batch.nextOffset;
         setProgress(first.totalEntries ? Math.min(35, Math.round(entries.length / first.totalEntries * 35)) : 35);
       }
       const manifest = { ...first.manifest, entries };
+      const exportAssets = [...assets.values()];
       const assetFiles: StoredZipFile[] = [];
       let downloadedBytes = 0;
-      for (let index = 0; index < first.assets.length; index += 1) {
-        const asset = first.assets[index];
-        setStatus(`BGM·이미지 받는 중… ${index + 1} / ${first.assets.length}`);
+      for (let index = 0; index < exportAssets.length; index += 1) {
+        const asset = exportAssets[index];
+        setStatus(`BGM·이미지 받는 중… ${index + 1} / ${exportAssets.length}`);
         const response = await fetch(asset.url, { cache: "no-store" });
         if (!response.ok) throw new Error(`파일을 포함하지 못했습니다: ${asset.path}`);
         const blob = await response.blob();
         downloadedBytes += blob.size;
         assetFiles.push({ path: asset.path, data: blob });
-        setProgress(35 + Math.round((index + 1) / Math.max(1, first.assets.length) * 40));
+        setProgress(35 + Math.round((index + 1) / Math.max(1, exportAssets.length) * 40));
       }
       const manifestJson = JSON.stringify(manifest, null, 2);
       const files: StoredZipFile[] = [
@@ -81,7 +84,7 @@ export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onCl
     <section className="modal-card external-export-modal" onMouseDown={(event) => event.stopPropagation()}>
       <button className="modal-close" onClick={onClose} disabled={pending}><X size={17} /></button>
       <h2>외부 사이트용 로그 백업</h2>
-      <p>현재 표시 상태의 읽기 전용 로그와 대기·블록 BGM을 하나의 ZIP으로 만듭니다. 업로드 MP3와 관리 중인 세션 카드·핸드아웃·아바타 이미지가 실제 파일로 포함됩니다.</p>
+      <p>현재 표시 상태의 읽기 전용 로그와 대기·블록 BGM을 하나의 ZIP으로 만듭니다. 핸드아웃의 텍스트·이미지와 현재 로그에 표시되는 아바타 이미지만 함께 포함하며, 세션 카드 이미지는 제외합니다.</p>
       <p className="muted">YouTube BGM은 영상 ID로 저장되며 재생할 때 인터넷 연결이 필요합니다. 원본 사이트의 수정 이력과 로그인 정보는 포함하지 않습니다.</p>
       <div className="external-export-progress" aria-live="polite"><progress max="100" value={progress} /><span>{status}</span></div>
       {error && <p className="error" role="alert">{error}</p>}

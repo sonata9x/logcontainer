@@ -3,7 +3,6 @@ import { getApiPageContext } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { BGM_AUDIO_BUCKET } from "@/lib/bgm";
 import { HANDOUT_IMAGE_BUCKET } from "@/lib/handouts";
-import { SESSION_CARD_BUCKET } from "@/lib/page-extras";
 import { SPEAKER_AVATAR_BUCKET } from "@/lib/speaker-avatars";
 
 type AssetTarget = { bucket: string; path: string; mimeType: string | null };
@@ -16,10 +15,6 @@ async function resolveTarget(pageId: string, kind: string, assetId: string): Pro
     const { data: asset } = await admin.from("bgm_assets").select("storage_path, mime_type, source_type, is_ready, deleted_at").eq("id", assetId).maybeSingle();
     return asset?.source_type === "upload" && asset.is_ready && !asset.deleted_at && asset.storage_path
       ? { bucket: BGM_AUDIO_BUCKET, path: asset.storage_path, mimeType: asset.mime_type ?? "audio/mpeg" } : null;
-  }
-  if (kind === "session-card") {
-    const { data: page } = await admin.from("pages").select("session_card_path, session_card_mime").eq("id", pageId).maybeSingle();
-    return page?.session_card_path ? { bucket: SESSION_CARD_BUCKET, path: page.session_card_path, mimeType: page.session_card_mime } : null;
   }
   if (kind === "handout") {
     const { data: image } = await admin.from("handout_images").select("handout_id, storage_path, mime_type, is_ready").eq("id", assetId).maybeSingle();

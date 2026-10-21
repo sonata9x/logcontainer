@@ -6,7 +6,7 @@ import { getPageBgmItems, displayBgmTitle } from "@/lib/bgm";
 import { getSpeakerAvatarBundle } from "@/lib/speaker-avatars";
 import { parseLogFontFamily } from "@/lib/fonts";
 import { normalizeEntryTimestampDisplay } from "@/lib/logs/statistics";
-import { assetExtensionForMime, exportEntryKey, renderExternalEntries, safeAssetExtension, safeExportName } from "@/lib/external-export/server";
+import { assetExtensionForMime, currentManagedAvatarVariantId, exportEntryKey, renderExternalEntries, safeAssetExtension, safeExportName } from "@/lib/external-export/server";
 import { EXTERNAL_LOG_EXPORT_FORMAT, EXTERNAL_LOG_EXPORT_VERSION, type ExternalExportAsset, type ExternalExportHandout, type ExternalExportTrack, type ExternalLogExportManifest } from "@/lib/external-export/types";
 import type { LogEntry, SpeakerAvatarBundle } from "@/lib/types";
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const admin = createSupabaseAdminClient();
 
   const [{ data: page, error: pageError }, { data: log, error: logError }] = await Promise.all([
-    context.supabase.from("pages").select("title, overview, font_family, session_card_path, session_card_mime, session_card_size").eq("id", id).single(),
+    context.supabase.from("pages").select("title, overview, font_family").eq("id", id).single(),
     context.supabase.from("logs").select("id, platform").eq("page_id", id).single()
   ]);
   if (pageError || logError || !page || !log) return NextResponse.json({ error: "외부용 로그 정보를 불러오지 못했습니다." }, { status: 500 });
@@ -54,26 +54,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const normalizedEntries = normalizeEntryTimestampDisplay(previousEntry ? [previousEntry, ...pageEntries] : pageEntries);
   const normalizedPrevious = previousEntry ? normalizedEntries.shift() : undefined;
 
-  const [{ data: handoutRows, error: handoutError }, { data: profileRows, error: profileError }] = await Promise.all([
-    admin.from("handouts").select("id, title, content, order_index").eq("page_id", id).order("order_index").order("created_at"),
-    admin.from("page_speaker_profiles").select("id").eq("page_id", id)
-  ]);
-  if (handoutError || profileError) return NextResponse.json({ error: "부가 자료를 불러오지 못했습니다." }, { status: 500 });
+  const { data: handoutRows, error: handoutError } = await admin.from("handouts").select("id, title, content, order_index").eq("page_id", id).order("order_index").order("created_at");
+  if (handoutError) return NextResponse.json({ error: "부가 자료를 불러오지 못했습니다." }, { status: 500 });
   const handoutIds = (handoutRows ?? []).map((row) => row.id);
-  const profileIds = (profileRows ?? []).map((row) => row.id);
+  const avatarIds = [...new Set(normalizedEntries.map((entry) => currentManagedAvatarVariantId(entry, avatarBundle)).filter((avatarId): avatarId is string => Boolean(avatarId)))];
   const [{ data: handoutImageRows, error: handoutImageError }, { data: avatarRows, error: avatarError }] = await Promise.all([
     handoutIds.length ? admin.from("handout_images").select("id, handout_id, original_name, mime_type, byte_size, order_index").in("handout_id", handoutIds).eq("is_ready", true).order("order_index").order("created_at") : { data: [] as HandoutImageRow[], error: null },
-    profileIds.length ? admin.from("speaker_avatar_variants").select("id, storage_path").in("profile_id", profileIds) : { data: [] as AvatarRow[], error: null }
+    avatarIds.length ? admin.from("speaker_avatar_variants").select("id, storage_path").in("id", avatarIds) : { data: [] as AvatarRow[], error: null }
   ]);
   if (handoutImageError || avatarError) return NextResponse.json({ error: "이미지 정보를 불러오지 못했습니다." }, { status: 500 });
 
   const assets: ExternalExportAsset[] = [];
-  let sessionCardFile: string | null = null;
-  if (page.session_card_path) {
-    sessionCardFile = `assets/images/session-card.${safeAssetExtension(page.session_card_path, assetExtensionForMime(page.session_card_mime, "img"))}`;
-    assets.push({ path: sessionCardFile, url: assetUrl(id, "session-card", "page"), byteSize: page.session_card_size ?? null });
-  }
-
   const imagesByHandout = new Map<string, ExternalExportHandout["images"]>();
   for (const image of (handoutImageRows ?? []) as HandoutImageRow[]) {
     const file = `assets/images/handout-${image.id}.${safeAssetExtension(image.original_name, assetExtensionForMime(image.mime_type, "img"))}`;
@@ -128,7 +119,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     format: EXTERNAL_LOG_EXPORT_FORMAT,
     version: EXTERNAL_LOG_EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
-    page: { title: page.title, platform: log.platform, fontFamily: parseLogFontFamily(page.font_family), overview: page.overview ?? null, sessionCardFile },
+    page: { title: page.title, platform: log.platform, fontFamily: parseLogFontFamily(page.font_family), overview: page.overview ?? null },
     entries: renderExternalEntries(normalizedEntries, localAvatars, normalizedPrevious),
     tracks: [...tracksById.values()],
     bgm,
