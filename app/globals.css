@@ -351,6 +351,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .export-advanced-toggle svg { transition: transform .16s ease; }
 .export-advanced-toggle svg.rotated { transform: rotate(180deg); }
 .export-advanced-panel { margin-top: 8px; padding-top: 14px; border-top: 1px solid #e8e8e3; }
+.external-export-modal { width: min(520px, 100%); }
+.external-export-modal > p { line-height: 1.65; }
+.external-export-progress { display: grid; gap: 7px; margin: 18px 0; }
+.external-export-progress progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.external-export-progress span { color: var(--muted); font-size: 12px; }
 
 .public-log { width: min(var(--log-column-width), calc(100% - 40px)); margin: 0 auto; padding: 0 0 120px; }
 .public-log h1 { margin: 64px 0 42px; font-size: clamp(30px, 6vw, 46px); letter-spacing: -.035em; }
