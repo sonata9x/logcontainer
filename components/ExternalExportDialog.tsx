@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Archive, X } from "lucide-react";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import { createStoredZip, type StoredZipFile } from "@/lib/external-export/zip";
-import { buildExternalIndexHtml, EXTERNAL_VIEWER_CSS, EXTERNAL_VIEWER_JS } from "@/lib/external-export/viewer";
+import { buildExternalIndexHtml, EXTERNAL_VIEWER_CSS, EXTERNAL_VIEWER_JS, inlineExportAvatarSources } from "@/lib/external-export/viewer";
 import type { ExternalExportPayload } from "@/lib/external-export/types";
 
 function formatBytes(value: number) {
@@ -17,6 +17,15 @@ async function loadBatch(pageId: string, offset: number) {
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error ?? "외부용 로그 정보를 불러오지 못했습니다.");
   return result as ExternalExportPayload;
+}
+
+function blobDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("아바타 이미지를 HTML에 포함하지 못했습니다."));
+    reader.onerror = () => reject(new Error("아바타 이미지를 HTML에 포함하지 못했습니다."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onClose: () => void }) {
@@ -42,9 +51,9 @@ export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onCl
         nextOffset = batch.nextOffset;
         setProgress(first.totalEntries ? Math.min(35, Math.round(entries.length / first.totalEntries * 35)) : 35);
       }
-      const manifest = { ...first.manifest, entries };
       const exportAssets = [...assets.values()];
       const assetFiles: StoredZipFile[] = [];
+      const avatarSources = new Map<string, string>();
       let downloadedBytes = 0;
       for (let index = 0; index < exportAssets.length; index += 1) {
         const asset = exportAssets[index];
@@ -53,9 +62,11 @@ export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onCl
         if (!response.ok) throw new Error(`파일을 포함하지 못했습니다: ${asset.path}`);
         const blob = await response.blob();
         downloadedBytes += blob.size;
-        assetFiles.push({ path: asset.path, data: blob });
+        if (asset.path.startsWith("assets/images/avatar-")) avatarSources.set(asset.path, await blobDataUrl(blob));
+        else assetFiles.push({ path: asset.path, data: blob });
         setProgress(35 + Math.round((index + 1) / Math.max(1, exportAssets.length) * 40));
       }
+      const manifest = { ...first.manifest, entries: inlineExportAvatarSources(entries, avatarSources) };
       const manifestJson = JSON.stringify(manifest, null, 2);
       const files: StoredZipFile[] = [
         { path: "index.html", data: buildExternalIndexHtml(manifest) },
@@ -84,7 +95,7 @@ export function ExternalExportDialog({ pageId, onClose }: { pageId: string; onCl
     <section className="modal-card external-export-modal" onMouseDown={(event) => event.stopPropagation()}>
       <button className="modal-close" onClick={onClose} disabled={pending}><X size={17} /></button>
       <h2>외부 사이트용 로그 백업</h2>
-      <p>현재 표시 상태의 읽기 전용 로그와 대기·블록 BGM을 하나의 ZIP으로 만듭니다. 핸드아웃의 텍스트·이미지와 현재 로그에 표시되는 아바타 이미지만 함께 포함하며, 세션 카드 이미지는 제외합니다.</p>
+      <p>현재 표시 상태의 읽기 전용 로그와 대기·블록 BGM을 하나의 ZIP으로 만듭니다. 현재 아바타는 로그 HTML에 직접 넣고, 핸드아웃 이미지와 업로드 MP3만 별도 파일로 포함합니다. 세션 카드는 제외합니다.</p>
       <p className="muted">YouTube BGM은 영상 ID로 저장되며 재생할 때 인터넷 연결이 필요합니다. 원본 사이트의 수정 이력과 로그인 정보는 포함하지 않습니다.</p>
       <div className="external-export-progress" aria-live="polite"><progress max="100" value={progress} /><span>{status}</span></div>
       {error && <p className="error" role="alert">{error}</p>}

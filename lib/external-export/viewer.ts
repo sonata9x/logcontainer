@@ -1,4 +1,14 @@
 import type { ExternalLogExportManifest } from "@/lib/external-export/types";
+import type { ExternalExportEntry } from "@/lib/external-export/types";
+
+export function inlineExportAvatarSources(entries: ExternalExportEntry[], sources: ReadonlyMap<string, string>) {
+  if (!sources.size) return entries;
+  return entries.map((entry) => {
+    let html = entry.html;
+    for (const [path, dataUrl] of sources) html = html.split(path).join(dataUrl);
+    return html === entry.html ? entry : { ...entry, html };
+  });
+}
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");

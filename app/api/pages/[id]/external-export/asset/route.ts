@@ -23,10 +23,10 @@ async function resolveTarget(pageId: string, kind: string, assetId: string): Pro
     return handout ? { bucket: HANDOUT_IMAGE_BUCKET, path: image.storage_path, mimeType: image.mime_type } : null;
   }
   if (kind === "avatar") {
-    const { data: variant } = await admin.from("speaker_avatar_variants").select("profile_id, storage_path").eq("id", assetId).maybeSingle();
+    const { data: variant } = await admin.from("speaker_avatar_variants").select("profile_id, storage_path, mime_type").eq("id", assetId).maybeSingle();
     if (!variant) return null;
     const { data: profile } = await admin.from("page_speaker_profiles").select("id").eq("id", variant.profile_id).eq("page_id", pageId).maybeSingle();
-    return profile ? { bucket: SPEAKER_AVATAR_BUCKET, path: variant.storage_path, mimeType: null } : null;
+    return profile ? { bucket: SPEAKER_AVATAR_BUCKET, path: variant.storage_path, mimeType: variant.mime_type } : null;
   }
   return null;
 }

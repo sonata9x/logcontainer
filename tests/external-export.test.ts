@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createStoredZip } from "../lib/external-export/zip";
-import { buildExternalIndexHtml } from "../lib/external-export/viewer";
+import { buildExternalIndexHtml, inlineExportAvatarSources } from "../lib/external-export/viewer";
 import { currentManagedAvatarVariantId, renderExternalEntries, safeAssetExtension, safeExportName } from "../lib/external-export/server";
 import type { ExternalLogExportManifest } from "../lib/external-export/types";
 import type { LogEntry, SpeakerAvatarBundle } from "../lib/types";
@@ -63,6 +63,13 @@ test("external export only packages the managed avatar currently shown for an en
   assert.equal(currentManagedAvatarVariantId(entry, avatars), "sad");
   assert.equal(currentManagedAvatarVariantId({ ...entry, id: "default-entry" }, avatars), "default");
   assert.equal(currentManagedAvatarVariantId({ ...entry, document: { ...entry.document!, presentation: { speakerExplicit: false, avatarExplicit: false, timestampExplicit: false, continuation: true } } }, avatars), null);
+});
+
+test("displayed avatar files are embedded directly into exported entry HTML", () => {
+  const entries = [{ key: "entry-1", html: '<img src="assets/images/avatar-current.png"><p>본문</p>', compactSpacing: false, stream: "main" as const }];
+  const result = inlineExportAvatarSources(entries, new Map([["assets/images/avatar-current.png", "data:image/png;base64,AQID"]]));
+  assert.match(result[0].html, /src="data:image\/png;base64,AQID"/);
+  assert.doesNotMatch(result[0].html, /assets\/images\/avatar-current\.png/);
 });
 
 test("external export is owner-only and private assets are proxied after page validation", () => {
