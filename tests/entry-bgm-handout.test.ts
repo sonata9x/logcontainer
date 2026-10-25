@@ -42,7 +42,8 @@ test("BGM editor displays the current track and marks its library selection", ()
   const editor = read("components/PageExtrasPanel.tsx");
   assert.match(editor, /aria-label="현재 BGM"/);
   assert.match(editor, /displayBgmTitle\(current\)/);
-  assert.match(editor, /aria-pressed=\{current\?\.bgm_asset_id === item.bgm_asset_id\}/);
+  assert.match(editor, /selected=\{current\?\.bgm_asset_id === item.bgm_asset_id\}/);
+  assert.match(read("components/BgmChoiceButton.tsx"), /aria-pressed=\{selected\}/);
   assert.match(editor, /finally \{ setPending\(false\); \}/);
 });
 
