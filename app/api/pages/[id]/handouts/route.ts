@@ -24,10 +24,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const context = await getApiPageContext(id);
   if (!context?.canEdit || context.page.page_type !== "log") return NextResponse.json({ error: "핸드아웃 수정 권한이 없습니다." }, { status: 403 });
   const body = await request.json().catch(() => ({}));
-  const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
-  const content = typeof body.content === "string" ? body.content.slice(0, 200_000) : "";
-  if (!title) return NextResponse.json({ error: "핸드아웃 제목을 입력해주세요." }, { status: 400 });
-  const { data: last } = await context.supabase.from("handouts").select("order_index").eq("page_id", id).order("order_index", { ascending: false }).limit(1).maybeSingle();
-  const { data, error } = await context.supabase.from("handouts").insert({ page_id: id, title, content, order_index: (last?.order_index ?? -1) + 1, created_by: context.user.id }).select(SELECT).single();
-  return error ? databaseErrorResponse(error, "핸드아웃을 추가하지 못했습니다.") : NextResponse.json({ handout: { ...data, images: [] } }, { status: 201 });
+  const batch = Array.isArray(body?.handouts);
+  const items = batch ? body.handouts : [body];
+  if (!items.length || items.length > 50) return NextResponse.json({ error: "핸드아웃은 한 번에 1~50개까지 추가할 수 있습니다." }, { status: 400 });
+  const drafts = items.map((item: { title?: unknown; content?: unknown } | null) => ({
+    title: typeof item?.title === "string" ? item.title.trim().slice(0, 200) : "",
+    content: typeof item?.content === "string" ? item.content.slice(0, 200_000) : "",
+  }));
+  if (drafts.some((draft: { title: string }) => !draft.title)) return NextResponse.json({ error: "모든 핸드아웃의 제목을 입력해주세요." }, { status: 400 });
+  const { data: last, error: orderError } = await context.supabase.from("handouts").select("order_index").eq("page_id", id).order("order_index", { ascending: false }).limit(1).maybeSingle();
+  if (orderError) return databaseErrorResponse(orderError, "핸드아웃 순서를 확인하지 못했습니다.");
+  const { data, error } = await context.supabase.from("handouts").insert(drafts.map((draft: { title: string; content: string }, index: number) => ({ page_id: id, ...draft, order_index: (last?.order_index ?? -1) + index + 1, created_by: context.user.id }))).select(SELECT);
+  if (error) return databaseErrorResponse(error, "핸드아웃을 추가하지 못했습니다.");
+  const handouts = (data ?? []).sort((a, b) => a.order_index - b.order_index).map((handout) => ({ ...handout, images: [] }));
+  return NextResponse.json(batch ? { handouts } : { handout: handouts[0] }, { status: 201 });
 }
