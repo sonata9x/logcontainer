@@ -1,5 +1,6 @@
 import { unzipSync } from "fflate";
 import { MAX_STAGED_ROLL20_SOURCE_SIZE } from "@/lib/logs/import-limits";
+import { serializeCcfoliaTabs } from "./bundle";
 
 export const MAX_CCFOLIA_ZIP_SIZE = 50 * 1024 * 1024;
 export type CcfoliaZipTab = { path: string; label: string; size: number };
@@ -32,4 +33,15 @@ export function extractCcfoliaZipTab(bytes: Uint8Array, path: string): Uint8Arra
   if (!payload || payload.length !== tab.size) throw new Error("ZIP의 HTML 파일이 손상되었습니다.");
   new TextDecoder("utf-8", { fatal: true }).decode(payload);
   return payload;
+}
+
+export function extractCcfoliaZipTabs(bytes: Uint8Array, paths: string[]): string {
+  if (!paths.length) throw new Error("표시할 HTML 탭을 하나 이상 선택해주세요.");
+  const requested = new Set(paths);
+  const tabs = listCcfoliaZipTabs(bytes).filter((tab) => requested.has(tab.path));
+  if (tabs.length !== paths.length) throw new Error("선택한 HTML 탭이 중복되었거나 ZIP에 없습니다.");
+  if (tabs.reduce((sum, tab) => sum + tab.size, 0) > MAX_STAGED_ROLL20_SOURCE_SIZE) throw new Error("선택한 HTML 탭의 합계는 12MB 이하여야 합니다.");
+  const source = serializeCcfoliaTabs(tabs.map((tab) => ({ path: tab.path, name: tab.label, html: new TextDecoder("utf-8", { fatal: true }).decode(extractCcfoliaZipTab(bytes, tab.path)) })));
+  if (new TextEncoder().encode(source).length > MAX_STAGED_ROLL20_SOURCE_SIZE) throw new Error("선택한 탭의 업로드 용량은 합계 12MB 이하여야 합니다.");
+  return source;
 }

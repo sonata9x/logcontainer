@@ -5,7 +5,7 @@ import { LogEntryBlock, SpeakerAvatarProvider } from "@/components/LogEntryBlock
 import { HandoutLibrary } from "@/components/HandoutLibrary";
 import type { LogEntry } from "@/lib/types";
 import { isCompactEntrySpacing } from "@/lib/logs/entry-spacing";
-import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
+import { LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
 import { BgmPlayerProvider } from "@/components/BgmPlayer";
 import { EntryPlaybackAnchor } from "@/components/logs/EntryPlaybackAnchor";
 import { PublicBgmMenu } from "@/components/BgmPlaylistDialog";
@@ -14,6 +14,7 @@ import type { LogFontFamily, PageBgmItem, PageExtras, SpeakerAvatarBundle } from
 import { useProgressiveLogPreload } from "@/components/logs/useProgressiveLogPreload";
 
 export function PublicLog({ token, title, initialEntries, totalCount, initialFontFamily, initialAvatars }: { token: string; title: string; initialEntries: LogEntry[]; totalCount: number; initialFontFamily: LogFontFamily; initialAvatars?: SpeakerAvatarBundle }) {
+  const [streams, setStreams] = useState<unknown>(undefined);
   const [entries, setEntries] = useState(initialEntries);
   const [loading, setLoading] = useState(false);
   const [activeStream, setActiveStream] = useState<LogStream>("main");
@@ -23,7 +24,7 @@ export function PublicLog({ token, title, initialEntries, totalCount, initialFon
   const [extras, setExtras] = useState<PageExtras | null>(null);
   const [bgmItems, setBgmItems] = useState<PageBgmItem[]>([]);
   const [speakerAvatars, setSpeakerAvatars] = useState<SpeakerAvatarBundle | null>(initialAvatars ?? null);
-  useEffect(() => { void fetch(`/api/publications/${encodeURIComponent(token)}/extras`, { cache: "no-store" }).then((response) => response.json()).then((result) => { if (result.pageId) setPageId(result.pageId); if (result.extras) setExtras(result.extras); if (result.bgmItems) setBgmItems(result.bgmItems); if (result.avatars) setSpeakerAvatars(result.avatars); }); }, [token]);
+  useEffect(() => { void fetch(`/api/publications/${encodeURIComponent(token)}/extras`, { cache: "no-store" }).then((response) => response.json()).then((result) => { if (result.pageId) setPageId(result.pageId); if (result.streams) setStreams(result.streams); if (result.extras) setExtras(result.extras); if (result.bgmItems) setBgmItems(result.bgmItems); if (result.avatars) setSpeakerAvatars(result.avatars); }); }, [token]);
   const loadMore = useCallback(async () => {
     if (loadingRef.current) return;
     const cursor = entries.at(-1)?.sort_key;
@@ -52,7 +53,7 @@ export function PublicLog({ token, title, initialEntries, totalCount, initialFon
     return () => observer.disconnect();
   }, [entries.length, loadMore, totalCount]);
   useProgressiveLogPreload(entries.length < totalCount, loading, loadMore);
-  const content = <main className="public-log" data-font={extras?.fontFamily ?? initialFontFamily}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} />{entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}<section className="log-timeline">{visibleStreamEntries(entries, activeStream).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
+  const content = <main className="public-log" data-font={extras?.fontFamily ?? initialFontFamily}><header className="public-log-toolbar"><span>{title}</span><div className="toolbar-actions"><HandoutLibrary mode="public" token={token} fontFamily={extras?.fontFamily} /><PublicBgmMenu pageId={pageId} pageTitle={title} publicationToken={token} /></div></header><h1>{title}</h1><PageExtrasDisplay extras={extras} waitingBgm={bgmItems.filter((item) => item.role === "waiting")} /><LogStreamTabs entries={entries} streams={streams} active={activeStream} onChange={setActiveStream} /><section className="log-timeline">{visibleStreamEntries(entries, activeStream, streams).map((entry, index, visibleEntries) => { const bgm = bgmItems.find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor></div>; })}</section>{entries.length < totalCount && <div className="load-more-sentinel" ref={sentinel}><button className="button load-more-entries" onClick={loadMore} disabled={loading}>{loading ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}</main>;
   const avatarContent = <SpeakerAvatarProvider avatars={speakerAvatars}>{content}</SpeakerAvatarProvider>;
   return pageId ? <BgmPlayerProvider access={{ pageId, publicationToken: token }}>{avatarContent}</BgmPlayerProvider> : avatarContent;
 }

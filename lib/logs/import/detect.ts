@@ -1,9 +1,13 @@
 import * as cheerio from "cheerio";
 import type { SupportedImportPlatform } from "./types";
+import { parseCcfoliaTabs } from "@/lib/logs/ccfolia/bundle";
 
 export type PlatformDetection = { platform: SupportedImportPlatform | null; scores: Record<SupportedImportPlatform, number>; ambiguous: boolean };
 
 export function detectImportPlatform(source: string): PlatformDetection {
+  try {
+    if (parseCcfoliaTabs(source)) return { platform: "ccfolia", scores: { roll20: 0, "takoyaki-box": 0, ccfolia: 10 }, ambiguous: false };
+  } catch { /* Unrecognized source is handled by the normal detection path. */ }
   const $ = cheerio.load(source);
   let roll20 = 0;
   let takoyaki = 0;

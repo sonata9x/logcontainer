@@ -1,3 +1,4 @@
+import { entryStreamId } from "@/lib/logs/streams";
 import { sanitizeLogHtml } from "@/lib/logs/html";
 import { isCompactEntrySpacing } from "@/lib/logs/entry-spacing";
 import { isStoredLogEntryDocumentV2 } from "@/lib/logs/model/validate";
@@ -117,11 +118,11 @@ function documentHtml(document: LogEntryDocument, avatarCandidates: string[], ma
   const speakerImage = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "image";
   const avatar = showAvatar ? `<img class="r20-message__avatar" src="${attribute(candidates[0])}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "";
   const timestamp = showTimestamp ? `<time class="r20-message__timestamp"${document.timestamp.iso ? ` datetime="${attribute(document.timestamp.iso)}"` : ""}>${escapeHtml(document.timestamp.raw!)}</time>` : "";
-  const ccfolia = document.source.platform === "ccfolia";
-  const speaker = showSpeaker ? `<strong class="r20-message__speaker"${ccfolia && document.speaker?.color ? ` style="color:${attribute(document.speaker.color)}"` : ""}>${escapeHtml(document.speaker!.name!)}${ccfolia ? "" : ":"}</strong>` : "";
+  const ccfolia = document.source.platform === "ccfolia" || Boolean(document.source.stream?.id.startsWith("ccfolia-tab_"));
+  const speaker = showSpeaker ? `<strong class="r20-message__speaker"${ccfolia ? ` style="color:${attribute(document.speaker?.color ?? "#eee")}"` : ""}>${escapeHtml(document.speaker!.name!)}${ccfolia ? "" : ":"}</strong>` : "";
   const header = ccfolia ? `<div class="ccfolia-message__header">${speaker}${timestamp}${document.source.stream?.name ? `<span class="ccfolia-message__channel">[${escapeHtml(document.source.stream.name)}]</span>` : ""}</div>` : timestamp;
   const flowClass = `r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}${speakerImage ? " r20-message__content-flow--speaker-image" : ""}`;
-  return `<article class="r20-message r20-message--${document.kind}${document.source.platform === "ccfolia" ? " ccfolia-message" : ""}${presentation.continuation ? " r20-message--continuation" : ""}">${document.kind === "dialogue" ? `<div class="r20-message__avatar-slot">${avatar}</div>` : ""}<div class="r20-message__body">${header}<div class="${flowClass}">${ccfolia ? "" : speaker}${document.blocks.map((block) => blockHtml(block, speakerTemplate)).join("")}</div></div></article>`;
+  return `<article class="r20-message r20-message--${document.kind}${ccfolia ? " ccfolia-message" : ""}${presentation.continuation ? " r20-message--continuation" : ""}">${document.kind === "dialogue" ? `<div class="r20-message__avatar-slot">${avatar}</div>` : ""}<div class="r20-message__body">${header}<div class="${flowClass}">${ccfolia ? "" : speaker}${document.blocks.map((block) => blockHtml(block, speakerTemplate)).join("")}</div></div></article>`;
 }
 
 function entryHtml(entry: LogEntry, avatars: SpeakerAvatarBundle | null) {
@@ -155,7 +156,8 @@ export function renderExternalEntries(entries: LogEntry[], avatars: SpeakerAvata
     key: exportEntryKey(entry.id),
     compactSpacing: isCompactEntrySpacing(entry, index > 0 ? entries[index - 1] : previous),
     html: entryHtml(entry, avatars),
-    stream: entry.document_version === 2 && entry.document?.source.stream?.id === "casual" ? "casual" : "main"
+    stream: entryStreamId(entry),
+    streamName: entryStreamId(entry).startsWith("ccfolia-tab_") ? entry.document?.source.stream?.name ?? undefined : undefined
   }));
 }
 

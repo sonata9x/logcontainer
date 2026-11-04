@@ -23,16 +23,19 @@ function playButton(placementKey: string, title: string, className = "") {
 }
 
 export function buildExternalIndexHtml(manifest: ExternalLogExportManifest) {
+  const streams = new Map<string, string>();
+  for (const entry of manifest.entries) if (!streams.has(entry.stream)) streams.set(entry.stream, entry.streamName || (entry.stream === "casual" ? "사담" : "메인"));
+  const initialStream = streams.has("main") ? "main" : manifest.entries[0]?.stream ?? "main";
   const entryPlacement = new Map(manifest.bgm.filter((item) => item.role === "entry" && item.entryKey).map((item) => [item.entryKey!, item]));
   const waiting = manifest.bgm.filter((item) => item.role === "waiting");
   const entries = manifest.entries.map((entry) => {
     const placement = entryPlacement.get(entry.key);
-    return `<div class="entry-wrap" data-entry-key="${escapeHtml(entry.key)}" data-stream="${entry.stream}" data-compact-spacing="${entry.compactSpacing}"${entry.stream === "casual" ? " hidden" : ""}><div class="entry-playback-anchor">${placement ? playButton(placement.key, placement.title, "entry-bgm-button") : ""}${entry.html}</div></div>`;
+    return `<div class="entry-wrap" data-entry-key="${escapeHtml(entry.key)}" data-stream="${escapeHtml(entry.stream)}" data-compact-spacing="${entry.compactSpacing}"${entry.stream !== initialStream ? " hidden" : ""}><div class="entry-playback-anchor">${placement ? playButton(placement.key, placement.title, "entry-bgm-button") : ""}${entry.html}</div></div>`;
   }).join("");
   const waitingHtml = waiting.length ? `<div class="waiting-bgm"><span>대기 BGM</span>${waiting.map((item) => `<span>${playButton(item.key, item.title)}${escapeHtml(item.title)}</span>`).join("")}</div>` : "";
   const handoutButton = manifest.handouts.length ? `<button type="button" class="toolbar-button" id="handout-open">핸드아웃 <span>${manifest.handouts.length}</span></button>` : "";
   const overview = manifest.page.overview ? `<div class="page-overview">${escapeHtml(manifest.page.overview)}</div>` : "";
-  const streamTabs = manifest.entries.some((entry) => entry.stream === "casual") ? `<nav class="log-stream-tabs" aria-label="로그 채널"><button type="button" class="active" data-stream-tab="main">메인</button><button type="button" data-stream-tab="casual">사담</button></nav>` : "";
+  const streamTabs = streams.size > 1 ? `<nav class="log-stream-tabs" aria-label="로그 채널">${[...streams].map(([id, name]) => `<button type="button"${id === initialStream ? ' class="active"' : ""} data-stream-tab="${escapeHtml(id)}">${escapeHtml(name)}</button>`).join("")}</nav>` : "";
   return `<!doctype html>
 <html lang="ko">
 <head>
@@ -138,7 +141,8 @@ export const EXTERNAL_VIEWER_JS = `
     const stream = tab.dataset.streamTab; document.querySelectorAll("[data-stream-tab]").forEach((item) => item.classList.toggle("active", item === tab));
     document.querySelectorAll("[data-stream]").forEach((entry) => { entry.hidden = entry.dataset.stream !== stream; });
   }));
-  document.querySelectorAll('[data-stream="casual"]').forEach((entry) => { entry.hidden = true; });
+  const firstStream = document.querySelector('[data-stream-tab].active')?.dataset.streamTab;
+  if (firstStream) document.querySelectorAll('[data-stream]').forEach((entry) => { entry.hidden = entry.dataset.stream !== firstStream; });
 
   const dialog = document.getElementById("handout-dialog"); const content = document.getElementById("handout-content");
   function showHandoutList() {

@@ -6,8 +6,29 @@ import { validateLogEntryDocument } from "@/lib/logs/model/validate";
 import { safeImageUrl } from "@/lib/logs/model/url";
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 import type { CanonicalImportResult } from "@/lib/logs/import/types";
+import { parseCcfoliaTabs } from "./bundle";
 
 export function importCcfoliaHtml(source: string): CanonicalImportResult {
+  const tabs = parseCcfoliaTabs(source);
+  if (tabs) {
+    const streams = tabs.map((tab) => ({ id: stableRoll20Id("ccfolia-tab", tab.path), name: tab.name }));
+    const results = tabs.map((tab, index) => {
+      const result = importCcfoliaSingleHtml(tab.html);
+      for (const doc of result.documents) {
+        doc.source.stream = streams[index];
+        doc.source.messageId = `${streams[index].id}:${doc.source.messageId}`;
+        doc.source.sourceKey = `${streams[index].id}:${doc.source.sourceKey}`;
+      }
+      return result;
+    });
+    const entries = results.flatMap((result) => result.entries).map((entry, index) => ({ ...entry, order_index: index, sort_key: (index + 1) * 1_000_000 }));
+    return { platform: "ccfolia", documents: results.flatMap((result) => result.documents), entries,
+      report: { provider: "ccfolia", parserVersion: 2, sourceFormat: "selected_html_tabs", importedAt: new Date().toISOString(), sourceMessageCount: entries.length, logicalMessageCount: entries.length, streams, warningCount: results.reduce((sum, result) => sum + Number(result.report.warningCount ?? 0), 0) } };
+  }
+  return importCcfoliaSingleHtml(source);
+}
+
+function importCcfoliaSingleHtml(source: string): CanonicalImportResult {
   const $ = cheerio.load(source);
   const messages = $(".message-list > article.message").toArray();
   if (!messages.length) throw new Error("코코포리아 메시지를 찾지 못했습니다.");

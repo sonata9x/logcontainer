@@ -24,7 +24,8 @@ export type ExternalExportEntry = {
   key: string;
   html: string;
   compactSpacing: boolean;
-  stream: "main" | "casual";
+  stream: string;
+  streamName?: string;
 };
 
 export type ExternalExportHandout = {

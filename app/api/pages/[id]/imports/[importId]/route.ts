@@ -7,9 +7,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!context || !context.canReimport) return new Response("Not found", { status: 404 });
   const { data: log } = await context.supabase.from("logs").select("id").eq("page_id", id).maybeSingle();
   if (!log) return new Response("Not found", { status: 404 });
-  const { data: imported } = await context.supabase.from("log_imports").select("source_html, source_storage_path, compression, created_at").eq("id", importId).eq("log_id", log.id).maybeSingle();
+  const { data: imported } = await context.supabase.from("log_imports").select("source_html, source_storage_path, compression, created_at, report").eq("id", importId).eq("log_id", log.id).maybeSingle();
   if (!imported) return new Response("Not found", { status: 404 });
   const stamp = imported.created_at.replace(/[:.]/g, "-");
+  const filename = imported.report?.sourceFormat === "selected_html_tabs" ? `ccfolia-tabs-${stamp}.json` : `roll20-backup-${stamp}.html`;
   let source: Buffer;
   try {
     if (imported.source_storage_path) {
@@ -23,7 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   return new Response(Uint8Array.from(source).buffer, {
     headers: {
       "Content-Type": "application/octet-stream",
-      "Content-Disposition": `attachment; filename="roll20-backup-${stamp}.html"`,
+      "Content-Disposition": `attachment; filename="${filename}"`,
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store"
     }

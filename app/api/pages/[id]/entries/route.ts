@@ -6,6 +6,7 @@ import { safeHttpsUrl, safeImageUrl } from "@/lib/logs/model/url";
 import { sanitizeRichStyle } from "@/lib/logs/rich/style";
 import { toLogEntryDto } from "@/lib/logs/dto";
 import { databaseErrorResponse } from "@/lib/api-error";
+import { isStoredLogEntryDocumentV2 } from "@/lib/logs/model/validate";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const startedAt = performance.now();
@@ -63,6 +64,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } else document = segments.length
     ? createManualStyledLogEntryDocument(entryType, speakerName || null, segments)
     : createManualLogEntryDocument(entryType, speakerName || null, content);
+  if (afterEntryId) {
+    const { data: parent, error: parentError } = await context.supabase.from("log_entries").select("document, logs!inner(page_id)").eq("id", afterEntryId).eq("logs.page_id", id).maybeSingle();
+    if (parentError) return databaseErrorResponse(parentError, "추가할 로그의 탭을 확인하지 못했습니다.");
+    if (isStoredLogEntryDocumentV2(parent?.document) && parent.document.source.stream?.id.startsWith("ccfolia-tab_")) document.source.stream = { ...parent.document.source.stream };
+  }
   const { data, error } = await context.supabase.rpc("create_log_entry_v3", {
     target_page_id: id,
     after_entry_id: afterEntryId,

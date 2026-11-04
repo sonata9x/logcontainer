@@ -703,3 +703,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .ccfolia-message__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
 .ccfolia-message .r20-message__speaker { margin: 0; font-size: 14px; font-weight: bold; }
 .ccfolia-message .r20-message__timestamp, .ccfolia-message__channel { margin: 0; color: #888; font-size: 12px; }
+.ccfolia-tab-options { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; }
+.log-stream-tabs { overflow-x: auto; }
+.log-stream-tabs button { flex-shrink: 0; }

@@ -9,7 +9,7 @@ import type { LogEntry } from "@/lib/types";
 import { ExportDialog } from "@/components/ExportDialog";
 import { useEscapeClose } from "@/lib/use-escape-close";
 import { isCompactEntrySpacing } from "@/lib/logs/entry-spacing";
-import { isCasualEntry, LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
+import { LogStreamTabs, visibleStreamEntries, type LogStream } from "@/components/logs/LogStreamTabs";
 import { BgmPlayerProvider } from "@/components/BgmPlayer";
 import { EntryPlaybackAnchor } from "@/components/logs/EntryPlaybackAnchor";
 import { PageExtrasDisplay } from "@/components/PageExtrasPanel";
@@ -18,7 +18,7 @@ import { SpeakerExpressionMenu, type AvatarMenuState } from "@/components/Speake
 import { resolveEntryAvatar } from "@/lib/speaker-avatars";
 import { useProgressiveLogPreload } from "@/components/logs/useProgressiveLogPreload";
 
-type GuestPayload = { page: { id: string; title: string }; participant: { id: string; nickname: string; accessLevel: "viewer" | "editor" }; entries: LogEntry[]; totalCount: number; canEdit: boolean; eventCursor: number; extras: PageExtras; bgmItems: PageBgmItem[]; avatars: SpeakerAvatarBundle };
+type GuestPayload = { importReport?: { streams?: unknown }; page: { id: string; title: string }; participant: { id: string; nickname: string; accessLevel: "viewer" | "editor" }; entries: LogEntry[]; totalCount: number; canEdit: boolean; eventCursor: number; extras: PageExtras; bgmItems: PageBgmItem[]; avatars: SpeakerAvatarBundle };
 
 export function GuestLog({ token }: { token: string }) {
   const [payload, setPayload] = useState<GuestPayload | null>(null);
@@ -160,8 +160,8 @@ export function GuestLog({ token }: { token: string }) {
         <input className="page-title-input" value={payload.page.title} readOnly={!payload.canEdit} onChange={(event) => setPayload({ ...payload, page: { ...payload.page, title: event.target.value } })} onBlur={saveTitle} />
         <PageExtrasDisplay extras={payload.extras} waitingBgm={(payload.bgmItems ?? []).filter((item) => item.role === "waiting")} />
         <p className="page-meta">{payload.totalCount.toLocaleString()}개 메시지 · {payload.canEdit ? "편집 가능" : "읽기 전용"}</p>
-        {payload.entries.some(isCasualEntry) && <LogStreamTabs active={activeStream} onChange={setActiveStream} />}
-        <section className="log-timeline">{visibleStreamEntries(payload.entries, activeStream).map((entry, index, visibleEntries) => { const bgm = (payload.bgmItems ?? []).find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor>{payload.canEdit && <div className="guest-entry-actions"><button className="button" onClick={() => edit(entry)} disabled={pending}><Pencil size={13} /> 수정</button>{entry.document && <button className="button" onClick={() => editCss(entry)} disabled={pending}>CSS</button>}<button className="button button-danger" onClick={() => remove(entry)} disabled={pending}><Trash2 size={13} /> 삭제</button></div>}</div>; })}</section>
+        <LogStreamTabs entries={payload.entries} streams={payload.importReport?.streams} active={activeStream} onChange={setActiveStream} />
+        <section className="log-timeline">{visibleStreamEntries(payload.entries, activeStream, payload.importReport?.streams).map((entry, index, visibleEntries) => { const bgm = (payload.bgmItems ?? []).find((item) => item.role === "entry" && item.entry_id === entry.id); return <div className="entry-wrap" key={entry.id} data-compact-spacing={index > 0 && isCompactEntrySpacing(entry, visibleEntries[index - 1])}><EntryPlaybackAnchor item={bgm}><LogEntryBlock entry={entry} /></EntryPlaybackAnchor>{payload.canEdit && <div className="guest-entry-actions"><button className="button" onClick={() => edit(entry)} disabled={pending}><Pencil size={13} /> 수정</button>{entry.document && <button className="button" onClick={() => editCss(entry)} disabled={pending}>CSS</button>}<button className="button button-danger" onClick={() => remove(entry)} disabled={pending}><Trash2 size={13} /> 삭제</button></div>}</div>; })}</section>
         {payload.entries.length < payload.totalCount && <div className="load-more-sentinel" ref={loadMoreSentinel}><button className="button load-more-entries" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "불러오는 중…" : "다음 메시지 50개 불러오기"}</button></div>}
         {trash && <div className="modal-backdrop" onMouseDown={() => setTrash(null)}><section className="modal-card" onMouseDown={(event) => event.stopPropagation()}><h2>삭제 메시지</h2>{trash.map((entry) => <div className="trash-item" key={entry.id}><span>{entry.content.slice(0, 100)}</span><button className="button" onClick={() => restore(entry)}><RotateCcw size={13} /> 복원</button></div>)}<button className="button" onClick={() => setTrash(null)}>닫기</button></section></div>}
         {exportOpen && <ExportDialog endpoint={`/api/share/${encodeURIComponent(token)}/export`} title={payload.page.title} usePersonalDefaults={false} onClose={() => setExportOpen(false)} />}

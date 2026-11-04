@@ -136,7 +136,7 @@ function AvatarImage({ candidates, onContextMenu }: { candidates: string[]; onCo
 }
 
 export function Roll20V2Renderer({ document, textEditor, avatarCandidates, managedAvatar = false, onAvatarContextMenu }: { document: LogEntryDocument; textEditor?: TextEditor; avatarCandidates?: string[]; managedAvatar?: boolean; onAvatarContextMenu?: (event: ReactMouseEvent<HTMLImageElement>) => void }) {
-  const ccfolia = document.source.platform === "ccfolia";
+  const ccfolia = document.source.platform === "ccfolia" || Boolean(document.source.stream?.id.startsWith("ccfolia-tab_"));
   const presentation = document.presentation ?? {
     speakerExplicit: Boolean(document.speaker?.name),
     avatarExplicit: Boolean(document.speaker?.avatarUrl),
@@ -150,11 +150,11 @@ export function Roll20V2Renderer({ document, textEditor, avatarCandidates, manag
   const speakerTemplate = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "roll-template";
   const speakerImage = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "image";
   return (
-    <article className={`r20-message r20-message--${document.kind}${document.source.platform === "ccfolia" ? " ccfolia-message" : ""}${presentation.continuation ? " r20-message--continuation" : ""}`}>
+    <article className={`r20-message r20-message--${document.kind}${ccfolia ? " ccfolia-message" : ""}${presentation.continuation ? " r20-message--continuation" : ""}`}>
       {document.kind === "dialogue" && <div className="r20-message__avatar-slot">{showAvatar && <AvatarImage candidates={candidates} onContextMenu={onAvatarContextMenu} />}</div>}
       <div className="r20-message__body">
         {ccfolia && <div className="ccfolia-message__header">
-          {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? undefined }}>{document.speaker!.name}</strong>}
+          {showSpeaker && <strong className="r20-message__speaker" style={{ color: document.speaker?.color ?? "#eee" }}>{document.speaker!.name}</strong>}
           {showTimestamp && <time className="r20-message__timestamp" dateTime={document.timestamp.iso ?? undefined}>{document.timestamp.raw}</time>}
           {document.source.stream?.name && <span className="ccfolia-message__channel">[{document.source.stream.name}]</span>}
         </div>}

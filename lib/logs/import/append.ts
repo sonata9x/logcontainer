@@ -36,6 +36,25 @@ export function calculateAppendedImport(existing: ExistingImportEntry[], incomin
     else baselines.push(document);
   }
   baselines.sort((left, right) => (left.source.sourceOrder ?? Number.MAX_SAFE_INTEGER) - (right.source.sourceOrder ?? Number.MAX_SAFE_INTEGER));
+  if (incoming.length && incoming.every((entry) => entry.document.source.platform === "ccfolia" && entry.document.source.stream?.id.startsWith("ccfolia-tab_")) && baselines.every((doc) => doc.source.platform === "ccfolia" && doc.source.stream?.id.startsWith("ccfolia-tab_"))) {
+    const incomingByStream = new Map<string, CanonicalImportEntry[]>();
+    for (const entry of incoming) {
+      const id = entry.document.source.stream!.id;
+      if (!incomingByStream.has(id)) incomingByStream.set(id, []);
+      incomingByStream.get(id)!.push(entry);
+    }
+    const existingByStream = new Map<string, LogEntryDocument[]>();
+    for (const doc of baselines) {
+      const id = doc.source.stream!.id;
+      if (!existingByStream.has(id)) existingByStream.set(id, []);
+      existingByStream.get(id)!.push(doc);
+    }
+    for (const [id, documents] of existingByStream) {
+      const entries = incomingByStream.get(id);
+      if (!entries || entries.length < documents.length || documents.some((doc, index) => sourceIdentity(doc) !== sourceIdentity(entries[index].document))) throw new AppendImportError("기존 각 탭의 앞부분을 포함한 같은 HTML 탭들을 선택해주세요.");
+    }
+    return { appendedEntries: incoming.filter((entry) => entry.document.source.sourceOrder! >= (existingByStream.get(entry.document.source.stream!.id)?.length ?? 0)), cleanupEntryIds, baselineCount: baselines.length };
+  }
   if (incoming.length < baselines.length) throw new AppendImportError("새 HTML이 기존 로그보다 짧습니다. 앞부분을 포함한 전체 HTML인지 확인하거나 HTML 갱신을 사용해주세요.");
   for (let index = 0; index < baselines.length; index += 1) {
     if (sourceIdentity(baselines[index]) !== sourceIdentity(incoming[index].document)) {
