@@ -35,7 +35,7 @@ test("speaker identity normalization is stable for spacing and case", () => {
   assert.equal(normalizeSpeakerKey("  G M  "), "g m");
   assert.ok(SPEAKER_AVATAR_PLATFORMS.has("roll20"));
   assert.ok(SPEAKER_AVATAR_PLATFORMS.has("takoyaki-box"));
-  assert.equal(SPEAKER_AVATAR_PLATFORMS.has("ccfolia"), false);
+  assert.equal(SPEAKER_AVATAR_PLATFORMS.has("ccfolia"), true);
 });
 
 test("expression, default, original priority never mutates canonical data", () => {

@@ -7,6 +7,7 @@ export function detectImportPlatform(source: string): PlatformDetection {
   const $ = cheerio.load(source);
   let roll20 = 0;
   let takoyaki = 0;
+  const ccfolia = $(".message-list > article.message .message-content .speaker").length && $(".message-list > article.message .message-text").length ? 10 : 0;
   if (/var\s+msgdata\s*=/.test(source)) roll20 += 10;
   if ($(".message").length) roll20 += 3;
   if ($(".message[data-messageid]").length) roll20 += 3;
@@ -16,9 +17,9 @@ export function detectImportPlatform(source: string): PlatformDetection {
   if ($(".tkbx-tabs, .tkbx-tab").length) takoyaki += 2;
   if ($(".tkbx-panes > .log > [data-tab]").length) takoyaki += 3;
   if ($(".tkbx-panes > .log > .msg, .tkbx-panes > .log > .msg-script").length) takoyaki += 2;
-  const scores = { roll20, "takoyaki-box": takoyaki };
-  const best = Math.max(roll20, takoyaki);
+  const scores = { roll20, "takoyaki-box": takoyaki, ccfolia };
+  const best = Math.max(roll20, takoyaki, ccfolia);
   if (best < 5) return { platform: null, scores, ambiguous: false };
-  if (roll20 === takoyaki) return { platform: null, scores, ambiguous: true };
-  return { platform: roll20 > takoyaki ? "roll20" : "takoyaki-box", scores, ambiguous: false };
+  const winners = (Object.keys(scores) as SupportedImportPlatform[]).filter((key) => scores[key] === best);
+  return { platform: winners.length === 1 ? winners[0] : null, scores, ambiguous: winners.length > 1 };
 }

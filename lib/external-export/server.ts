@@ -117,8 +117,11 @@ function documentHtml(document: LogEntryDocument, avatarCandidates: string[], ma
   const speakerImage = showSpeaker && document.blocks.length === 1 && document.blocks[0].type === "image";
   const avatar = showAvatar ? `<img class="r20-message__avatar" src="${attribute(candidates[0])}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "";
   const timestamp = showTimestamp ? `<time class="r20-message__timestamp"${document.timestamp.iso ? ` datetime="${attribute(document.timestamp.iso)}"` : ""}>${escapeHtml(document.timestamp.raw!)}</time>` : "";
+  const ccfolia = document.source.platform === "ccfolia";
+  const speaker = showSpeaker ? `<strong class="r20-message__speaker"${ccfolia && document.speaker?.color ? ` style="color:${attribute(document.speaker.color)}"` : ""}>${escapeHtml(document.speaker!.name!)}${ccfolia ? "" : ":"}</strong>` : "";
+  const header = ccfolia ? `<div class="ccfolia-message__header">${speaker}${timestamp}${document.source.stream?.name ? `<span class="ccfolia-message__channel">[${escapeHtml(document.source.stream.name)}]</span>` : ""}</div>` : timestamp;
   const flowClass = `r20-message__content-flow${speakerTemplate ? " r20-message__content-flow--speaker-template" : ""}${speakerImage ? " r20-message__content-flow--speaker-image" : ""}`;
-  return `<article class="r20-message r20-message--${document.kind}${presentation.continuation ? " r20-message--continuation" : ""}">${document.kind === "dialogue" ? `<div class="r20-message__avatar-slot">${avatar}</div>` : ""}<div class="r20-message__body">${timestamp}<div class="${flowClass}">${showSpeaker ? `<strong class="r20-message__speaker">${escapeHtml(document.speaker!.name!)}:</strong>` : ""}${document.blocks.map((block) => blockHtml(block, speakerTemplate)).join("")}</div></div></article>`;
+  return `<article class="r20-message r20-message--${document.kind}${document.source.platform === "ccfolia" ? " ccfolia-message" : ""}${presentation.continuation ? " r20-message--continuation" : ""}">${document.kind === "dialogue" ? `<div class="r20-message__avatar-slot">${avatar}</div>` : ""}<div class="r20-message__body">${header}<div class="${flowClass}">${ccfolia ? "" : speaker}${document.blocks.map((block) => blockHtml(block, speakerTemplate)).join("")}</div></div></article>`;
 }
 
 function entryHtml(entry: LogEntry, avatars: SpeakerAvatarBundle | null) {

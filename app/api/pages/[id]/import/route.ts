@@ -29,8 +29,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const limited = await enforceRateLimit(request, { scope: "log-import", identity: context.user.id, maxRequests: 6, windowSeconds: 600, blockSeconds: 900 });
   if (limited) return limited;
   const body = await request.json().catch(() => ({}));
-  if (body.platform === "ccfolia") return NextResponse.json({ error: "CCFOLIA 가져오기는 아직 지원하지 않습니다." }, { status: 400 });
-  if (!(["roll20", "takoyaki-box"] as unknown[]).includes(body.platform)) {
+  if (!(["roll20", "takoyaki-box", "ccfolia"] as unknown[]).includes(body.platform)) {
     return NextResponse.json({ error: "업로드할 로그의 플랫폼을 선택해주세요." }, { status: 400 });
   }
   const requestedPlatform = body.platform as SupportedImportPlatform;

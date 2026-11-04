@@ -96,8 +96,8 @@ test("embedded raster data images are preserved while SVG data images are reject
   assert.doesNotMatch(JSON.stringify(rejected.documents[5].blocks), /data:image\/svg/);
 });
 
-test("CCFOLIA selection reports unsupported instead of guessing another parser", () => {
-  assert.throws(() => importLogHtml(fixture, "ccfolia"), (error) => error instanceof ImportPlatformError && error.code === "unsupported");
+test("CCFOLIA selection rejects another platform instead of guessing", () => {
+  assert.throws(() => importLogHtml(fixture, "ccfolia"), /코코포리아 메시지를 찾지 못했습니다/);
 });
 
 test("auto detection rejects unknown HTML", () => {

@@ -30,7 +30,7 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker:
 }
 
 export async function persistTakoyakiAvatarAssets(imported: CanonicalImportResult, logId: string, importId: string): Promise<UploadedAvatarAsset[]> {
-  if (imported.platform !== "takoyaki-box") return [];
+  if (imported.platform !== "takoyaki-box" && imported.platform !== "ccfolia") return [];
   const embeddedUrls = [...new Set(imported.documents.flatMap((document) => {
     const avatarUrl = document.speaker?.avatarUrl;
     return avatarUrl?.startsWith("data:image/") ? [avatarUrl] : [];

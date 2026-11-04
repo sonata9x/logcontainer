@@ -82,7 +82,7 @@ export function validateLogEntryDocument(input: unknown) {
   const document: LogEntryDocument = {
     version: 2, kind: value.kind as LogEntryDocument["kind"],
     source: {
-      platform: source.platform === "manual" ? "manual" : source.platform === "takoyaki-box" ? "takoyaki-box" : "roll20",
+      platform: source.platform === "ccfolia" ? "ccfolia" : source.platform === "manual" ? "manual" : source.platform === "takoyaki-box" ? "takoyaki-box" : "roll20",
       messageId: typeof source.messageId === "string" ? source.messageId : null,
       sourceKey: typeof source.sourceKey === "string" ? source.sourceKey : null,
       sourceOrder: typeof source.sourceOrder === "number" ? source.sourceOrder : null,
@@ -134,7 +134,7 @@ export function isStoredLogEntryDocumentV2(input: unknown): input is LogEntryDoc
   if (!input || typeof input !== "object") return false;
   const value = input as Partial<LogEntryDocument>;
   if (value.version !== 2 || !KINDS.has(String(value.kind)) || !Array.isArray(value.blocks)) return false;
-  if (!value.source || typeof value.source !== "object" || !["roll20", "takoyaki-box", "manual"].includes(String(value.source.platform))) return false;
+  if (!value.source || typeof value.source !== "object" || !["roll20", "takoyaki-box", "ccfolia", "manual"].includes(String(value.source.platform))) return false;
   if (!value.timestamp || typeof value.timestamp !== "object" || !value.presentation || typeof value.presentation !== "object") return false;
   return value.blocks.every((block) => Boolean(block && typeof block === "object" && typeof block.id === "string" && BLOCK_TYPES.has(String(block.type))));
 }

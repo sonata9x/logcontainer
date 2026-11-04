@@ -5,7 +5,7 @@ import type { LogEntryDocument } from "@/lib/logs/model/types";
 export const SPEAKER_AVATAR_BUCKET = "speaker-avatars";
 export const SPEAKER_AVATAR_MAX_BYTES = 5_000_000;
 export const SPEAKER_AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-export const SPEAKER_AVATAR_PLATFORMS = new Set<LogPlatform>(["roll20", "takoyaki-box"]);
+export const SPEAKER_AVATAR_PLATFORMS = new Set<LogPlatform>(["roll20", "takoyaki-box", "ccfolia"]);
 
 export function normalizeSpeakerKey(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");

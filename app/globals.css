@@ -685,3 +685,21 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .log-info-grid dt { color: var(--muted); }
 .log-info-grid dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .log-info-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* CCFOLIA exports retain their dark canvas independently of workspace theme. */
+.log-entry-v2:has(.ccfolia-message), .log-entry-v2:has(.ccfolia-message):hover { background: #121212; color: #eee; }
+.ccfolia-message { background: #121212; color: #eee; padding: 16px 12px; border-bottom: 1px solid #262626; }
+.ccfolia-message .r20-message__timestamp { color: #888; }
+.ccfolia-message .r20-message__speaker { display: block; }
+.ccfolia-message .r20-message__content-flow { color: #eee; white-space: pre-wrap; }
+.ccfolia-message.r20-message--system .r20-message__content-flow { color: #888; }
+
+.log-timeline:has(.ccfolia-message) { background: #121212; }
+.ccfolia-message .log-rich-context { color: inherit; }
+.inline-content-editor:has(.ccfolia-message) .r20-editable-text:focus { background: #333; box-shadow: inset 0 -1px #888; }
+
+.r20-message.ccfolia-message { grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; font-size: 16px; line-height: 1.6; }
+.ccfolia-message .r20-message__avatar-slot, .ccfolia-message .r20-message__avatar { width: 40px; min-width: 40px; height: 40px; }
+.ccfolia-message__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.ccfolia-message .r20-message__speaker { margin: 0; font-size: 14px; font-weight: bold; }
+.ccfolia-message .r20-message__timestamp, .ccfolia-message__channel { margin: 0; color: #888; font-size: 12px; }

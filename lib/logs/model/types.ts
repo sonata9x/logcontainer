@@ -108,7 +108,7 @@ export type LogEntryDocument = {
   version: 2;
   kind: "dialogue" | "description" | "system";
   source: {
-    platform: "roll20" | "takoyaki-box" | "manual";
+    platform: "roll20" | "takoyaki-box" | "ccfolia" | "manual";
     messageId: string | null;
     sourceKey: string | null;
     sourceOrder: number | null;

@@ -1,7 +1,7 @@
 import type { LogEntryDocument } from "@/lib/logs/model/types";
 
 export type ImportPlatformSelection = "auto" | "roll20" | "takoyaki-box" | "ccfolia";
-export type SupportedImportPlatform = "roll20" | "takoyaki-box";
+export type SupportedImportPlatform = "roll20" | "takoyaki-box" | "ccfolia";
 
 export type CanonicalImportEntry = {
   order_index: number;
